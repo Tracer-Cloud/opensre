@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-from config.constants.gateway import NEW_SESSION_MESSAGE
 from config.principal import StorageScope
-from core.agent_harness.session import SessionCore
+from core.agent_harness import SessionCore
+from gateway.core.middleware.inbound_decision import apply_inbound_decision
 from gateway.core.storage import SessionResolver
-from gateway.transports.telegram.inbound_security import (
-    InboundDecision,
-    persist_policy_if_needed,
-)
+from gateway.transports.telegram.inbound_security import InboundDecision
 from gateway.transports.telegram.poller.client import TelegramBotClient
 from gateway.transports.telegram.settings import TelegramInboundMessage
+from integrations.messaging_security import MessagingPlatform
 
 
 def resolve_or_rotate_session(
@@ -23,31 +21,20 @@ def resolve_or_rotate_session(
     scope: StorageScope,
 ) -> SessionCore | None:
     """Apply inbound decision side effects, then resolve or rotate the REPL session."""
-    persist_policy_if_needed(decision)
 
-    if decision.reply_text and decision.reply_text != "__ROTATE_SESSION__":
-        client.send_message(event.chat_id, decision.reply_text)
-        if not decision.allowed:
-            return None
+    def _send(text: str) -> None:
+        client.send_message(event.chat_id, text)
 
-    if not decision.allowed and decision.reply_text != "__ROTATE_SESSION__":
-        return None
-
-    if decision.reply_text == "__ROTATE_SESSION__":
-        session = session_resolver.rotate(
-            user_id=event.user_id,
-            chat_id=event.chat_id,
-            principal=scope.principal,
-            actor=scope.actor,
-        )
-        client.send_message(event.chat_id, NEW_SESSION_MESSAGE)
-        if event.text.strip().lower() == "/new":
-            return None
-        return session
-
-    return session_resolver.resolve(
-        user_id=event.user_id,
+    return apply_inbound_decision(
+        decision,
+        platform=MessagingPlatform.TELEGRAM.value,
+        resolver=session_resolver,
+        scope=scope,
+        conversation_key=event.user_id,
         chat_id=event.chat_id,
-        principal=scope.principal,
-        actor=scope.actor,
+        text=event.text,
+        send=_send,
     )
+
+
+__all__ = ["resolve_or_rotate_session"]

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from platform.filestorage.engine import SyncProgress
-from platform.filestorage.enums import SyncDirection
+from infrastructure.filestorage.engine import SyncProgress
+from infrastructure.filestorage.enums import SyncDirection
 from surfaces.cli.commands.remote_sync_progress import CliProgress
 
 

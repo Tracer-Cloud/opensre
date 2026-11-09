@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.llm_auth.subscriptions import SUBSCRIPTION_BY_VALUE
 from core.llm.providers.azure_openai import (
     is_azure_openai_provider,
     resolve_azure_openai_request_kwargs,
 )
+from core.llm.providers.custom_endpoints import is_custom_anthropic_provider
 from core.llm.providers.openai_compat_providers import (
     is_openai_compat_provider,
     resolve_openai_compat_provider,
@@ -23,17 +25,36 @@ from core.llm.providers.vertex_ai import (
     is_vertex_ai_provider,
     resolve_vertex_ai_request_kwargs,
 )
+from core.llm.subscriptions.registry import subscription_adapter
 from core.llm.transports.litellm.clients import LiteLLMAgentClient, LiteLLMLLMClient
-from core.llm.types import ModelType
+from core.llm.types import AgentLLMClient, CliLLMClient, ModelType
+
+
+def _guard_sdk_only_provider(provider: str) -> None:
+    """Reject providers that are intentionally SDK-only under the LiteLLM transport."""
+    if is_custom_anthropic_provider(provider):
+        raise RuntimeError(
+            "Provider 'custom-anthropic' uses the Anthropic SDK with a base-URL override "
+            "and does not support OPENSRE_LLM_TRANSPORT=litellm. Unset OPENSRE_LLM_TRANSPORT "
+            "(or set it to 'sdk'), or use 'custom-openai' for a LiteLLM-proxied "
+            "OpenAI-compatible endpoint."
+        )
 
 
 def _litellm_model_for_compat(model: str) -> str:
-    """Prefix model with ``openai/`` if not already prefixed, for compat endpoints."""
-    return model if model.startswith("openai/") else f"openai/{model}"
+    """Keep the endpoint model ID intact beneath the LiteLLM transport prefix."""
+    return f"openai/{model}"
 
 
-def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClient:
+def build_litellm_agent_client(settings: Any, provider: str) -> AgentLLMClient:
     """Build a :class:`LiteLLMAgentClient` for the given provider and settings."""
+    if provider in SUBSCRIPTION_BY_VALUE:
+        from core.llm.provider_models import resolve_provider_models
+
+        return subscription_adapter(provider).clients.agent_client(
+            resolve_provider_models(settings, provider)[0]
+        )
+    _guard_sdk_only_provider(provider)
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS
 
     spec = FIRST_PARTY_PROVIDERS.get(provider)
@@ -46,7 +67,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClie
         )
 
     if is_azure_openai_provider(provider):
-        from config.config import AZURE_OPENAI_LLM_CONFIG
+        from config.llm_models import AZURE_OPENAI_LLM_CONFIG
 
         azure = resolve_azure_openai_request_kwargs(settings, model_type=ModelType.REASONING)
         return LiteLLMAgentClient(
@@ -58,7 +79,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClie
         )
 
     if is_openai_compat_provider(provider):
-        from config.config import PROVIDER_OLLAMA
+        from config.llm_settings import PROVIDER_OLLAMA
 
         resolved = resolve_openai_compat_provider(settings, provider, ModelType.REASONING)
         max_tokens = 1024 if provider == PROVIDER_OLLAMA else resolved.config.max_tokens
@@ -72,7 +93,7 @@ def build_litellm_agent_client(settings: Any, provider: str) -> LiteLLMAgentClie
         )
 
     if is_vertex_ai_provider(provider):
-        from config.config import VERTEX_AI_LLM_CONFIG
+        from config.llm_models import VERTEX_AI_LLM_CONFIG
 
         vertex = resolve_vertex_ai_request_kwargs(settings, model_type=ModelType.REASONING)
         return LiteLLMAgentClient(
@@ -95,8 +116,16 @@ def build_litellm_llm_client(
     model_type: ModelType,
     *,
     usage_callback: Any = None,
-) -> LiteLLMLLMClient:
+) -> CliLLMClient:
     """Build a :class:`LiteLLMLLMClient` for the given provider, model tier, and settings."""
+    if provider in SUBSCRIPTION_BY_VALUE:
+        from core.llm.provider_models import resolve_provider_models
+
+        return subscription_adapter(provider).clients.llm_client(
+            resolve_provider_models(settings, provider)[0],
+            usage_callback=usage_callback,
+        )
+    _guard_sdk_only_provider(provider)
 
     from core.llm.providers.provider_registry import FIRST_PARTY_PROVIDERS
 
@@ -119,7 +148,7 @@ def build_litellm_llm_client(
         )
 
     if is_azure_openai_provider(provider):
-        from config.config import AZURE_OPENAI_LLM_CONFIG
+        from config.llm_models import AZURE_OPENAI_LLM_CONFIG
 
         azure = resolve_azure_openai_request_kwargs(settings, model_type=model_type)
         raw_fallback = _fallback("azure_openai")
@@ -140,11 +169,14 @@ def build_litellm_llm_client(
 
     if is_openai_compat_provider(provider):
         compat = resolve_openai_compat_provider(settings, provider, model_type)
-        raw_fallback = _fallback(provider)
+        # Resolve the toolcall fallback via the compat path (settings_prefix
+        # aware) rather than _fallback(provider): the raw slug can be hyphenated
+        # (custom-openai), which getattr would never match.
         fallback_model: str | None = None
-        if raw_fallback:
+        if model_type != ModelType.TOOLCALL:
             fallback_compat = resolve_openai_compat_provider(settings, provider, ModelType.TOOLCALL)
-            fallback_model = _litellm_model_for_compat(fallback_compat.model)
+            if fallback_compat.model:
+                fallback_model = _litellm_model_for_compat(fallback_compat.model)
         return LiteLLMLLMClient(
             litellm_model=_litellm_model_for_compat(compat.model),
             model_fallback=fallback_model,
@@ -157,7 +189,7 @@ def build_litellm_llm_client(
         )
 
     if is_vertex_ai_provider(provider):
-        from config.config import VERTEX_AI_LLM_CONFIG
+        from config.llm_models import VERTEX_AI_LLM_CONFIG
 
         vertex = resolve_vertex_ai_request_kwargs(settings, model_type=model_type)
         raw_fallback = _fallback("vertex_ai")

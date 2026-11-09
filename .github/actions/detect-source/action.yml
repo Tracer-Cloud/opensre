@@ -1,0 +1,27 @@
+name: Detect source changes
+description: Classify whether a pull request needs the code test matrix.
+
+outputs:
+  source:
+    description: Whether runtime, test, or CI source paths changed.
+    value: ${{ steps.filter.outputs.source }}
+
+runs:
+  using: composite
+  steps:
+    # Pin to immutable SHA (dorny/paths-filter@v4.0.2). Every PR job invokes
+    # this independently so source jobs can start in parallel instead of
+    # waiting behind a repository-wide decision job.
+    - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+      id: filter
+      with:
+        # Treat every change as executable unless it is in the repository's
+        # documented docs/process-only set. A broad positive match prevents a
+        # newly added root script or config format from silently bypassing CI.
+        filters: |
+          source:
+            - "**"
+            - "!**/*.md"
+            - "!**/*.mdx"
+            - "!docs/**"
+        predicate-quantifier: every

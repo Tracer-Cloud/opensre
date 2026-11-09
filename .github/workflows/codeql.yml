@@ -3,28 +3,70 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-    # Skip CodeQL for docs-only PRs (Markdown/MDX and the docs site tree) to
-    # save CI minutes. Not a required check, so skipping cannot block merge.
-    # `push` to main and the weekly schedule keep full coverage regardless.
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.mdx'
-      - 'docs/**'
   schedule:
     - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Analysis profile to benchmark
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - pr-fast
+      runner_label:
+        description: Standard or larger-runner label
+        required: true
+        default: ubuntu-24.04
+        type: string
 
 permissions:
   contents: read
   security-events: write
   actions: read
 
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
 jobs:
-  analyze:
-    if: github.repository == 'Tracer-Cloud/opensre'
-    name: Analyze (python)
-    runs-on: ubuntu-latest
+  analyze-full:
+    if: >-
+      github.repository == 'Tracer-Cloud/opensre' &&
+      (github.event_name != 'workflow_dispatch' || inputs.profile == 'full')
+    name: Analyze full (${{ matrix.language }})
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_label || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          config-file: .github/codeql/codeql-config.yml
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          # Preserve the canonical category so each full scan supersedes the
+          # repository's historical results instead of leaving stale alerts open.
+          category: /language:${{ matrix.language }}
+
+  analyze-pr-benchmark:
+    if: >-
+      github.repository == 'Tracer-Cloud/opensre' &&
+      github.event_name == 'workflow_dispatch' &&
+      inputs.profile == 'pr-fast'
+    name: Analyze PR benchmark (python)
+    runs-on: ${{ inputs.runner_label }}
 
     steps:
       - uses: actions/checkout@v5
@@ -34,10 +76,9 @@ jobs:
         with:
           languages: python
           build-mode: none
-          config-file: .github/codeql/codeql-config.yml
-          queries: security-and-quality
+          config-file: .github/codeql/codeql-pr-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:python
+          category: /language:python/pr-fast

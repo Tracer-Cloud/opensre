@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from platform.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 
 
 def payload_project_slug(payload: AgentPayload) -> str:

@@ -14,7 +14,15 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from config.constants.postgresql import (
+    POSTGRESQL_DATABASE_ENV,
+    POSTGRESQL_HOST_ENV,
+    POSTGRESQL_PASSWORD_ENV,
+    POSTGRESQL_PORT_ENV,
+    POSTGRESQL_SSL_MODE_ENV,
+    POSTGRESQL_USERNAME_ENV,
+)
+from core.tool_framework.utils import tool_unavailable
 from integrations._relational import (
     RelationalConfigBase,
     env_int,
@@ -77,18 +85,18 @@ def build_postgresql_config(raw: dict[str, Any] | None) -> PostgreSQLConfig:
 
 def postgresql_config_from_env() -> PostgreSQLConfig | None:
     """Load a PostgreSQL config from env vars."""
-    host = env_str("POSTGRESQL_HOST")
-    database = env_str("POSTGRESQL_DATABASE")
+    host = env_str(POSTGRESQL_HOST_ENV)
+    database = env_str(POSTGRESQL_DATABASE_ENV)
     if not host or not database:
         return None
     return build_postgresql_config(
         {
             "host": host,
-            "port": env_int("POSTGRESQL_PORT", DEFAULT_POSTGRESQL_PORT),
+            "port": env_int(POSTGRESQL_PORT_ENV, DEFAULT_POSTGRESQL_PORT),
             "database": database,
-            "username": env_str("POSTGRESQL_USERNAME", DEFAULT_POSTGRESQL_USER),
-            "password": os.getenv("POSTGRESQL_PASSWORD", ""),
-            "ssl_mode": env_str("POSTGRESQL_SSL_MODE", DEFAULT_POSTGRESQL_SSL_MODE),
+            "username": env_str(POSTGRESQL_USERNAME_ENV, DEFAULT_POSTGRESQL_USER),
+            "password": os.getenv(POSTGRESQL_PASSWORD_ENV, ""),
+            "ssl_mode": env_str(POSTGRESQL_SSL_MODE_ENV, DEFAULT_POSTGRESQL_SSL_MODE),
         }
     )
 
@@ -547,13 +555,13 @@ def get_slow_queries(
                         "queryid": str(row[0]) if row[0] else "",
                         "query_truncated": row[1] or "",
                         "calls": row[2],
-                        "total_time_ms": row[3],
-                        "mean_time_ms": row[4],
-                        "min_time_ms": row[5],
-                        "max_time_ms": row[6],
-                        "stddev_time_ms": row[7],
+                        "total_time_ms": float(row[3]),
+                        "mean_time_ms": float(row[4]),
+                        "min_time_ms": float(row[5]),
+                        "max_time_ms": float(row[6]),
+                        "stddev_time_ms": float(row[7]),
                         "total_rows": row[8],
-                        "cache_hit_percent": round(row[9] or 0, 2),
+                        "cache_hit_percent": round(float(row[9] or 0), 2),
                     }
                 )
 

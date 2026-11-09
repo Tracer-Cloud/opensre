@@ -6,16 +6,19 @@ from typing import Any
 
 import httpx
 
-from core.tool_framework.telemetry import report_run_error
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
-
-_DEFAULT_MAX_RESULTS = 100
-_MAX_HARD_LIMIT = 200
+from config.constants.azure import (
+    AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT,
+    AZURE_MAX_RESULTS_DEFAULT,
+    AZURE_MAX_RESULTS_HARD_LIMIT,
+)
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel, report_run_error
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 
 
 def _bounded_limit(limit: int, max_results: int) -> int:
-    safe_max = max(1, min(max_results, _MAX_HARD_LIMIT))
+    safe_max = max(1, min(max_results, AZURE_MAX_RESULTS_HARD_LIMIT))
     return max(1, min(limit, safe_max))
 
 
@@ -31,11 +34,13 @@ def _azure_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {
         "workspace_id": str(azure.get("workspace_id", "")).strip(),
         "access_token": str(azure.get("access_token", "")).strip(),
-        "endpoint": str(azure.get("endpoint", "https://api.loganalytics.io")).strip(),
+        "endpoint": str(azure.get("endpoint", AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT)).strip(),
         "query": str(azure.get("query", "")).strip(),
         "time_range_minutes": int(azure.get("time_range_minutes", 60) or 60),
         "limit": 50,
-        "max_results": int(azure.get("max_results", _DEFAULT_MAX_RESULTS) or _DEFAULT_MAX_RESULTS),
+        "max_results": int(
+            azure.get("max_results", AZURE_MAX_RESULTS_DEFAULT) or AZURE_MAX_RESULTS_DEFAULT
+        ),
         "integration_id": str(azure.get("integration_id", "")).strip(),
     }
 
@@ -54,18 +59,20 @@ def _ensure_take_clause(query: str, limit: int) -> str:
     name="query_azure_monitor_logs",
     description="Query Azure Monitor Log Analytics using a bounded KQL query.",
     source="azure",
-    surfaces=("investigation", "chat"),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     requires=["workspace_id", "access_token"],
     input_schema={
         "type": "object",
         "properties": {
             "workspace_id": {"type": "string"},
             "access_token": {"type": "string"},
-            "endpoint": {"type": "string", "default": "https://api.loganalytics.io"},
+            "endpoint": {"type": "string", "default": AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT},
             "query": {"type": "string"},
             "time_range_minutes": {"type": "integer", "default": 60},
             "limit": {"type": "integer", "default": 50},
-            "max_results": {"type": "integer", "default": 100},
+            "max_results": {"type": "integer", "default": AZURE_MAX_RESULTS_DEFAULT},
             "integration_id": {"type": "string"},
             "timeout_seconds": {"type": "number", "default": 20.0},
         },
@@ -78,11 +85,11 @@ def _ensure_take_clause(query: str, limit: int) -> str:
 def query_azure_monitor_logs(
     workspace_id: str,
     access_token: str,
-    endpoint: str = "https://api.loganalytics.io",
+    endpoint: str = AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT,
     query: str = "",
     time_range_minutes: int = 60,
     limit: int = 50,
-    max_results: int = _DEFAULT_MAX_RESULTS,
+    max_results: int = AZURE_MAX_RESULTS_DEFAULT,
     integration_id: str = "",
     timeout_seconds: float = 20.0,
     **_kwargs: Any,
@@ -95,7 +102,7 @@ def query_azure_monitor_logs(
 
     effective_limit = _bounded_limit(limit, max_results)
     bounded_query = _ensure_take_clause(query, effective_limit)
-    base_url = endpoint.strip().rstrip("/") or "https://api.loganalytics.io"
+    base_url = endpoint.strip().rstrip("/") or AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT
     url = f"{base_url}/v1/workspaces/{workspace}/query"
     payload = {
         "query": bounded_query,

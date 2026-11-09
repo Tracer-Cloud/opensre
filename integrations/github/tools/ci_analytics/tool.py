@@ -1,0 +1,430 @@
+"""Read-only tool: CI reliability KPIs and developer blocked time for one repository."""
+
+from __future__ import annotations
+
+import logging
+import time
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
+
+from rich.markup import escape
+
+from core.agent_harness.tools import action_context_from_agent_context
+from core.domain.types.evidence import record_evidence_entry
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel, report_run_error
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
+from integrations.github.agent_tools import (
+    github_tool_params,
+    require_webapp_github,
+)
+from integrations.github.client import GitHubApiError
+from integrations.github.envelope import missing_token_envelope
+from integrations.github.helpers import (
+    GITHUB_INJECTED_PARAMS,
+    github_creds,
+)
+from integrations.github.repo_scope import detect_git_remote_repo_scope
+from integrations.github.rest_token import (
+    resolved_github_rest_token,
+)
+from integrations.github.tools.ci_analytics.analysis import analyze_repository
+from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
+from integrations.github.tools.ci_analytics.failure import (
+    analysis_failure,
+    is_operational_failure,
+)
+from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
+from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
+from integrations.github.tools.ci_analytics.payload import report_payload
+from integrations.github.tools.ci_analytics.prefetch import (
+    PrefetchedAnalysis,
+    analysis_request,
+    claim_analysis_prefetch,
+    start_analysis_prefetch,
+)
+from integrations.github.tools.ci_analytics.render import (
+    comparison_figures,
+    comparison_markdown,
+    format_minutes,
+    headline,
+    key_results_payload,
+    peer_benchmarks,
+    render_markdown,
+)
+from integrations.github.tools.ci_analytics.snapshots import (
+    read_fresh_snapshot,
+    report_from_dict,
+    report_to_dict,
+    snapshot_root,
+    write_snapshot,
+)
+
+TOOL_NAME = "analyze_github_ci_reliability"
+logger = logging.getLogger(__name__)
+
+_SOURCE = "github"
+_DEFAULT_WINDOW_DAYS = 30
+_MIN_WINDOW_DAYS = 1
+_MAX_WINDOW_DAYS = 90
+
+
+def _available(_sources: dict[str, dict]) -> bool:
+    """Keep recovery available; execution enforces the app connection."""
+    return True
+
+
+def _window(days: int | None) -> int:
+    return min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
+
+
+def _repository(owner: str | None, repo: str | None) -> tuple[str, str]:
+    return (owner or "").strip(), (repo or "").strip().removesuffix(".git")
+
+
+def prefetch_ci_analysis(
+    owner: str,
+    repo: str,
+    *,
+    resolved_integrations: Mapping[str, Any],
+    days: int | None = None,
+) -> bool:
+    """Start the live read an ``analyze_github_ci_reliability(owner, repo, days)`` call would make.
+
+    Runs in the background with the token that call would resolve from
+    ``resolved_integrations``; that call, made within a few minutes, takes the
+    result instead of reading GitHub again and still writes the snapshot and
+    builds the result itself. Prints and records nothing. False when nothing
+    was started (no repository, no token, or one already running).
+    """
+    repo_owner, repo_name = _repository(owner, repo)
+    token = resolved_github_rest_token(resolved_integrations)
+    if not repo_owner or not repo_name or not token:
+        return False
+    window = _window(days)
+
+    def work() -> PrefetchedAnalysis:
+        now = datetime.now(UTC)
+        analysis = analyze_repository(repo_owner, repo_name, token=token, days=window, now=now)
+        return PrefetchedAnalysis(analysis=analysis, now=now)
+
+    request = analysis_request(repo_owner, repo_name, days=window, token=token)
+    return start_analysis_prefetch(request, work)
+
+
+def _missing_token_message(repository: str) -> str:
+    return f"Connect or reconnect GitHub in the OpenSRE app before analyzing {repository}. End the turn without retrying."
+
+
+def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
+    gh = sources.get("github", {})
+    if not gh:
+        return {}
+    params = github_creds(gh)
+    for key in ("owner", "repo"):
+        value = str(gh.get(key) or "").strip()
+        if value:
+            params[key] = value
+    return params
+
+
+def _console(context: Any) -> Any:
+    """The terminal for progress lines while GitHub is read, or None when there is none.
+
+    Only progress is printed there; the figures always travel in the result.
+    A headless run (scheduled loop, gateway) carries a capture console
+    and gets no progress lines.
+    """
+    if context is None:
+        return None
+    try:
+        console = action_context_from_agent_context(context).console
+    except RuntimeError:
+        return None
+    return console if getattr(console, "is_terminal", False) else None
+
+
+def _map_evidence(evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]) -> None:
+    if output.get("success"):
+        record_evidence_entry(
+            evidence,
+            source=TOOL_NAME,
+            label="GitHub CI reliability",
+            summary=str(output.get("summary") or ""),
+        )
+
+
+def report_text_from_snapshot(
+    owner: str, repo: str, *, days: int = _DEFAULT_WINDOW_DAYS, include_benchmarks: bool = True
+) -> tuple[str, str]:
+    """``(markdown, generated_at)`` from today's snapshot, or ``("", "")`` when none.
+
+    Compact: the cost sentence, key results and the comparison, without the
+    counts appendix. Reads saved snapshots only; never resolves a token or
+    starts a live fetch.
+    """
+    now = datetime.now(UTC)
+    # The scheduled loop saves its own window; a same-day loop report counts too.
+    for window in dict.fromkeys((days, LOOP_WINDOW_DAYS)):
+        snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=window, now=now)
+        if snapshot is not None:
+            break
+    else:
+        return "", ""
+    saved = snapshot.get("report")
+    if not isinstance(saved, dict):
+        return "", ""
+    try:
+        report = report_from_dict(saved)
+    except TypeError:
+        # A snapshot written before a report-shape change; treat it as absent.
+        return "", ""
+    text = render_markdown(report, compact=True)
+    if include_benchmarks:
+        compare = comparison_markdown(report, peer_benchmarks(report))
+        text = f"{text}\n\n{compare}"
+    return text.strip(), str(snapshot.get("generated_at", ""))
+
+
+def _benchmarks_payload(report: CiAnalyticsReport) -> dict[str, Any]:
+    """The peer columns of the comparison: benchmark figures shipped with the product."""
+    peers = peer_benchmarks(report)
+    return {
+        "benchmarks": [
+            {"owner": item.owner, "repo": item.repo, "figures": dict(item.figures)}
+            for item in peers
+        ],
+        "benchmarks_measured_on": MEASURED_ON.isoformat(),
+    }
+
+
+def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> dict[str, Any]:
+    """The tool's return for ``report``: every figure as data, no rendered report.
+
+    Presentation belongs to the caller (the skill's report template); the
+    tool ships the labelled values it needs — ``headline``, ``key_results``,
+    ``comparison_figures`` for the repository's own column, ``benchmarks``
+    for the peer columns — beside the raw counts.
+    """
+    summary = (
+        f"{owner}/{repo}: {report.executions} runs in {window} days, "
+        f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
+        f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
+        f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
+        f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
+    )
+    return {
+        "source": _SOURCE,
+        "success": True,
+        "owner": owner,
+        "repo": repo,
+        "default_branch": report.default_branch,
+        "window_days": window,
+        "summary": summary,
+        "headline": headline(report),
+        "key_results": key_results_payload(report),
+        "comparison_figures": comparison_figures(report),
+        **report_payload(report),
+        **_benchmarks_payload(report),
+    }
+
+
+@tool(
+    name=TOOL_NAME,
+    source=_SOURCE,
+    display_name="Analyze CI reliability",
+    compact_description="Measure recent GitHub Actions reliability and developer wait time.",
+    description=(
+        "Read a repository's recent GitHub Actions history and report CI/CD "
+        "reliability KPIs: executions, PR failure rate, failures classified as "
+        "CI-caused (same commit passed later) versus source-code, developer time "
+        "blocked by unreliable CI on merged PRs, and default-branch red time. "
+        "Read-only. Every analysis reads GitHub Actions and needs a token; a "
+        "saved snapshot is written for the scheduled loop, never used to answer "
+        "here. Every result also carries the comparison figures for "
+        "langchain-ai/langchain and anomalyco/opencode shipped with the product, so "
+        "a first run compares as well as a later one. It cannot be turned off, so "
+        "never offer to skip it. The tool computes and prints nothing: it returns "
+        "figures only (headline, key_results, comparison_figures, benchmarks, raw "
+        "counts), and the caller writes the report from them; never rerun the "
+        "analysis to fetch one figure."
+    ),
+    use_cases=[
+        "Analyze a repository's CI/CD performance and reliability",
+        "How much developer time does flaky CI cost us",
+        "How often does CI fail on pull requests in owner/repo",
+        "How long was main broken last month",
+    ],
+    anti_examples=[
+        "Fixing a failing check (use fix_github_pr_ci)",
+        "Listing currently failing checks on open PRs or branches (use scan_github_ci_health)",
+        "Reading one workflow run's logs (use the GitHub Actions log tools)",
+    ],
+    requires=[],
+    outputs={
+        "executions": "Completed workflow runs counted in the window",
+        "pr_failure_rate": "Failed share of PR-triggered runs",
+        "reliability_failures": "Failures that passed later on the identical commit",
+        "blocked_minutes": "Wall-clock minutes merged PRs waited past their expected green time",
+        "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
+        "red_hours": "Hours the default branch's latest commit had a failing check",
+        "headline": "One sentence naming the biggest cost",
+        "key_results": "The takeaway rows, red time first",
+        "comparison_figures": "The analyzed repository's column of the comparison table, by metric",
+        "developers_affected": "Developers whose merged PRs waited inside working hours",
+        "mean_recovery_hours": "Mean time back to green on the default branch; null when never",
+        "benchmarks": (
+            "The peer columns of the comparison table: langchain-ai/langchain and "
+            "anomalyco/opencode figures shipped with the product, by metric"
+        ),
+        "coverage_notices": "Gaps in the analyzed history the report must name",
+    },
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    accepts_runtime_context=True,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "owner": {
+                "type": "string",
+                "description": "Repository owner. Defaults to the current checkout's origin.",
+            },
+            "repo": {
+                "type": "string",
+                "description": "Repository name. Defaults to the current checkout's origin.",
+            },
+            "days": {
+                "type": "integer",
+                "minimum": _MIN_WINDOW_DAYS,
+                "maximum": _MAX_WINDOW_DAYS,
+                "description": f"Window in days, default {_DEFAULT_WINDOW_DAYS}.",
+            },
+            "workspace": {
+                "type": "string",
+                "description": "Local checkout used to detect owner/repo when not given.",
+            },
+            "github_token": {"type": "string"},
+        },
+        "additionalProperties": False,
+    },
+    is_available=_available,
+    extract_params=github_tool_params(_extract_params),
+    injected_params=GITHUB_INJECTED_PARAMS,
+    evidence_mapper=_map_evidence,
+)
+@require_webapp_github
+def analyze_github_ci_reliability(
+    owner: str | None = None,
+    repo: str | None = None,
+    days: int | None = None,
+    workspace: str | None = None,
+    github_token: str | None = None,
+    context: Any = None,
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    """Compute CI reliability KPIs for one repository window and return them as data.
+
+    The result carries every figure and no rendered report; nothing is printed
+    except progress lines while GitHub is read in the interactive shell. The
+    comparison figures shipped with the product always ride along, so a first
+    run compares as well as a hundredth and the comparison is not the model's
+    choice to make. Every analysis reads GitHub: a saved snapshot is written
+    for the scheduled loop, never used to answer here.
+    """
+    window = _window(days)
+    repo_owner, repo_name = _repository(owner, repo)
+    if not repo_owner or not repo_name:
+        detected = detect_git_remote_repo_scope(workspace)
+        if detected is not None:
+            repo_owner, repo_name = detected
+    if not repo_owner or not repo_name:
+        return tool_unavailable(
+            _SOURCE,
+            "owner/repo is required unless the workspace origin identifies a GitHub repository.",
+            response_text="I need a GitHub repository (owner/repo) to analyze.",
+        )
+    now = datetime.now(UTC)
+    console = _console(context)
+    token = (github_token or "").strip()
+    if not token:
+        repository = f"{repo_owner}/{repo_name}"
+        return missing_token_envelope(
+            _missing_token_message(repository),
+            blocked=f"the Actions history of {repository} can't be read",
+        )
+    if console is not None:
+        # Two-column lead matches the shell's reply gutter so the tool's lines
+        # hang with the agent's notes instead of breaking the transcript edge.
+        console.print(
+            f"  [dim]Reading GitHub Actions history for {escape(f'{repo_owner}/{repo_name}')}, "
+            f"last {window} days…[/dim]"
+        )
+    started = time.monotonic()
+    progress = None
+    if console is not None:
+
+        def progress(line: str) -> None:
+            console.print(f"  [dim]{escape(line)}[/dim]")
+
+    # The read started when this repository was picked, when its arguments
+    # match; any failure there leaves this call to read and report on its own.
+    request = analysis_request(repo_owner, repo_name, days=window, token=token)
+    prefetched = claim_analysis_prefetch(request)
+    if prefetched is not None:
+        analysis, now = prefetched.analysis, prefetched.now
+    else:
+        try:
+            analysis = analyze_repository(
+                repo_owner, repo_name, token=token, days=window, now=now, progress=progress
+            )
+        except (GitHubApiError, ValueError) as exc:
+            # A rate limit, a rejected token or an untrusted certificate is a
+            # fact about GitHub or this machine that the result already states;
+            # only an unexpected failure earns a stack in the shell.
+            operational = is_operational_failure(exc)
+            report_run_error(
+                exc,
+                tool_name=TOOL_NAME,
+                source=_SOURCE,
+                component="integrations.github.tools.ci_analytics.tool",
+                method="collect_runs",
+                severity="warning" if operational else "error",
+                extras={"owner": repo_owner, "repo": repo_name},
+                include_traceback=not operational,
+            )
+            return analysis_failure(exc, owner=repo_owner, repo=repo_name, now=datetime.now(UTC))
+    report = analysis.report
+    try:
+        write_snapshot(
+            snapshot_root(),
+            repo_owner,
+            repo_name,
+            now,
+            {
+                "generated_at": now.isoformat(),
+                "window_days": window,
+                "headline": headline(report),
+                "report": report_to_dict(report),
+                **report_payload(report),
+            },
+        )
+    except OSError:
+        # The analysis is the result; a snapshot that cannot be written only
+        # leaves the schedule card without today's report beside it.
+        logger.warning("Could not save the CI reliability snapshot", exc_info=True)
+    if console is not None:
+        console.print(
+            f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
+        )
+        console.print()
+    return _result(report, repo_owner, repo_name, window)
+
+
+__all__ = [
+    "report_text_from_snapshot",
+    "TOOL_NAME",
+    "analyze_github_ci_reliability",
+    "prefetch_ci_analysis",
+]

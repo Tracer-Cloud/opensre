@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from urllib.parse import urlencode
 
+from gateway.core.storage.events.repository import InMemoryHandledSlackEventRepository
 from gateway.transports.slack.transport.events_api.receiver import (
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
-    InMemorySlackEventDeduplicator,
     SlackHttpStatus,
     admit_slack_http_request,
     admit_slack_interactivity_request,
@@ -45,7 +45,7 @@ def _admit(payload: dict[str, object], *, dedup: object | None = None, sign: boo
         headers={SIGNATURE_HEADER: signature, TIMESTAMP_HEADER: _TIMESTAMP},
         body=body,
         signing_secret=_SECRET,
-        deduplicator=dedup or InMemorySlackEventDeduplicator(),
+        handled_events=dedup or InMemoryHandledSlackEventRepository(),
         now=_NOW,
     )
 
@@ -73,7 +73,7 @@ def test_unsigned_request_is_rejected_before_any_parsing() -> None:
 def test_a_retried_delivery_does_not_start_a_second_turn() -> None:
     """Slack retries on a slow or failed answer; the user must not see two replies."""
     # Arrange — same event_id delivered twice after the first turn was queued.
-    dedup = InMemorySlackEventDeduplicator()
+    dedup = InMemoryHandledSlackEventRepository()
 
     # Act.
     first = _admit(_MENTION, dedup=dedup)
@@ -164,7 +164,7 @@ def test_overlapping_deliveries_only_admit_one_turn() -> None:
     effects, and the spend.
     """
     # Arrange — nothing confirmed yet, as during a concurrent duplicate.
-    dedup = InMemorySlackEventDeduplicator()
+    dedup = InMemoryHandledSlackEventRepository()
 
     # Act.
     first = dedup.claim("Ev-overlap")
@@ -178,7 +178,7 @@ def test_overlapping_deliveries_only_admit_one_turn() -> None:
 def test_a_released_claim_is_available_again() -> None:
     """Release is the in-flight exit: the retry must be able to take it."""
     # Arrange / Act.
-    dedup = InMemorySlackEventDeduplicator()
+    dedup = InMemoryHandledSlackEventRepository()
     dedup.claim("Ev-released")
     dedup.release("Ev-released")
 

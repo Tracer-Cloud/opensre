@@ -1,10 +1,10 @@
-"""Code shared across multiple surfaces.
+"""Code both terminal surfaces build on.
 
-Add modules here only when concrete duplication appears between
-``surfaces/cli/`` and ``surfaces/interactive_shell/``. The intent is a *safety valve*, not a
-default home — if you're tempted to add a module here, double-check
-whether it actually belongs in ``core/``, ``tools/``, or
-``platform/`` first.
+``surfaces/cli`` and ``surfaces/interactive_shell`` are peers and never import
+each other; anything they share lives here — the terminal tier (``terminal/``),
+LLM provider setup (``llm_setup/``), error rendering (``error_handling/``),
+doctor checks and the bundled demo alert — or in a lower layer. Prefer ``core``,
+``platform`` or ``config`` when the code has no terminal or surface concern.
 """
 
 from __future__ import annotations

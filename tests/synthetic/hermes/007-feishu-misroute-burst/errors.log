@@ -1,7 +1,0 @@
-2026-05-11 16:02:03,860 INFO gateway.platforms.feishu: [Feishu] Received raw message type=text message_id=om_xxx
-2026-05-11 16:02:03,860 INFO gateway.platforms.feishu: [Feishu] Inbound group message received: id=om_xxx type=text chat_id=oc_4dc303840bf4451a8794a92ce0cae15c sender=user:ou_xxx
-2026-05-11 16:02:13,611 WARNING gateway.platforms.feishu: reply route fallback: message_id missing on event, defaulting to home channel — message dispatched to sender DM instead of group oc_4dc303840bf4451a8794a92ce0cae15c
-2026-05-11 16:04:17,000 WARNING gateway.platforms.feishu: reply route fallback: message_id missing on event, defaulting to home channel — message dispatched to sender DM instead of group oc_4dc303840bf4451a8794a92ce0cae15c
-2026-05-11 16:06:30,000 WARNING gateway.platforms.feishu: reply route fallback: message_id missing on event, defaulting to home channel — message dispatched to sender DM instead of group oc_4dc303840bf4451a8794a92ce0cae15c
-2026-05-11 16:08:42,000 WARNING gateway.platforms.feishu: reply route fallback: message_id missing on event, defaulting to home channel — message dispatched to sender DM instead of group oc_4dc303840bf4451a8794a92ce0cae15c
-2026-05-11 16:10:55,000 WARNING gateway.platforms.feishu: reply route fallback: message_id missing on event, defaulting to home channel — message dispatched to sender DM instead of group oc_4dc303840bf4451a8794a92ce0cae15c

@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from core.agent_harness.turns.chat_api import ChatTurnBindings, dispatch_chat_turn
-from core.agent_harness.turns.headless_dispatch import HeadlessAgent, NullToolProvider
+from core.agent_harness.turns.headless_adapters import NullToolProvider
+from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
 
@@ -20,7 +21,6 @@ def _stub_turn_result(*, text: str = "ok") -> TurnResult:
             handled=True,
         ),
         assistant_response_text=text,
-        llm_run=object(),
     )
 
 
@@ -33,8 +33,6 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
         session: Any,
         *,
         execute_actions: Any,
-        answer: Any,
-        gather: Any,
         accounting: Any,
         confirm_fn: Any = None,
         is_tty: bool | None = None,
@@ -46,8 +44,6 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
                 "message": message,
                 "session": session,
                 "execute_actions": execute_actions,
-                "answer": answer,
-                "gather": gather,
                 "accounting": accounting,
                 "confirm_fn": confirm_fn,
                 "is_tty": is_tty,
@@ -61,15 +57,11 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
 
     session = object()
     execute = object()
-    answer = object()
-    gather = object()
     accounting = object()
     confirm = object()
     output = object()
     bindings = ChatTurnBindings(
         execute_actions=execute,  # type: ignore[arg-type]
-        answer=answer,  # type: ignore[arg-type]
-        gather=gather,  # type: ignore[arg-type]
         accounting=accounting,  # type: ignore[arg-type]
         confirm_fn=confirm,  # type: ignore[arg-type]
         is_tty=False,
@@ -84,8 +76,6 @@ def test_dispatch_chat_turn_forwards_bindings_to_run_turn(monkeypatch: Any) -> N
         "message": "hello",
         "session": session,
         "execute_actions": execute,
-        "answer": answer,
-        "gather": gather,
         "accounting": accounting,
         "confirm_fn": confirm,
         "is_tty": False,
@@ -103,11 +93,11 @@ def test_headless_agent_dispatch_uses_dispatch_chat_turn(monkeypatch: Any) -> No
         return expected
 
     monkeypatch.setattr(
-        "core.agent_harness.turns.headless_dispatch.dispatch_chat_turn",
+        "core.agent_harness.turns.headless_agent.dispatch_chat_turn",
         _fake_dispatch,
     )
 
-    agent = HeadlessAgent(tools=NullToolProvider())
+    agent = InMemoryHeadlessBuild().agent(tools=NullToolProvider())
     result = agent.dispatch("ping")
 
     assert result is expected
@@ -124,10 +114,13 @@ def test_only_chat_api_module_defines_dispatch_chat_turn() -> None:
     import ast
     from pathlib import Path
 
+    from tests.shared.product_sources import product_python_files
+
     root = Path(__file__).resolve().parents[3]
     definers: list[str] = []
-    for path in root.rglob("*.py"):
-        if "tests" in path.parts or ".venv" in path.parts:
+    # Skips dot-directories, so a git worktree under ``.claude/`` is never ours.
+    for path in product_python_files(root):
+        if "tests" in path.relative_to(root).parts:
             continue
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -135,6 +128,6 @@ def test_only_chat_api_module_defines_dispatch_chat_turn() -> None:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name == "dispatch_chat_turn":
-                definers.append(str(path.relative_to(root)))
+                definers.append(path.relative_to(root).as_posix())
 
     assert definers == ["core/agent_harness/turns/chat_api.py"], definers

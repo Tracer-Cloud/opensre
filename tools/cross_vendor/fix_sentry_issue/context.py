@@ -8,12 +8,13 @@ to the coding agent, which adds its own safety rules + prompt-injection guard.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http import HTTPStatus
 
 import httpx
 
+from infrastructure.safety.masking import MaskingPolicy, MaskingRules
 from integrations.sentry import SentryConfig, get_sentry_issue, sentry_config_from_env
 from integrations.sentry.issue_url import parse_sentry_issue_url
-from platform.masking import MaskingContext, MaskingPolicy
 from tools.cross_vendor.fix_sentry_issue.errors import (
     ERR_INVALID_INPUT,
     ERR_ISSUE_NOT_FOUND,
@@ -45,7 +46,7 @@ def _resolve_config() -> SentryConfig:
 
 def _build_task(issue: dict) -> str:
     """Compact a Sentry issue dict into a short, masked coding task for Pi."""
-    masker = MaskingContext(MaskingPolicy.from_env())
+    masker = MaskingRules(MaskingPolicy.from_env())
 
     def field(value: object, *, limit: int | None = None) -> str:
         text = str(value or "").strip()
@@ -99,11 +100,11 @@ def _fetch_issue(config: SentryConfig, issue_id: str) -> dict:
         issue = get_sentry_issue(config=config, issue_id=issue_id)
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
-        if status == 404:
+        if status == HTTPStatus.NOT_FOUND:
             raise FixIssueError(
                 ERR_ISSUE_NOT_FOUND, f"Sentry issue {issue_id} not found (404). Check the URL."
             ) from exc
-        if status in (401, 403):
+        if status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
             raise FixIssueError(
                 ERR_SENTRY_UNAVAILABLE,
                 f"Sentry rejected the request ({status}); check SENTRY_AUTH_TOKEN access.",

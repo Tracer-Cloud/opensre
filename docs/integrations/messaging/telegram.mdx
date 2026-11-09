@@ -1,0 +1,255 @@
+---
+title: "Telegram"
+description: "Chat with the agent and deliver alerts and reports to a Telegram chat or channel."
+---
+
+## Overview
+
+OpenSRE's Telegram integration delivers agent messages, scheduled reports, and alarms to any chat your bot has been added to — useful for mobile-first on-call rotations and personal alerting. With the gateway running, you can also DM the agent for two-way chat.
+
+Start the interactive shell with `opensre` (no subcommand). Slash commands below are run from that REPL.
+
+## Prerequisites
+
+- A Telegram account.
+- The Telegram mobile or desktop app, signed in.
+- The chat (group, channel, or direct message) where you want messages delivered.
+
+## Setup
+
+### Option 1: CLI setup (recommended)
+
+```bash
+opensre integrations setup telegram
+```
+
+Interactive shell: `/integrations setup telegram`.
+
+You can also ask: “Can you configure Telegram for me?”
+
+1. **Connect your bot.** Setup links to [BotFather](https://t.me/BotFather) and explains how to create a bot or retrieve an existing token before asking you to paste it into a hidden input.
+2. **Choose a chat.** Press Start in your bot's private chat, or add it to your group and send the command shown by setup. OpenSRE finds recent chats and lets you choose by name. For a public channel, you can also enter its `@name`.
+3. **Verify and save.** OpenSRE checks the bot and selected chat, saves the connection, and shows a verified summary. Failed checks can be retried without starting over. Press Ctrl+C to cancel.
+
+If chat discovery finds nothing, send a new message and choose **look again**. If the bot already uses a webhook, setup keeps it active; use a public `@channelname` or an existing chat ID instead.
+
+<Note>
+Setup confirms the bot can *see* the chat, not that it may post there. For a channel the bot still needs the **Post Messages** permission.
+</Note>
+
+### Option 2: Environment variables
+
+```bash
+TELEGRAM_BOT_TOKEN=<numeric-id>:<token-secret>
+TELEGRAM_DEFAULT_CHAT_ID=<chat-id>
+TELEGRAM_ALLOWED_USERS=123456789   # for two-way gateway chat
+```
+
+| Variable | Description |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Bot HTTP API token from BotFather. Required. |
+| `TELEGRAM_DEFAULT_CHAT_ID` | Default delivery destination. Required for delivery to work. |
+| `TELEGRAM_ALLOWED_USERS` | Comma-separated **numeric** user ids allowed for gateway chat. |
+
+<Note>
+**Credential resolution.** Telegram delivery surfaces resolve the bot token from the integration store first, then `resolve_env_credential("TELEGRAM_BOT_TOKEN")` (process env, then the credentials file). Chat id is non-secret: `--chat-id` → store `default_chat_id` → `TELEGRAM_DEFAULT_CHAT_ID` env (plain `os.getenv`).
+</Note>
+
+## Credentials
+
+### Create a bot with BotFather
+
+[BotFather](https://t.me/BotFather) is Telegram's official bot for creating other bots.
+
+1. Open Telegram and search for `@BotFather`. Open the chat and tap **Start**.
+2. Send `/newbot`.
+3. When prompted, send a **display name** for your bot (e.g. `OpenSRE Alerts`).
+4. Send a **username** that ends in `bot` (e.g. `opensre_alerts_bot`). It must be globally unique.
+5. BotFather replies with an **HTTP API token** of the form `<numeric-id>:<token-secret>`. Copy it — treat it like a password.
+
+<Tip>
+You can change the bot name, picture, and description later by sending `/mybots` to BotFather and selecting your bot.
+</Tip>
+
+### Add the bot to a chat
+
+<Tabs>
+  <Tab title="Group chat">
+    1. Open the group where you want messages to land.
+    2. Tap the group name → **Add members** → search for your bot username → **Add**.
+    3. By default, bots in groups only see messages addressed to them, which is fine for delivery-only.
+  </Tab>
+  <Tab title="Channel">
+    1. Open your channel and tap its name.
+    2. Tap **Administrators → Add Administrator**, search for your bot, and add it.
+    3. Grant the **Post Messages** permission. No other admin permissions are required.
+  </Tab>
+  <Tab title="Direct message">
+    Open a chat with your bot directly (search its username) and send `/start`. The bot will not reply, but Telegram registers the chat so the bot can message you.
+  </Tab>
+</Tabs>
+
+### Find your `chat_id`
+
+The **chat ID** identifies where the bot should post. It is required — without it the bot has nowhere to send anything.
+
+<Tip>
+**Posting to a public channel?** Skip this step — setup accepts the channel's `@name` (for example `@acme_alerts`) directly. Private groups and DMs have no `@name`, so they need the steps below.
+</Tip>
+
+1. Send any message in the destination chat — for a channel, post anything; for a DM, send `/start` to your bot.
+2. In a browser, open:
+
+   ```
+   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+   ```
+
+3. In the JSON response, look for a `chat.id` field:
+
+   | Chat type | Format | Example |
+   | --- | --- | --- |
+   | Direct message with a user | Positive integer | `123456789` |
+   | Group | Negative integer | `-987654321` |
+   | Large group or channel | Negative integer starting with `-100` | `-1001234567890` |
+
+   Copy the entire value, **including the leading minus sign** for groups and channels.
+
+<Note>
+If `getUpdates` returns an empty array, post a fresh message in the chat and reload — Telegram only buffers recent updates.
+</Note>
+
+## Telegram tools
+
+| Tool | What it does |
+| --- | --- |
+| `telegram_send_message` | Send a message to the default chat or an explicit `chat_id` |
+
+```json
+{
+  "name": "telegram_send_message",
+  "arguments": {
+    "chat_id": "-1001234567890",
+    "message": "DB CPU is back below 70%; keeping the incident open for 10 minutes."
+  }
+}
+```
+
+The tool resolves the bot token from the integration store, then `resolve_env_credential("TELEGRAM_BOT_TOKEN")` (env then keyring). If `chat_id` is omitted, it sends through the configured `default_chat_id`.
+
+Delivery is an external side effect. Its result includes a stable `status`, `sent`, `error_type`, `chat_id`, `reply_to_message_id`, and `message_length` shape so follow-up tool calls can tell configuration failures from Telegram delivery failures.
+
+### Two-way chat gateway (DM text)
+
+> **Skip this if you only need outbound delivery** (alerts, cron reports). Setup + verify are sufficient for that.
+
+v1 supports **text-only direct messages** (no groups, voice, or attachments).
+
+#### Allow your Telegram user
+
+Find your **numeric user id** with [@userinfobot](https://t.me/userinfobot), then:
+
+```bash
+opensre messaging allow -p telegram -u 123456789
+# or: TELEGRAM_ALLOWED_USERS=123456789
+```
+
+Interactive shell: `/messaging allow -p telegram -u 123456789`.
+
+<Warning>
+  Use the **numeric user id** (Telegram's `from.id`), not a `@username` and not the bot handle. Inbound authorization only ever matches the numeric id. The CLI rejects non-numeric Telegram ids, but older entries may still be wrong — check with `/messaging status -p telegram`.
+</Warning>
+
+#### DM pairing (optional)
+
+```bash
+opensre messaging pair -p telegram
+```
+
+Then DM your bot and send `/pair <code>`.
+
+```bash
+opensre messaging status -p telegram
+opensre messaging revoke -p telegram -u 123456789
+```
+
+#### Start the gateway daemon
+
+```bash
+opensre gateway start
+```
+
+| Command | What it does |
+| --- | --- |
+| `opensre gateway start` | Start the daemon (web, Telegram chat, task scheduler) |
+| `opensre gateway start -f` | Run attached to the terminal instead |
+| `opensre gateway status` | Show the daemon and each component's state |
+| `opensre gateway logs [-n N] [-f]` | Print (or follow) the daemon logs |
+| `opensre gateway stop` | Stop the daemon |
+
+Also available in the REPL via `/gateway start|status|logs|stop`.
+
+Logs: `~/.opensre/gateway/gateway.log`. If Telegram is not configured the daemon still runs the other components and status shows `telegram: not configured`.
+
+The gateway uses long polling — no public HTTPS URL or port forwarding is required for local use. Built-in commands: `/new`, `/help`, `/pair <code>`.
+
+The gateway uses the same headless agent harness as the interactive shell: the agent grounds its prompt in your configured integrations and calls their tools to answer.
+
+Cron deliveries use the outbound-only path — they do not require the gateway process.
+
+#### Deploying the gateway to a remote host
+
+Running the gateway on a server with `make deploy-gateway` (EC2) is different from local use: **the remote host cannot read your local machine's keychain**. Guided setup stores the bot token (and your LLM API key) in the system keyring, which does not travel to the deployed instance.
+
+So `make deploy-gateway` validates that the required secrets are present as **plaintext env vars** in `.env`:
+
+```bash
+TELEGRAM_BOT_TOKEN=<numeric-id>:<token-secret>
+TELEGRAM_ALLOWED_USERS=123456789
+ANTHROPIC_API_KEY=...                    # or your provider's key env
+```
+
+If deploy reports `MISSING: TELEGRAM_BOT_TOKEN` even though local setup succeeded, copy the values into `.env` (or `.env.deploy.example`) for the deploy.
+
+### Scheduled delivery
+
+Configure Telegram first (setup + verify — the gateway is **not** required).
+
+#### Cron (recurring reports)
+
+```bash
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
+  --tz Asia/Kolkata --provider telegram --chat-id <chat_id>
+```
+
+See [Cron](/platform/cron).
+
+## Verify
+
+```bash
+opensre integrations verify telegram
+```
+
+Interactive shell: `/integrations verify telegram` or `/verify telegram`.
+
+This calls Telegram's [`getMe`](https://core.telegram.org/bots/api#getme) endpoint. On success it reports the bot `@username`. It does **not** start a listening process and does not test two-way communication or delivery chat routing.
+
+## Troubleshooting
+
+Verify only calls `getMe`, so it surfaces token-validity errors but cannot detect chat-routing problems. Delivery-time errors appear in OpenSRE logs as `[telegram] post message failed: <description>`.
+
+| Symptom | Fix |
+| --- | --- |
+| **`Missing bot_token`** | Set `TELEGRAM_BOT_TOKEN` and restart long-running processes. |
+| **`401 Unauthorized`** | Token invalid/revoked — regenerate in BotFather and update credentials. |
+| **`chat not found` (delivery)** | Re-add the bot and re-fetch `chat_id` from `getUpdates`. |
+| **`bot was kicked…`** | Re-add the bot; channels need **Post Messages** admin permission. |
+| **Messages never arrive, but verify passes** | Re-fetch `chat_id` — groups upgraded to `-100…` prefixes may have changed. |
+| **Gateway: `User <id> is not in the allowed users list`** | Allow the numeric user id or complete `/messaging pair -p telegram`. |
+
+## Security
+
+- Treat the bot token like a password; prefer `~/.opensre/credentials.json`.
+- Use **numeric** user ids on the allow-list — never `@username`.
+- Prefer a dedicated bot for OpenSRE.
+- For remote deploy, put secrets in plaintext `.env` on the host (keyring does not travel).
+- Store secrets out of source control.

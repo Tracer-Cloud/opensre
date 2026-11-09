@@ -8,8 +8,14 @@ from urllib.parse import urlparse
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 
-from config.config import get_tracer_base_url
+from config.constants.azure import (
+    AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT,
+    AZURE_MAX_RESULTS_DEFAULT,
+    AZURE_MAX_RESULTS_HARD_LIMIT,
+)
 from config.strict_config import StrictConfigModel
+from config.tracer_urls import get_tracer_base_url
+from infrastructure.text.url_validation import validate_https_or_loopback_http_url
 from integrations._validators import (
     normalize_bearer,
     normalize_bool_str,
@@ -17,17 +23,10 @@ from integrations._validators import (
     normalize_url,
     normalize_with_default,
 )
-from platform.common.url_validation import validate_https_or_loopback_http_url
 
 _LOCAL_GRAFANA_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
-DEFAULT_GROUNDCOVER_MCP_URL = "https://mcp.groundcover.com/api/mcp"
-DEFAULT_GROUNDCOVER_TIMEZONE = "UTC"
 DEFAULT_DATADOG_SITE = "datadoghq.com"
 DEFAULT_CORALOGIX_BASE_URL = "https://api.coralogix.com"
-DEFAULT_OPSGENIE_BASE_URLS: dict[str, str] = {
-    "us": "https://api.opsgenie.com",
-    "eu": "https://api.eu.opsgenie.com",
-}
 DEFAULT_INCIDENT_IO_BASE_URL = "https://api.incident.io"
 DEFAULT_PAGERDUTY_BASE_URL = "https://api.pagerduty.com"
 
@@ -141,61 +140,6 @@ class DatadogIntegrationConfig(StrictConfigModel):
         }
 
 
-class GroundcoverIntegrationConfig(StrictConfigModel):
-    """Normalized groundcover credentials used by resolution and verification flows.
-
-    groundcover is reached through its public streamable-HTTP MCP endpoint. The
-    bearer ``api_key`` is a read-only service-account token; ``tenant_uuid`` and
-    ``backend_id`` are optional routing selectors only needed when the account
-    has multiple workspaces/backends.
-    """
-
-    api_key: str = ""
-    mcp_url: str = DEFAULT_GROUNDCOVER_MCP_URL
-    tenant_uuid: str = ""
-    backend_id: str = ""
-    timezone: str = DEFAULT_GROUNDCOVER_TIMEZONE
-    integration_id: str = ""
-
-    _normalize_api_key = field_validator("api_key", mode="before")(normalize_bearer())
-    _normalize_strs = field_validator("tenant_uuid", "backend_id", "integration_id", mode="before")(
-        normalize_str()
-    )
-    _normalize_timezone = field_validator("timezone", mode="before")(
-        normalize_with_default(DEFAULT_GROUNDCOVER_TIMEZONE)
-    )
-
-    @field_validator("mcp_url", mode="before")
-    @classmethod
-    def _normalize_mcp_url(cls, value: object) -> str:
-        normalized = normalize_url(DEFAULT_GROUNDCOVER_MCP_URL)(value)
-        return validate_https_or_loopback_http_url(
-            normalized, service_name="groundcover", field_name="mcp_url"
-        )
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.api_key and self.mcp_url)
-
-    @property
-    def request_headers(self) -> dict[str, str]:
-        """HTTP headers for the MCP transport.
-
-        Only auth and timezone are always sent; tenant/backend routing headers
-        are added when configured so single-workspace accounts work with no
-        routing while multi-workspace accounts stay scoped to one context.
-        """
-        headers: dict[str, str] = {
-            "Authorization": f"Bearer {self.api_key}",
-            "X-Timezone": self.timezone,
-        }
-        if self.tenant_uuid:
-            headers["X-Tenant-UUID"] = self.tenant_uuid
-        if self.backend_id:
-            headers["X-Backend-Id"] = self.backend_id
-        return headers
-
-
 class CoralogixIntegrationConfig(StrictConfigModel):
     """Normalized Coralogix credentials used by resolution and verification flows."""
 
@@ -286,31 +230,6 @@ class SlackWebhookConfig(StrictConfigModel):
         if hostname != "slack.com" and not hostname.endswith(".slack.com"):
             raise ValueError("Slack webhook host must be a Slack domain.")
         return self
-
-
-class OpsGenieIntegrationConfig(StrictConfigModel):
-    """Normalized OpsGenie credentials used by resolution and verification flows."""
-
-    api_key: str
-    region: str = "us"
-    integration_id: str = ""
-
-    @field_validator("region", mode="before")
-    @classmethod
-    def _normalize_region(cls, value: object) -> str:
-        raw = str(value or "us").strip().lower()
-        return raw if raw in DEFAULT_OPSGENIE_BASE_URLS else "us"
-
-    @property
-    def base_url(self) -> str:
-        return DEFAULT_OPSGENIE_BASE_URLS.get(self.region, DEFAULT_OPSGENIE_BASE_URLS["us"])
-
-    @property
-    def headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"GenieKey {self.api_key}",
-            "Content-Type": "application/json",
-        }
 
 
 class PagerDutyIntegrationConfig(StrictConfigModel):
@@ -996,6 +915,10 @@ class SlackBotConfig(StrictConfigModel):
         description="Slack signing secret for webhook HMAC verification. MUST be set for Events API HTTP.",
     )
     app_id: str = ""
+    default_chat_id: str = Field(
+        default="",
+        description="Default channel ID (C…) for scheduled outbound delivery.",
+    )
     identity_policy: dict[str, object] | None = Field(
         default=None,
         description="Messaging identity policy for inbound security (MessagingIdentityPolicy shape)",
@@ -1112,14 +1035,14 @@ class AzureIntegrationConfig(StrictConfigModel):
 
     workspace_id: str
     access_token: str
-    endpoint: str = "https://api.loganalytics.io"
+    endpoint: str = AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT
     tenant_id: str = ""
     subscription_id: str = ""
-    max_results: int = 100
+    max_results: int = AZURE_MAX_RESULTS_DEFAULT
     integration_id: str = ""
 
     _normalize_endpoint = field_validator("endpoint", mode="before")(
-        normalize_url("https://api.loganalytics.io")
+        normalize_url(AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT)
     )
     _normalize_strs = field_validator(
         "tenant_id", "subscription_id", "integration_id", mode="before"
@@ -1131,8 +1054,8 @@ class AzureIntegrationConfig(StrictConfigModel):
         try:
             v: int = int(value)  # type: ignore[arg-type,call-overload]
         except (TypeError, ValueError):
-            return 100
-        return max(1, min(v, 500))
+            return AZURE_MAX_RESULTS_DEFAULT
+        return max(1, min(v, AZURE_MAX_RESULTS_HARD_LIMIT))
 
 
 class OpenObserveIntegrationConfig(StrictConfigModel):

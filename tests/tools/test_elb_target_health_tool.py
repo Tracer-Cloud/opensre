@@ -7,7 +7,13 @@ from typing import Any
 import pytest
 
 from integrations.aws.topology_helper import extract_target_health_params
-from integrations.elb.tools.elb_target_health_tool import _is_available, get_elb_target_health
+from integrations.elb.tools.elb_target_health_tool import (
+    _is_available,
+    get_elb_target_health,
+)
+from integrations.elb.tools.elb_target_health_tool._evidence import (
+    map_get_elb_target_health as _map_get_elb_target_health,
+)
 
 
 class _FakeAWSBackend:
@@ -233,3 +239,78 @@ def test_real_path_propagates_describe_groups_failure(
     out = get_elb_target_health(target_group_arn="tg-1")
     assert out["available"] is False
     assert "Failed" in out["error"]
+
+
+class TestMapGetElbTargetHealth:
+    def test_records_entry_with_unhealthy_states(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_elb_target_health(
+            evidence,
+            {
+                "available": True,
+                "healthy_targets": [{"instance_id": "i-1"}, {"instance_id": "i-2"}],
+                "unhealthy_targets": [{"instance_id": "i-3"}],
+                "target_groups": [{"TargetGroupArn": "tg-1"}],
+                "summary": {"target_group_count": 1, "unhealthy_states": ["draining"]},
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_elb_target_health"
+        assert (
+            entries[0]["summary"]
+            == "2 healthy, 1 unhealthy target(s) across 1 target group(s), states: draining"
+        )
+
+    def test_records_zero_unhealthy_as_a_genuine_finding(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_elb_target_health(
+            evidence,
+            {
+                "available": True,
+                "healthy_targets": [{"instance_id": "i-1"}],
+                "unhealthy_targets": [],
+                "target_groups": [{"TargetGroupArn": "tg-1"}],
+                "summary": {"target_group_count": 1, "unhealthy_states": []},
+            },
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"]
+            == "1 healthy, 0 unhealthy target(s) across 1 target group(s)"
+        )
+
+    def test_records_nothing_when_no_targets(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_elb_target_health(
+            evidence,
+            {"available": True, "healthy_targets": [], "unhealthy_targets": []},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        """available=False also covers the partial-coverage case (api_errors
+        non-empty) -- the tool sets it deliberately, so the mapper must not
+        cite partial data as if it were complete."""
+        evidence: dict[str, Any] = {}
+
+        _map_get_elb_target_health(
+            evidence,
+            {
+                "available": False,
+                "healthy_targets": [{"instance_id": "i-1"}],
+                "unhealthy_targets": [],
+                "error": "Partial coverage: 1/2 target groups failed.",
+            },
+            {},
+        )
+
+        assert "catalog_entries" not in evidence

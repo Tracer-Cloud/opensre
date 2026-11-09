@@ -1,10 +1,13 @@
 """Unit tests for the ClickHouse integration module."""
 
+from unittest.mock import MagicMock, patch
+
 from integrations.clickhouse import (
     ClickHouseConfig,
     ClickHouseValidationResult,
     build_clickhouse_config,
     clickhouse_config_from_env,
+    get_query_activity,
 )
 
 
@@ -144,3 +147,49 @@ class TestClickHouseValidationResult:
         result = ClickHouseValidationResult(ok=False, detail="Connection refused.")
         assert result.ok is False
         assert result.detail == "Connection refused."
+
+
+class TestGetQueryActivityIncludesFailedQueries:
+    """Regression: WHERE type = 'QueryFinish' silently excluded every failed
+    query (ClickHouse logs those as ExceptionBeforeStart/
+    ExceptionWhileProcessing, never QueryFinish), even though the tool is
+    documented to surface "recent slow / failed queries" -- confirmed live
+    against a real ClickHouse instance, where a failing query never appeared
+    in the results no matter the limit."""
+
+    def test_where_clause_does_not_filter_to_query_finish_only(self) -> None:
+        mock_client = MagicMock()
+        mock_client.query.return_value = MagicMock(named_results=lambda: iter([]))
+        with patch("integrations.clickhouse._get_client", return_value=mock_client):
+            config = ClickHouseConfig(host="ch.example.com")
+            get_query_activity(config, limit=10)
+
+        sql = mock_client.query.call_args.args[0]
+        assert "type = 'QueryFinish'" not in sql
+        assert "type != 'QueryStart'" in sql
+
+    def test_returns_a_real_exception_before_start_row(self) -> None:
+        mock_client = MagicMock()
+        mock_client.query.return_value = MagicMock(
+            named_results=lambda: iter(
+                [
+                    {
+                        "query_id": "q1",
+                        "type": "ExceptionBeforeStart",
+                        "query": "SELECT * FROM missing_table",
+                        "query_duration_ms": 0,
+                        "read_rows": 0,
+                        "read_bytes": 0,
+                        "result_rows": 0,
+                        "memory_usage": 0,
+                        "event_time": "2026-01-01 00:00:00",
+                    }
+                ]
+            )
+        )
+        with patch("integrations.clickhouse._get_client", return_value=mock_client):
+            config = ClickHouseConfig(host="ch.example.com")
+            result = get_query_activity(config, limit=10)
+
+        assert result["available"] is True
+        assert result["queries"][0]["type"] == "ExceptionBeforeStart"

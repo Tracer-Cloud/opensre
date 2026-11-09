@@ -23,7 +23,7 @@ class _Ctx:
 
 def _offer(**overrides: Any) -> dict[str, Any]:
     args: dict[str, Any] = {
-        "kind": "weekly_audit",
+        "kind": "github_pr_sweep",
         "cron": "0 8 * * 1-5",
         "timezone": "UTC",
         "provider": "slack",

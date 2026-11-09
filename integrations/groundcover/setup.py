@@ -18,7 +18,10 @@ from config.constants.groundcover import (
     GROUNDCOVER_TENANT_UUID_ENV,
     GROUNDCOVER_TIMEZONE_ENV,
 )
-from integrations.config_models import DEFAULT_GROUNDCOVER_MCP_URL, DEFAULT_GROUNDCOVER_TIMEZONE
+from integrations.groundcover.config import (
+    DEFAULT_GROUNDCOVER_MCP_URL,
+    DEFAULT_GROUNDCOVER_TIMEZONE,
+)
 from integrations.groundcover.verifier import verify_groundcover
 from integrations.setup_flow import IntegrationSetupSpec, SetupField
 

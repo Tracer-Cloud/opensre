@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from config.constants.llm import LLM_PROVIDER_ENV
+from config.llm_auth.cli_auth import resolve_cli_auth_state
 from config.llm_auth.provider_catalog import (
     API_KEY_PROVIDER_ENVS,
     ProviderSpec,
@@ -26,11 +28,11 @@ class CredentialSource(StrEnum):
     """Where a provider's credential resolves from, for prompt-safe status."""
 
     ENV = "env"
-    KEYRING = "keyring"
-    #: The owner-only local file used when no OS keychain could store the secret.
+    #: The owner-only local credentials file (``~/.opensre/credentials.json``).
     #: Distinct from ``LOCAL``, which means a locally hosted model runtime (Ollama).
     FALLBACK = "fallback"
     METADATA = "metadata"
+    SUBSCRIPTION = "subscription"
     CLI = "cli"
     AMBIENT = "ambient"
     LOCAL = "local"
@@ -74,6 +76,7 @@ class CredentialResolution:
     @property
     def ok(self) -> bool:
         return bool(self.api_key) or self.source in {
+            CredentialSource.SUBSCRIPTION,
             CredentialSource.CLI,
             CredentialSource.AMBIENT,
             CredentialSource.LOCAL,
@@ -97,6 +100,9 @@ def _bool_record_value(record: dict[str, str], key: str, default: bool) -> bool:
 
 def _normalize_source(raw: str | None, *, fallback: CredentialSource) -> CredentialSource:
     value = (raw or "").strip().lower()
+    if value == "keyring":
+        # Legacy metadata from the removed OS-keychain tier.
+        return CredentialSource.FALLBACK
     try:
         return CredentialSource(value)
     except ValueError:
@@ -184,25 +190,69 @@ def _record_status(spec: ProviderSpec, record: dict[str, str]) -> CredentialStat
     stale = _bool_record_value(record, "stale", False)
     verified = _bool_record_value(record, "verified", not stale)
     detail = record.get("detail") or (
-        f"{spec.api_key_env} was previously saved; run `opensre auth verify {spec.value}` "
+        f"{spec.api_key_env} was previously saved; run `opensre login verify {spec.value}` "
         "to confirm it is still available."
     )
     return CredentialStatus(
         provider=spec.value,
         configured=True,
-        source=CredentialSource.METADATA
-        if source in {CredentialSource.KEYRING, CredentialSource.FALLBACK}
-        else source,
+        source=CredentialSource.METADATA if source is CredentialSource.FALLBACK else source,
         verified=verified and not stale,
         stale=stale,
         detail=detail,
     )
 
 
+def connection_status(provider: str, *, record: dict[str, str] | None = None) -> CredentialStatus:
+    """Describe saved connections without CLI, ambient, network, or secret probes.
+
+    This is configuration evidence, not a live authentication check. Explicit
+    login/verify and request-time resolution own those checks.
+    """
+    spec = require_provider_spec(provider)
+    metadata = resolve_provider_auth_record(provider) if record is None else record
+    if spec.credential_kind == "subscription":
+        from config.secrets.store import keyring_is_disabled
+
+        if metadata.get("source") == "subscription" and not keyring_is_disabled():
+            return _record_status(spec, metadata)
+    else:
+        if spec.api_key_env and _env_value(spec.api_key_env):
+            return _source_status(spec.value, CredentialSource.ENV, "Configured in environment.")
+        if metadata:
+            return _record_status(spec, metadata)
+        if spec.credential_kind in {"cli", "ambient", "local"}:
+            # A model preference alone is not evidence of a vendor CLI login.
+            hints = (
+                (spec.api_key_env, spec.project_env, spec.location_env)
+                if spec.credential_kind != "cli"
+                else ()
+            )
+            if os.getenv(LLM_PROVIDER_ENV) == spec.value or any(
+                key and _env_value(key) for key in hints
+            ):
+                return CredentialStatus(
+                    spec.value,
+                    True,
+                    CredentialSource.METADATA,
+                    False,
+                    False,
+                    "Saved configuration; authentication is checked on use.",
+                )
+    return CredentialStatus(
+        spec.value,
+        False,
+        CredentialSource.NONE,
+        False,
+        False,
+        f"Connect this provider with /login {spec.value}.",
+    )
+
+
 def status(provider: str) -> CredentialStatus:
     """Return prompt-safe provider auth status.
 
-    This function must not read Keychain secrets. It may inspect environment,
+    This function must not read stored secrets. It may inspect environment,
     non-secret metadata, CLI adapter probes, and ambient/local config markers.
     """
     spec = provider_spec(provider)
@@ -214,6 +264,21 @@ def status(provider: str) -> CredentialStatus:
             verified=False,
             stale=False,
             detail=f"Unsupported LLM provider: {provider}",
+        )
+
+    if spec.credential_kind == "subscription":
+        record = resolve_provider_auth_record(spec.value)
+        from config.secrets.store import keyring_is_disabled
+
+        if record.get("source") == "subscription" and not keyring_is_disabled():
+            return _record_status(spec, record)
+        return CredentialStatus(
+            spec.value,
+            False,
+            CredentialSource.NONE,
+            False,
+            False,
+            record.get("detail") or f"Run `opensre login {spec.value}` to sign in.",
         )
 
     if spec.credential_kind == "api_key":
@@ -253,19 +318,7 @@ def status(provider: str) -> CredentialStatus:
                 detail=record.get("detail") or f"{spec.label} auth metadata is present.",
             )
         try:
-            from integrations.llm_cli.registry import get_cli_provider_registration
-
-            reg = get_cli_provider_registration(spec.value)
-            if reg is None:
-                return CredentialStatus(
-                    spec.value,
-                    False,
-                    CredentialSource.NONE,
-                    False,
-                    False,
-                    "No CLI adapter registered.",
-                )
-            probe = reg.adapter_factory().detect()
+            cli_auth = resolve_cli_auth_state(spec.value)
         except Exception as exc:
             return CredentialStatus(
                 spec.value,
@@ -275,7 +328,16 @@ def status(provider: str) -> CredentialStatus:
                 False,
                 f"CLI auth status could not be checked: {exc}",
             )
-        configured = probe.installed and probe.logged_in is True
+        if cli_auth is None:
+            return CredentialStatus(
+                spec.value,
+                False,
+                CredentialSource.NONE,
+                False,
+                False,
+                "No CLI adapter registered.",
+            )
+        configured = cli_auth.installed and cli_auth.logged_in is True
         source: CredentialSource = CredentialSource.CLI if configured else CredentialSource.NONE
         return CredentialStatus(
             provider=spec.value,
@@ -283,7 +345,7 @@ def status(provider: str) -> CredentialStatus:
             source=source,
             verified=configured,
             stale=False,
-            detail=probe.detail,
+            detail=cli_auth.detail,
         )
 
     if spec.credential_kind == "ambient":
@@ -352,6 +414,15 @@ def _mark_stale(spec: ProviderSpec, detail: str) -> None:
 def resolve_for_request(provider: str) -> CredentialResolution:
     """Resolve request-time auth for exactly one selected provider."""
     spec = require_provider_spec(provider)
+    if spec.credential_kind == "subscription":
+        state = status(spec.value)
+        return CredentialResolution(
+            spec.value,
+            "",
+            CredentialSource.SUBSCRIPTION if state.configured else CredentialSource.NONE,
+            state.detail,
+        )
+
     if spec.credential_kind == "api_key":
         env_value = _env_value(spec.api_key_env)
         if env_value:
@@ -365,15 +436,9 @@ def resolve_for_request(provider: str) -> CredentialResolution:
         from config.secrets.store import lookup
 
         found = lookup(spec.api_key_env)
-        if found.value and found.tier in {"keyring", "fallback"}:
-            source: CredentialSource = (
-                CredentialSource.KEYRING if found.tier == "keyring" else CredentialSource.FALLBACK
-            )
-            detail = (
-                f"{spec.api_key_env} resolved from secure local storage."
-                if found.tier == "keyring"
-                else f"{spec.api_key_env} resolved from the local fallback credential store."
-            )
+        if found.value and found.tier == "fallback":
+            source = CredentialSource.FALLBACK
+            detail = f"{spec.api_key_env} resolved from the local credentials file."
             save_provider_auth_record(
                 provider=spec.value,
                 auth_name=spec.value,
@@ -390,24 +455,9 @@ def resolve_for_request(provider: str) -> CredentialResolution:
                 source=source,
                 detail=detail,
             )
-        if found.keyring_unreachable:
-            # The backend couldn't be reached (no D-Bus/Secret Service session,
-            # locked keychain) and no fallback copy exists — that is not evidence
-            # the credential is missing, so leave previously verified metadata
-            # alone instead of marking it stale.
-            return CredentialResolution(
-                provider=spec.value,
-                api_key="",
-                source=CredentialSource.UNKNOWN,
-                detail=(
-                    f"Could not reach the system keychain to check {spec.api_key_env}: "
-                    f"{found.keyring_error} Retry once the keychain is reachable."
-                ),
-            )
-
         detail = (
             f"Missing credential for LLM provider '{spec.value}'. Set {spec.api_key_env} "
-            f"or run `opensre auth login {spec.value}`."
+            f"or run `opensre login {spec.value}`."
         )
         _mark_stale(spec, detail)
         return CredentialResolution(spec.value, "", CredentialSource.NONE, detail)
@@ -461,7 +511,7 @@ def save_api_key(provider: str, value: str, *, detail: str | None = None) -> Sec
     """Store an OpenSRE-managed API key and refresh prompt-safe metadata.
 
     Returns which tier accepted the write so onboarding can tell the user when
-    the credential landed in the local fallback file rather than the keychain.
+    the credential landed in the local credentials file.
     """
     spec = require_provider_spec(provider)
     if not spec.uses_open_sre_api_key:
@@ -469,9 +519,7 @@ def save_api_key(provider: str, value: str, *, detail: str | None = None) -> Sec
     from config.secrets.store import save_secret
 
     result = save_secret(spec.api_key_env, value)
-    source: CredentialSource = (
-        CredentialSource.FALLBACK if result.used_fallback else CredentialSource.KEYRING
-    )
+    source = CredentialSource.FALLBACK
     save_provider_auth_record(
         provider=spec.value,
         auth_name=spec.value,
@@ -491,8 +539,6 @@ def delete(provider: str) -> None:
     if spec.uses_open_sre_api_key:
         from config.secrets.store import delete_secret
 
-        # Clears the keyring entry *and* any fallback-file copy — leaving the
-        # latter would let a logged-out credential keep resolving at request time.
         delete_secret(spec.api_key_env)
     delete_provider_auth_record(spec.value)
 
@@ -530,8 +576,10 @@ def has_api_key_env_status(env_var: str) -> bool:
 
 
 def llm_api_key_source(env_var: str) -> str:
-    """Return where an LLM credential resolves from: ``env``, ``keyring``, ``fallback``, or ``none``."""
-    from config.secrets import os_keyring
+    """Return where an LLM credential resolves from: ``env``, ``fallback``, or ``none``.
+
+    Goes through the secret store (env, then the local credentials file).
+    """
     from config.secrets.store import secret_source
 
     prompt_safe_source = source_for_api_key_env(env_var)
@@ -541,19 +589,12 @@ def llm_api_key_source(env_var: str) -> str:
         return "none"
     if os.getenv(env_var, "").strip():
         return "env"
-    if os_keyring.keyring_is_disabled():
-        return "none"
-    # Answers without decrypting the secret (and so without a macOS auth prompt)
-    # when the platform supports it; falls through to a real read otherwise.
-    item_exists = os_keyring.item_exists(env_var)
-    if item_exists:
-        return "keyring"
-    return secret_source(env_var)
+    tier = secret_source(env_var)
+    return tier.value if hasattr(tier, "value") else str(tier)
 
 
 def has_llm_api_key(env_var: str) -> bool:
     """Return True when an API key is available from env or secure local storage."""
-    from config.secrets import os_keyring
     from config.secrets.store import secret_source
 
     if has_api_key_env_status(env_var):
@@ -561,10 +602,6 @@ def has_llm_api_key(env_var: str) -> bool:
     if env_var.strip() in set(API_KEY_PROVIDER_ENVS.values()):
         return False
     if os.getenv(env_var, "").strip():
-        return True
-    if os_keyring.keyring_is_disabled():
-        return False
-    if os_keyring.item_exists(env_var):
         return True
     return secret_source(env_var) != "none"
 
@@ -574,6 +611,7 @@ __all__ = [
     "CredentialSource",
     "CredentialStatus",
     "MissingLLMCredentialError",
+    "connection_status",
     "delete",
     "has_api_key_env_status",
     "has_llm_api_key",

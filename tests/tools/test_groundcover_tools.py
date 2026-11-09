@@ -13,6 +13,11 @@ from integrations.groundcover.tools import (
     query_groundcover_logs,
     query_groundcover_traces,
 )
+from integrations.groundcover.tools._evidence import (
+    map_get_groundcover_query_reference,
+    map_query_groundcover_logs,
+    map_query_groundcover_traces,
+)
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -178,3 +183,81 @@ def test_signal_tool_descriptions_carry_query_guidance(tool_func: Any) -> None:
     assert "narrow" in desc
     assert "get_groundcover_query_reference" in desc
     assert "query" in rt.input_schema["properties"]
+
+
+# ---------------------------------------------------------------------------
+# Evidence mappers
+# ---------------------------------------------------------------------------
+
+
+def test_map_query_groundcover_logs_records_entry() -> None:
+    evidence: dict[str, Any] = {}
+    map_query_groundcover_logs(
+        evidence,
+        {
+            "available": True,
+            "query": "level:error | limit 10",
+            "data": [{"content": "boom"}],
+            "truncated": False,
+        },
+        {},
+    )
+    entries = evidence["catalog_entries"]
+    assert len(entries) == 1
+    assert entries[0]["source"] == "query_groundcover_logs"
+    assert entries[0]["summary"] == "1 log(s) for query 'level:error | limit 10'"
+
+
+def test_map_query_groundcover_logs_qualifies_truncated_page() -> None:
+    evidence: dict[str, Any] = {}
+    map_query_groundcover_logs(
+        evidence,
+        {"available": True, "query": "* | limit 1", "data": [{"a": 1}], "truncated": True},
+        {},
+    )
+    assert evidence["catalog_entries"][0]["summary"].startswith("1+ log(s)")
+
+
+def test_map_query_groundcover_logs_skips_empty_data() -> None:
+    evidence: dict[str, Any] = {}
+    map_query_groundcover_logs(evidence, {"available": True, "data": [], "query": ""}, {})
+    assert "catalog_entries" not in evidence
+
+
+def test_map_query_groundcover_logs_skips_unavailable() -> None:
+    evidence: dict[str, Any] = {}
+    map_query_groundcover_logs(evidence, {"available": False, "error": "timed out"}, {})
+    assert "catalog_entries" not in evidence
+
+
+def test_map_query_groundcover_traces_records_entry() -> None:
+    evidence: dict[str, Any] = {}
+    map_query_groundcover_traces(
+        evidence,
+        {
+            "available": True,
+            "query": "status:error | limit 10",
+            "data": [{"span_name": "checkout"}],
+            "truncated": False,
+        },
+        {},
+    )
+    assert evidence["catalog_entries"][0]["source"] == "query_groundcover_traces"
+    assert "1 span(s)" in evidence["catalog_entries"][0]["summary"]
+
+
+def test_map_get_groundcover_query_reference_records_entry() -> None:
+    evidence: dict[str, Any] = {}
+    map_get_groundcover_query_reference(
+        evidence, {"available": True, "reference": "# gcQL guide", "cached": True}, {}
+    )
+    entries = evidence["catalog_entries"]
+    assert len(entries) == 1
+    assert entries[0]["source"] == "get_groundcover_query_reference"
+    assert "cached" in entries[0]["summary"]
+
+
+def test_map_get_groundcover_query_reference_skips_empty_reference() -> None:
+    evidence: dict[str, Any] = {}
+    map_get_groundcover_query_reference(evidence, {"available": True, "reference": ""}, {})
+    assert "catalog_entries" not in evidence

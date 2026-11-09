@@ -3,7 +3,7 @@
 Prefect had a full client + tools + config model but was never registered
 in ``integrations._catalog_impl``'s classifier map, so a Prefect entry in
 ``~/.opensre/integrations.json`` (the documented setup path, see
-docs/prefect.mdx) was silently ignored.
+docs/integrations/workflows/prefect.mdx) was silently ignored.
 """
 
 from __future__ import annotations

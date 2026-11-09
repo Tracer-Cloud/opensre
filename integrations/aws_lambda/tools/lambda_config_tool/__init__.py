@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.aws.lambda_client import get_function_configuration
-from integrations.aws_lambda.tools.lambda_invocation_logs_tool import (
-    _lambda_available,
-    _lambda_name,
-)
+from integrations.aws_lambda.availability import lambda_available, lambda_name
 
 
 def _extract_lambda_config_params(sources: dict[str, dict]) -> dict:
-    return {"function_name": _lambda_name(sources)}
+    return {"function_name": lambda_name(sources)}
 
 
 @tool(
     name="get_lambda_configuration",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Get Lambda function configuration details (lightweight — no code retrieval).",
     use_cases=[
         "Quick configuration checks for Lambda functions",
@@ -31,7 +31,7 @@ def _extract_lambda_config_params(sources: dict[str, dict]) -> dict:
         },
         "required": ["function_name"],
     },
-    is_available=_lambda_available,
+    is_available=lambda_available,
     extract_params=_extract_lambda_config_params,
 )
 def get_lambda_configuration(function_name: str) -> dict:

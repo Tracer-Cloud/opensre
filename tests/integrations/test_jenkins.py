@@ -22,6 +22,7 @@ from integrations.jenkins import (
 )
 from integrations.jenkins.client import (
     JenkinsClient,
+    _flatten_jobs,
     _iso_from_ms,
     _job_api_path,
     _safe_job_name,
@@ -438,6 +439,62 @@ class TestListJobs:
         assert result["success"]
         statuses = {j["name"]: j["status"] for j in result["jobs"]}
         assert statuses == {"demo-fail": "FAILURE", "demo-pass": "SUCCESS"}
+
+    def test_folder_beyond_depth_limit_sets_truncated(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression: a folder found exactly at the depth limit comes back
+        from Jenkins with no ``jobs`` key at all (the tree query didn't ask
+        for one), which _flatten_jobs used to silently misread as a genuine
+        leaf job with unknown status -- with the tree's deepest-level probe,
+        it must instead be dropped and reported as depth-truncated."""
+        monkeypatch.setattr("integrations.jenkins.client._MAX_FOLDER_DEPTH", 1)
+        payload = {
+            "jobs": [
+                {"name": "top", "url": "ut", "color": "blue", "lastBuild": {"number": 2}},
+                {
+                    "name": "deep-folder",
+                    # No color/lastBuild -- a real folder, with a child one
+                    # level beyond what depth=1 was asked to fully fetch.
+                    "jobs": [{"name": "buried-job"}],
+                },
+            ]
+        }
+        client = _client_with_handler(lambda _: httpx.Response(200, json=payload), monkeypatch)
+        result = client.list_jobs()
+        assert result["success"]
+        assert result["truncated"] is True
+        names = {j["name"] for j in result["jobs"]}
+        assert names == {"top"}
+        assert "deep-folder" not in names
+
+
+class TestFlattenJobs:
+    def test_leaf_jobs_at_any_depth_are_collected(self) -> None:
+        raw = [{"name": "top", "color": "blue"}]
+        flat, depth_truncated = _flatten_jobs(raw, max_depth=5)
+        assert [name for name, _ in flat] == ["top"]
+        assert depth_truncated is False
+
+    def test_folder_within_depth_is_recursed_and_prefixed(self) -> None:
+        raw = [{"name": "team", "jobs": [{"name": "svc", "color": "red"}]}]
+        flat, depth_truncated = _flatten_jobs(raw, max_depth=1)
+        assert [name for name, _ in flat] == ["team/svc"]
+        assert depth_truncated is False
+
+    def test_folder_at_max_depth_with_children_is_dropped_and_flagged(self) -> None:
+        raw = [{"name": "team", "jobs": [{"name": "svc"}]}]
+        flat, depth_truncated = _flatten_jobs(raw, max_depth=0)
+        assert flat == []
+        assert depth_truncated is True
+
+    def test_folder_at_max_depth_with_no_children_is_not_flagged(self) -> None:
+        """An empty `jobs: []` at the depth limit means the folder genuinely
+        has no children -- not that children exist but were unfetched."""
+        raw = [{"name": "team", "jobs": []}]
+        flat, depth_truncated = _flatten_jobs(raw, max_depth=0)
+        assert flat == []
+        assert depth_truncated is False
 
 
 class TestListRunningBuilds:

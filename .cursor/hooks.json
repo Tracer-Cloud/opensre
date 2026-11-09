@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "command": ".cursor/hooks/check-ci-failures.sh",
+        "timeout": 90,
+        "loop_limit": 3
+      }
+    ]
+  }
+}

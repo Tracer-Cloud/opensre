@@ -22,7 +22,7 @@ from config.constants.mongodb import (
 )
 from config.llm_credentials import resolve_env_credential
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
 
 logger = logging.getLogger(__name__)
@@ -232,7 +232,10 @@ def get_current_ops(
         client = _get_client(config)
         try:
             result = client.admin.command(
-                "currentOp", {"microsecs_running": {"$gte": threshold_microsecs}}
+                {
+                    "currentOp": 1,
+                    "microsecs_running": {"$gte": threshold_microsecs},
+                }
             )
             ops = result.get("inprog", [])
             # Cap results and strip potentially sensitive fields

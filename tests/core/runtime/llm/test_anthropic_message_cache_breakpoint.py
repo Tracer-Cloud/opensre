@@ -8,6 +8,7 @@ appended turn.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -15,6 +16,7 @@ from core.llm.transports.sdk.agent_clients import (
     AnthropicAgentClient,
     _anthropic_messages_with_cache,
 )
+from tests.utils.anthropic_streams import streaming_messages
 
 
 def _client_with_capture() -> tuple[AnthropicAgentClient, MagicMock]:
@@ -23,7 +25,8 @@ def _client_with_capture() -> tuple[AnthropicAgentClient, MagicMock]:
     client._max_tokens = 1024
     sdk = MagicMock()
     sdk.messages.create.return_value = MagicMock(content=[], stop_reason="end_turn", usage=None)
-    client._client = sdk
+    # The request streams; the stream replays what ``create`` returns.
+    client._client = SimpleNamespace(messages=streaming_messages(sdk.messages.create))
     return client, sdk
 
 
@@ -137,8 +140,6 @@ def test_tool_schemas_serialize_deterministically() -> None:
 def test_invoke_response_carries_cache_tokens() -> None:
     """The agent path must surface cache counters, not just the log line."""
     # Arrange
-    from types import SimpleNamespace
-
     client, sdk = _client_with_capture()
     sdk.messages.create.return_value = SimpleNamespace(
         content=[],

@@ -9,8 +9,8 @@ from typing import Any
 import pytest
 
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
-from platform.observability.trace.hook import traceable
-from platform.observability.trace.spans import (
+from infrastructure.observability.trace.hook import traceable
+from infrastructure.observability.trace.spans import (
     NoopSessionTraceStore,
     bind_session_trace,
     set_session_trace_store,

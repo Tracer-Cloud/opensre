@@ -1,4 +1,4 @@
-"""Route wiring: each Slack path uses the admission built for its payload shape.
+"""Route registration: each Slack path uses the admission built for its payload shape.
 
 Admission is unit-tested elsewhere. These tests exist because the two routes
 once shared one handler, so every form-encoded button click was rejected by the
@@ -8,18 +8,20 @@ JSON events path — a defect invisible to admission-level tests.
 from __future__ import annotations
 
 import json
+import time
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlencode
 
 from fastapi.testclient import TestClient
 
-from gateway.core.runtime.approvals import ApprovalBroker
+from config.constants.http import MAX_REQUEST_BODY_BYTES
+from gateway.core.middleware.approvals import ApprovalBroker
+from gateway.core.storage.events.repository import InMemoryHandledSlackEventRepository
 from gateway.transports.slack.settings import SlackGatewaySettings, SlackInboundTransport
 from gateway.transports.slack.transport.events_api.receiver import (
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
-    InMemorySlackEventDeduplicator,
 )
 from gateway.transports.slack.transport.events_api.server import (
     EVENTS_PATH,
@@ -30,7 +32,16 @@ from gateway.transports.slack.transport.events_api.server import (
 from gateway.transports.slack.transport.events_api.signature import expected_signature
 
 _SECRET = "8f742231b10e8888abcd99yyyzzz85a5"
-_TIMESTAMP = str(int(__import__("time").time()))
+
+
+def _now_timestamp() -> str:
+    """Signed at request time, not import time.
+
+    The signature check enforces a five-minute replay window, so a timestamp
+    captured when the module loads is already stale by the time a full suite
+    reaches these tests — they pass alone and fail in CI.
+    """
+    return str(int(time.time()))
 
 
 def _settings() -> SlackGatewaySettings:
@@ -46,7 +57,7 @@ def _client(submitted: list[Any]) -> TestClient:
     app = build_slack_http_app(
         settings=_settings(),
         approvals=ApprovalBroker(),
-        deduplicator=InMemorySlackEventDeduplicator(),
+        handled_events=InMemoryHandledSlackEventRepository(),
         submit_turn=submitted.append,
         gate=ListenerGate(),
     )
@@ -54,11 +65,12 @@ def _client(submitted: list[Any]) -> TestClient:
 
 
 def _headers(body: bytes) -> dict[str, str]:
+    timestamp = _now_timestamp()
     return {
         SIGNATURE_HEADER: expected_signature(
-            signing_secret=_SECRET, timestamp=_TIMESTAMP, body=body
+            signing_secret=_SECRET, timestamp=timestamp, body=body
         ),
-        TIMESTAMP_HEADER: _TIMESTAMP,
+        TIMESTAMP_HEADER: timestamp,
     }
 
 
@@ -107,7 +119,7 @@ def test_unsigned_request_is_unauthorized_on_both_routes() -> None:
     # Arrange.
     submitted: list[Any] = []
     client = _client(submitted)
-    bad = {SIGNATURE_HEADER: "v0=deadbeef", TIMESTAMP_HEADER: _TIMESTAMP}
+    bad = {SIGNATURE_HEADER: "v0=deadbeef", TIMESTAMP_HEADER: _now_timestamp()}
 
     # Act / Assert.
     for path, body in (
@@ -145,7 +157,7 @@ def test_event_gets_503_when_the_turn_executor_is_gone() -> None:
     app = build_slack_http_app(
         settings=_settings(),
         approvals=ApprovalBroker(),
-        deduplicator=InMemorySlackEventDeduplicator(),
+        handled_events=InMemoryHandledSlackEventRepository(),
         submit_turn=_dead_executor,
         gate=ListenerGate(),
     )
@@ -178,7 +190,7 @@ def test_a_503ed_event_is_not_swallowed_as_a_duplicate_on_retry() -> None:
     message is dropped with no turn ever running.
     """
     # Arrange — first delivery hits a dead executor, the retry finds a live one.
-    dedup = InMemorySlackEventDeduplicator()
+    dedup = InMemoryHandledSlackEventRepository()
     submitted: list[Any] = []
     alive = {"value": False}
 
@@ -190,7 +202,7 @@ def test_a_503ed_event_is_not_swallowed_as_a_duplicate_on_retry() -> None:
     app = build_slack_http_app(
         settings=_settings(),
         approvals=ApprovalBroker(),
-        deduplicator=dedup,
+        handled_events=dedup,
         submit_turn=_submit,
         gate=ListenerGate(),
     )
@@ -221,7 +233,7 @@ def test_a_503ed_event_is_not_swallowed_as_a_duplicate_on_retry() -> None:
     assert len(submitted) == 1
 
 
-class _ReleaseFailsDeduplicator(InMemorySlackEventDeduplicator):
+class _ReleaseFailsDeduplicator(InMemoryHandledSlackEventRepository):
     """Leaves the provisional claim in place — Greptile's failed-release case."""
 
     def release(self, _event_id: str) -> bool:
@@ -248,7 +260,7 @@ def test_failed_release_does_not_permanently_drop_the_event_on_retry() -> None:
     app = build_slack_http_app(
         settings=_settings(),
         approvals=ApprovalBroker(),
-        deduplicator=dedup,
+        handled_events=dedup,
         submit_turn=_submit,
         gate=ListenerGate(),
     )
@@ -296,7 +308,7 @@ def test_a_closed_listener_acts_on_nothing_on_either_route() -> None:
     app = build_slack_http_app(
         settings=_settings(),
         approvals=approvals,
-        deduplicator=InMemorySlackEventDeduplicator(),
+        handled_events=InMemoryHandledSlackEventRepository(),
         submit_turn=submitted.append,
         gate=gate,
     )
@@ -328,4 +340,21 @@ def test_a_closed_listener_acts_on_nothing_on_either_route() -> None:
     # Assert — both refused, and no turn was queued.
     assert event.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert click.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert submitted == []
+
+
+def test_oversized_event_body_is_rejected_before_signature_check() -> None:
+    """The listener binds 0.0.0.0 and cannot authenticate without reading the body.
+
+    Slack signs the raw bytes, so both routes must call ``request.body()``
+    before they know who is calling. Without a cap above routing, any
+    unauthenticated caller on the internet could make this host buffer a
+    payload of their choosing.
+    """
+    submitted: list[Any] = []
+    client = _client(submitted)
+
+    resp = client.post(EVENTS_PATH, content=b"x" * (MAX_REQUEST_BODY_BYTES + 1))
+
+    assert resp.status_code == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
     assert submitted == []

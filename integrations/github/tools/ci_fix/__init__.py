@@ -1,4 +1,4 @@
-"""GitHub PR CI fix action tool package."""
+"""GitHub CI fix action tool package."""
 
 from __future__ import annotations
 

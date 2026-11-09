@@ -12,15 +12,15 @@ import contextlib
 import json
 from pathlib import Path
 
-from core.agent_harness.session.persistence.ports import CHAT_KINDS
+from core.agent_harness.session.persistence.contracts import CHAT_KINDS
 
 _NAME_MAX_CHARS = 50
 
 
 def sessions_dir() -> Path:
-    from config.constants.paths import session_home
+    from config.constants.paths import get_sessions_dir
 
-    return session_home() / "sessions"
+    return get_sessions_dir()
 
 
 def session_path(session_id: str) -> Path:

@@ -1,12 +1,12 @@
-"""JSONL-backed :class:`~platform.observability.trace.spans.SessionTraceStore` for the REPL."""
+"""JSONL-backed :class:`~infrastructure.observability.trace.spans.SessionTraceStore` for the REPL."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
-from platform.observability.trace.spans import NoopSessionTraceStore, SessionTraceStore
+from core.agent_harness.spi.defaults import JsonlSessionStore
+from infrastructure.observability.trace.spans import NoopSessionTraceStore, SessionTraceStore
 
 
 @dataclass

@@ -1,0 +1,10 @@
+version: 1
+runbooks:
+  - id: checkout-high-latency
+    title: Checkout high latency
+    document: docs/snippets/runbooks/checkout-high-latency.md
+    match:
+      alertname: CheckoutHighLatency
+      service: checkout
+      labels:
+        severity: critical

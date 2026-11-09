@@ -11,8 +11,8 @@ from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from config.strict_config import StrictConfigModel
-from gateway.core.runtime.concurrency import turn_limit_for_profile
-from gateway.core.runtime.errors import GatewayConfigurationError
+from gateway.core.lifecycle.errors import GatewayConfigurationError
+from infrastructure.turn_host.concurrency import turn_limit_for_profile
 from integrations.messaging_security import MessagingIdentityPolicy, MessagingPlatform
 from integrations.store import get_integration
 
@@ -45,7 +45,9 @@ class SlackGatewaySettings(StrictConfigModel):
     max_concurrent_turns: int = Field(default_factory=turn_limit_for_profile, ge=1)
     # Slack's AI-app guidance: call chat.update at most once every 3 seconds.
     status_update_interval_seconds: float = Field(default=3.0, gt=0)
-    turn_timeout_seconds: float = Field(default=240.0, gt=0)
+    # A GitHub fix-and-merge turn can run well past 15 minutes. The old 4-minute
+    # cutoff posted "try again" in the thread and dropped the real answer.
+    turn_timeout_seconds: float = Field(default=1800.0, gt=0)
     # Empty uses the worker's default path; the container health check reads it.
     heartbeat_path: str = ""
 
@@ -70,7 +72,7 @@ class SlackGatewayEnv(BaseSettings):
     allow_open_workspace: bool = False
     gateway_max_concurrent: int = Field(default_factory=turn_limit_for_profile, ge=1)
     gateway_status_update_interval_seconds: float = Field(default=3.0, gt=0)
-    gateway_turn_timeout_seconds: float = Field(default=240.0, gt=0)
+    gateway_turn_timeout_seconds: float = Field(default=1800.0, gt=0)
     gateway_heartbeat_path: str = ""
 
     @field_validator("allowed_users", mode="before")

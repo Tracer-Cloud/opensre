@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from gateway.core.runtime.errors import GatewayConfigurationError
+from gateway.core.lifecycle.errors import GatewayConfigurationError
 from gateway.transports.discord.settings import load_discord_gateway_settings
 
 _STORE_PATH = "gateway.transports.discord.settings.get_integration"

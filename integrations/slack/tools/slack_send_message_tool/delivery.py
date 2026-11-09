@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 
+from config.constants.slack import SLACK_WEBHOOK_URL_ENV
 from integrations.slack.delivery import send_slack_webhook_message
 from integrations.slack.tools.slack_send_message_tool.models import SlackDeliveryTarget
 
@@ -14,7 +15,7 @@ def resolve_webhook_url(webhook_url: str = "") -> tuple[SlackDeliveryTarget | No
     if explicit:
         return SlackDeliveryTarget(webhook_url=explicit), ""
 
-    env_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+    env_url = os.getenv(SLACK_WEBHOOK_URL_ENV, "").strip()
     if env_url:
         return SlackDeliveryTarget(webhook_url=env_url), ""
 

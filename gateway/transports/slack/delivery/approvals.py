@@ -1,7 +1,7 @@
 """Block Kit approval prompt for write actions in Slack gateway turns.
 
 The transport-neutral half — broker, button identifiers, harness hooks — lives
-in :mod:`gateway.core.runtime.approvals`. This module renders the Slack side: a
+in :mod:`gateway.core.middleware.approvals`. This module renders the Slack side: a
 :class:`ThreadApprovalPrompter` posts an Approve / Deny button message in the
 triggering thread, and :func:`handle_block_actions_payload` routes the
 resulting ``block_actions`` click back to the broker.
@@ -13,7 +13,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from gateway.core.runtime.approvals import (
+from gateway.core.middleware.approvals import (
     APPROVE_ACTION_ID,
     DENY_ACTION_ID,
     MAX_APPROVAL_WAIT_SECONDS,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def _eks_creds(eks: dict) -> dict:
+def eks_creds(eks: dict) -> dict:
     """Extract AWS credentials from EKS source"""
 
     return {
@@ -27,7 +27,7 @@ def extract_workload_params(sources: dict[str, dict]) -> dict[str, Any]:
         "cluster_name": eks.get("cluster_name", ""),
         "namespace": eks.get("namespace") or "all",
         "eks_backend": eks.get("_backend"),
-        **_eks_creds(eks),
+        **eks_creds(eks),
     }
 
 
@@ -39,5 +39,5 @@ def extract_cluster_params(sources: dict[str, dict]) -> dict[str, Any]:
 
     return {
         "cluster_names": eks.get("cluster_names", []),
-        **_eks_creds(eks),
+        **eks_creds(eks),
     }

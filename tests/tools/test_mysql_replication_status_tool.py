@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.mysql.tools.mysql_replication_status_tool import get_mysql_replication_status
+from integrations.mysql.tools.mysql_replication_status_tool import (
+    _map_get_mysql_replication_status,
+    get_mysql_replication_status,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -65,3 +69,75 @@ def test_run_error_propagated() -> None:
         result = get_mysql_replication_status(host="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False
+
+
+class TestMapGetMysqlReplicationStatus:
+    def test_records_entry_with_stalled_thread_and_lag(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_replication_status(
+            evidence,
+            {
+                "available": True,
+                "replica_count": 1,
+                "replicas": [
+                    {
+                        "Replica_IO_Running": "No",
+                        "Replica_SQL_Running": "Yes",
+                        "Seconds_Behind_Source": 120,
+                    }
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mysql_replication_status"
+        assert entries[0]["summary"] == "1 replica(s), 1 with a stopped IO/SQL thread, max lag 120s"
+
+    def test_records_entry_healthy_replica_without_clauses(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_replication_status(
+            evidence,
+            {
+                "available": True,
+                "replica_count": 1,
+                "replicas": [
+                    {
+                        "Replica_IO_Running": "Yes",
+                        "Replica_SQL_Running": "Yes",
+                        "Seconds_Behind_Source": 0,
+                    }
+                ],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1 replica(s), max lag 0s"
+
+    def test_records_note_when_not_a_replica(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_replication_status(
+            evidence,
+            {
+                "available": True,
+                "note": "This server is not configured as a replica.",
+                "replicas": [],
+            },
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"]
+            == "This server is not configured as a replica."
+        )
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_replication_status(evidence, {"available": False, "error": "timeout"}, {})
+
+        assert "catalog_entries" not in evidence

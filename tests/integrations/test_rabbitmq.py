@@ -432,7 +432,7 @@ class TestGetBrokerOverview:
                         "channels": 1,
                     },
                 },
-                "/api/healthchecks/alarms": {"status": "ok"},
+                "/api/health/checks/alarms": {"status": "ok"},
             }
         )
         result = get_broker_overview(CONFIGURED)
@@ -452,7 +452,7 @@ class TestGetBrokerOverview:
                     "object_totals": {},
                     "message_stats": {},
                 },
-                "/api/healthchecks/alarms": httpx.Response(
+                "/api/health/checks/alarms": httpx.Response(
                     503,
                     json={
                         "status": "failed",

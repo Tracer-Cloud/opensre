@@ -11,9 +11,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
 from integrations.config_models import HelmIntegrationConfig
 from integrations.probes import ProbeResult
-from platform.notifications.limits import MAX_MESSAGE_SIZE
 
 logger = logging.getLogger(__name__)
 

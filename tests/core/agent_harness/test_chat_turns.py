@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from core.agent_harness.harness import AgentSession, SessionConfig
-from core.agent_harness.turns.headless_dispatch import (
-    HeadlessAgent,
-    NullToolProvider,
-    StaticReasoningClientProvider,
-)
+from core.agent_harness.runtime import TurnBinding
+from core.agent_harness.turns.headless_adapters import NullToolProvider
+from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
-
-
-class _Echo:
-    def invoke_stream(self, prompt: str) -> Any:
-        yield f"echo:{prompt}"
 
 
 def _empty_action() -> ToolCallingTurnResult:
@@ -38,7 +29,7 @@ def test_chat_requires_attached_agent() -> None:
         raise AssertionError("expected RuntimeError")
 
 
-def test_chat_reuses_attached_agent(monkeypatch: Any) -> None:
+def test_chat_reuses_attached_agent() -> None:
     calls: list[str] = []
 
     class _Agent:
@@ -48,7 +39,6 @@ def test_chat_reuses_attached_agent(monkeypatch: Any) -> None:
                 final_intent="cli_agent_handled",
                 action_result=_empty_action(),
                 assistant_response_text=f"ok:{message}",
-                llm_run=object(),
             )
 
     harness = AgentSession(SessionConfig(load_env=False))
@@ -66,13 +56,9 @@ def test_headless_bind_turn_swaps_output() -> None:
 
     first = BufferOutputSink()
     second = BufferOutputSink()
-    agent = HeadlessAgent(
-        tools=NullToolProvider(),
-        output=first,
-        reasoning=StaticReasoningClientProvider(client=_Echo()),
-    )
+    agent = InMemoryHeadlessBuild(output=first).agent(tools=NullToolProvider())
     before_runner = agent._action_runner  # noqa: SLF001
-    agent.bind_turn(output=second)
+    agent.bind_turn(TurnBinding(output=second))
     assert agent._output is second  # noqa: SLF001
     assert agent._action_runner is not before_runner  # noqa: SLF001
     assert agent._action_runner.output is second  # noqa: SLF001

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from config.constants import OPENSRE_HOME_DIR
-from gateway.core.feedback import append_feedback_entry
+from gateway.core.storage.feedback import append_feedback_entry
 
 logger = logging.getLogger("gateway")
 

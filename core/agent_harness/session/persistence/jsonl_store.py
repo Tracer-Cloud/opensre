@@ -4,17 +4,43 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
+import threading
+import time
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from config.version import get_opensre_version
-from core.agent_harness.session.persistence.paths import session_path
-from core.agent_harness.session.persistence.ports import CHAT_KINDS, SessionPersistenceSource
+from filelock import FileLock, Timeout
 
-_TRIGGER_MAX_CHARS = 200
+from config.constants.session_store import OPENSRE_SESSION_FILE_LOCK_ENV
+from config.version import get_opensre_version
+from core.agent_harness.session.persistence.contracts import CHAT_KINDS, SessionPersistenceSource
+from core.agent_harness.session.persistence.paths import session_path
+from infrastructure.observability.operations_log import record_operation
+from infrastructure.observability.trace.decisions import record_decision
+
+logger = logging.getLogger(__name__)
+
+# Seconds to wait for the cross-process session lock before giving up. Generous:
+# same-session turns are already serialized in-process, so real contention here
+# is only two tasks racing one session — rare, and pathological beyond this.
+_SESSION_LOCK_TIMEOUT_SECONDS: float = 10
+
+
+def _session_file_lock_enabled() -> bool:
+    """Whether to serialize session writes across processes (scale-out; off by default)."""
+    return os.getenv(OPENSRE_SESSION_FILE_LOCK_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 # Cold tip scan keeps at most this many trailing bytes resident (then grows by the
 # same step only while the window still contains nothing but skippable rows).
 _TAIL_SCAN_CHUNK_BYTES = 64 * 1024
@@ -22,6 +48,10 @@ _TAIL_SCAN_CHUNK_BYTES = 64 * 1024
 # (e.g. a full script body) never bloats the session log.
 _INTENT_ARGS_MAX_CHARS = 2_000
 _INTENT_USER_TEXT_MAX_CHARS = 200
+
+
+def _elapsed_ms(started: float) -> int:
+    return round((time.monotonic() - started) * 1000)
 
 
 def _now() -> str:
@@ -63,24 +93,78 @@ class JsonlSessionStore:
         self._leaf_ids: dict[tuple[str, str], str | None] = {}
         # (session_id, path) → (mtime_ns, size) when the tip was last trusted.
         self._leaf_file_sig: dict[tuple[str, str], tuple[int, int]] = {}
+        # Cross-process write serialization for horizontal scale-out. Off unless
+        # OPENSRE_SESSION_FILE_LOCK is set; one cached FileLock per path so
+        # flush's inner appends re-enter the same lock instead of deadlocking.
+        self._file_lock_enabled = _session_file_lock_enabled()
+        self._write_locks: dict[str, FileLock] = {}
+        self._write_locks_guard = threading.Lock()
+
+    @contextlib.contextmanager
+    def _locked(self, path: Path) -> Iterator[None]:
+        """Serialize writes to one session file across processes (reentrant).
+
+        A no-op unless the file lock is enabled — the early return above keeps
+        the default (single-task) path free of the timing/recording below. Same-
+        instance reentrancy lets ``flush`` hold the lock across its whole
+        read-modify-append while inner appends re-enter cheaply; a per-path lock
+        means different sessions never contend. On timeout the caller's
+        best-effort ``suppress`` skips the write after a warning.
+
+        Every acquire (successful or not) records its wait time via the
+        operations log, and a timeout is recorded under its own event —
+        distinct from a generic failure, since it is a write that did not
+        happen rather than an error mid-write.
+        """
+        if not self._file_lock_enabled:
+            yield
+            return
+        key = str(path)
+        with self._write_locks_guard:
+            lock = self._write_locks.get(key)
+            if lock is None:
+                lock = FileLock(f"{key}.lock", timeout=_SESSION_LOCK_TIMEOUT_SECONDS)
+                self._write_locks[key] = lock
+        started = time.monotonic()
+        try:
+            with lock:
+                record_operation(
+                    "session_file_lock_wait",
+                    {"wait_ms": _elapsed_ms(started), "path": str(path)},
+                )
+                yield
+        except Timeout:
+            record_operation(
+                "session_file_lock_timeout",
+                {"wait_ms": _elapsed_ms(started), "path": str(path)},
+            )
+            logger.warning("session file lock timed out; skipping write: %s", path)
+            raise
+        finally:
+            with self._write_locks_guard:
+                if not lock.is_locked:
+                    self._write_locks.pop(key, None)
 
     def open_session(self, session: SessionPersistenceSource) -> None:
         with contextlib.suppress(Exception):
             path = session_path(session.session_id)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            record = {
-                "type": "session",
-                "version": 2,
-                "id": session.session_id,
-                "created_at": datetime.fromtimestamp(session.started_at, tz=UTC).isoformat(),
-                "cwd": str(Path.cwd()),
-                "opensre_version": get_opensre_version(),
-            }
-            with path.open("w", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-            key = (session.session_id, str(path))
-            self._leaf_ids[key] = None
-            self._leaf_file_sig[key] = self._file_sig(path)
+            with self._locked(path):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                record = {
+                    "type": "session",
+                    "version": 2,
+                    "id": session.session_id,
+                    "created_at": datetime.fromtimestamp(session.started_at, tz=UTC).isoformat(),
+                    "cwd": str(Path.cwd()),
+                    "opensre_version": get_opensre_version(),
+                }
+                with path.open("w", encoding="utf-8") as fh:
+                    fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                key = (session.session_id, str(path))
+                self._leaf_ids[key] = None
+                self._leaf_file_sig[key] = self._file_sig(path)
 
     def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
         self._append_entry(
@@ -92,6 +176,14 @@ class JsonlSessionStore:
                 "text": text,
                 "display": False,
             },
+        )
+
+    def append_session_name(self, session_id: str, name: str) -> str:
+        return self._append_entry(
+            session_id,
+            "custom_message",
+            {"custom_type": "session_name", "name": name},
+            sidecar=True,
         )
 
     def append_turn_detail(
@@ -137,7 +229,7 @@ class JsonlSessionStore:
         metadata: dict[str, Any] | None = None,
         parent_id: str | None = None,
     ) -> str:
-        return self._append_entry(
+        entry_id = self._append_entry(
             session_id,
             "message",
             {
@@ -147,6 +239,13 @@ class JsonlSessionStore:
             },
             parent_id=parent_id,
         )
+        if entry_id and role == "assistant":
+            record_decision(
+                "assistant_persisted",
+                attributes={"message_id": entry_id, "text": content},
+                session_id=session_id,
+            )
+        return entry_id
 
     def append_tool_call(
         self,
@@ -247,6 +346,8 @@ class JsonlSessionStore:
         after_chars: int,
         before_tokens: int | None = None,
         after_tokens: int | None = None,
+        replacement_messages: list[list[str]] | None = None,
+        replacement_evidence: list[dict[str, Any]] | None = None,
     ) -> str:
         return self._append_entry(
             session_id,
@@ -258,6 +359,18 @@ class JsonlSessionStore:
                 "after_chars": after_chars,
                 "before_tokens": before_tokens,
                 "after_tokens": after_tokens,
+                # What the compaction kept verbatim. Present means the record
+                # replaces everything before it when the session is restored.
+                **(
+                    {"replacement_messages": replacement_messages}
+                    if replacement_messages is not None
+                    else {}
+                ),
+                **(
+                    {"replacement_evidence": replacement_evidence}
+                    if replacement_evidence is not None
+                    else {}
+                ),
             },
         )
 
@@ -309,102 +422,221 @@ class JsonlSessionStore:
             resolve_parent=False,
         )
 
-    def append_investigation_result(
-        self,
-        session_id: str,
-        state: dict[str, Any],
-        *,
-        trigger: str = "",
-    ) -> str:
-        investigation_id = uuid.uuid4().hex[:8]
-        report = state.get("problem_md") or state.get("slack_message") or state.get("report") or ""
-        self._append_entry(
-            session_id,
-            "investigation_result",
-            {
-                "investigation_id": investigation_id,
-                "completed_at": _now(),
-                "trigger": trigger.strip()[:_TRIGGER_MAX_CHARS],
-                "root_cause": str(state.get("root_cause") or ""),
-                "report": str(report),
-                "root_cause_category": str(state.get("root_cause_category") or ""),
-                "alert_name": str(state.get("alert_name") or ""),
-                "run_id": str(state.get("run_id") or ""),
-            },
-        )
-        return investigation_id
-
     def flush(self, session: SessionPersistenceSource) -> None:
         with contextlib.suppress(Exception):
             path = session_path(session.session_id)
             if not path.exists():
                 return
+            with self._locked(path):
+                self._flush_locked(session, path)
+
+    def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
+        """Persist goal and task-plan state changed by a goal control."""
+        from core.agent_harness.session.persistence.contracts import (
+            SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+        )
+        from core.agent_harness.session_goal.persist import session_goal_state_snapshot
+        from core.agent_harness.task_plan.persist import task_plan_state_snapshot
+
+        path = session_path(session.session_id)
+        if not path.exists():
+            raise FileNotFoundError(path)
+        with self._locked(path):
             records = self._read_records(path)
-            if not records:
-                return
-            trailing_leaf = records[-1].get("type") == "leaf"
-            if not trailing_leaf and not self._has_turns(records):
-                path.unlink(missing_ok=True)
-                return
-            # Trailing ``leaf``: still append changed session-goal state so
-            # mid-session ``/goal pause`` survives the next ``resolve``. Do not
-            # write another leaf (end-of-session flush stays idempotent).
-            # ``records`` is not re-read after the appends below. The counts in
-            # the leaf entry only match ``custom_message``/``turn_stub`` records,
-            # and the guard below only looks for ``message`` records — neither
-            # append can produce either, so a re-parse would return the same
-            # answers for the cost of a full pass over the whole transcript.
-            if session.accumulated_context and not trailing_leaf:
+            snapshot = {
+                "session_goal_state": session_goal_state_snapshot(session),
+                "task_plan_state": task_plan_state_snapshot(session) or {},
+            }
+            if not self.append_custom_message(
+                session.session_id,
+                custom_type=SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+                content=snapshot,
+                display=False,
+            ):
+                raise OSError("Could not persist session-goal control state")
+            if not self._append_task_plan_state(session, records):
+                raise OSError("Could not persist task-plan state")
+            if not self._append_session_goal_state(session, records):
+                raise OSError("Could not persist session-goal state")
+
+    def append_session_goal_control(self, session_id: str, reason: str) -> str:
+        """Durably record a goal control outside the live conversation branch."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            SESSION_GOAL_CONTROL_REQUESTED,
+        )
+
+        path = session_path(session_id)
+        if not path.exists():
+            raise OSError("Could not persist session-goal control")
+        control_id = _new_id()
+        with self._locked(path):
+            target_entry_id, _needs_separator = self._current_leaf_id(session_id, path)
+            if target_entry_id is None:
+                raise OSError("Could not identify session-goal control branch")
+            entry_id = self._append_entry(
+                session_id,
+                SESSION_GOAL_CONTROL_RECORD_TYPE,
+                {
+                    "control_id": control_id,
+                    "reason": reason,
+                    "status": SESSION_GOAL_CONTROL_REQUESTED,
+                    "target_entry_id": target_entry_id,
+                },
+                durable=True,
+                sidecar=True,
+            )
+        if not entry_id:
+            raise OSError("Could not persist session-goal control")
+        return control_id
+
+    def complete_session_goal_control(self, session_id: str, control_id: str) -> None:
+        """Durably acknowledge a previously recorded goal control."""
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_CONTROL_APPLIED,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+        )
+
+        entry_id = self._append_entry(
+            session_id,
+            SESSION_GOAL_CONTROL_RECORD_TYPE,
+            {
+                "control_id": control_id,
+                "status": SESSION_GOAL_CONTROL_APPLIED,
+            },
+            durable=True,
+            sidecar=True,
+        )
+        if not entry_id:
+            raise OSError("Could not acknowledge session-goal control")
+
+    def _append_session_goal_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not records or not hasattr(session, "session_goal"):
+            return True
+        from core.agent_harness.session_goal.persist import (
+            SESSION_GOAL_STATE_CUSTOM_TYPE,
+            session_goal_state_snapshot,
+            should_persist_session_goal_state,
+        )
+
+        goal_state = session_goal_state_snapshot(session)
+        if should_persist_session_goal_state(goal_state, prior_records=records):
+            return bool(
                 self.append_custom_message(
                     session.session_id,
-                    custom_type="accumulated_context",
-                    content=dict(session.accumulated_context),
+                    custom_type=SESSION_GOAL_STATE_CUSTOM_TYPE,
+                    content=goal_state,
                     display=False,
                 )
-            if hasattr(session, "session_goal"):
-                from core.agent_harness.session_goal.persist import (
-                    SESSION_GOAL_STATE_CUSTOM_TYPE,
-                    session_goal_state_snapshot,
-                    should_persist_session_goal_state,
-                )
+            )
+        return True
 
-                goal_state = session_goal_state_snapshot(session)
-                if should_persist_session_goal_state(goal_state, prior_records=records):
-                    self.append_custom_message(
-                        session.session_id,
-                        custom_type=SESSION_GOAL_STATE_CUSTOM_TYPE,
-                        content=goal_state,
-                        display=False,
-                    )
-            if trailing_leaf:
+    def _append_task_plan_state(
+        self,
+        session: SessionPersistenceSource,
+        records: list[dict[str, Any]],
+    ) -> bool:
+        if not hasattr(session, "task_plan"):
+            return True
+        from core.agent_harness.task_plan.persist import (
+            TASK_PLAN_STATE_CUSTOM_TYPE,
+            should_persist_task_plan_state,
+            task_plan_state_snapshot,
+        )
+
+        plan_state = task_plan_state_snapshot(session)
+        if should_persist_task_plan_state(plan_state, prior_records=records):
+            return bool(
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=TASK_PLAN_STATE_CUSTOM_TYPE,
+                    content=plan_state or {},
+                    display=False,
+                )
+            )
+        return True
+
+    def _flush_locked(self, session: SessionPersistenceSource, path: Path) -> None:
+        """Read-modify-append leaf / goal / message records; runs under the write lock.
+
+        Held whole so the record read and the appends it decides on cannot
+        interleave with another writer (see :meth:`_locked`); inner appends
+        re-enter the same lock.
+        """
+        records = self._read_records(path)
+        if not records:
+            return
+        trailing_leaf = self._conversation_tip_is_closed(records)
+        if not trailing_leaf and not self._has_turns(records):
+            from core.agent_harness.session.pending_choice import PendingUserChoice
+
+            if not isinstance(getattr(session, "pending_user_choice", None), PendingUserChoice):
+                path.unlink(missing_ok=True)
                 return
-            if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
-                for role, content in session.agent.messages:
-                    self.append_message(
-                        session.session_id,
-                        role=role,
-                        content=content,
-                        metadata={"kind": "chat"},
-                    )
-            duration_secs = max(
-                0,
-                int(
-                    (
-                        datetime.now(UTC) - datetime.fromtimestamp(session.started_at, tz=UTC)
-                    ).total_seconds()
-                ),
-            )
-            self._append_entry(
+        # Trailing ``leaf``: still append changed session-goal state so
+        # mid-session ``/goal pause`` survives the next ``resolve``. Do not
+        # write another leaf (end-of-session flush stays idempotent).
+        # ``records`` is not re-read after the appends below. The counts in
+        # the leaf entry only match ``custom_message``/``turn_stub`` records,
+        # and the guard below only looks for ``message`` records — neither
+        # append can produce either, so a re-parse would return the same
+        # answers for the cost of a full pass over the whole transcript.
+        if session.accumulated_context and not trailing_leaf:
+            self.append_custom_message(
                 session.session_id,
-                "leaf",
-                {
-                    "duration_secs": duration_secs,
-                    "total_turns": self._count_turns(records),
-                    "chat_turns": self._count_chat_turns(records),
-                    "investigation_turns": self._count_investigation_turns(records),
-                    "ended_at": _now(),
-                },
+                custom_type="accumulated_context",
+                content=dict(session.accumulated_context),
+                display=False,
             )
+        self._append_session_goal_state(session, records)
+        self._append_task_plan_state(session, records)
+        if hasattr(session, "pending_user_choice"):
+            from core.agent_harness.session.pending_choice import (
+                PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                pending_user_choice_state_snapshot,
+                should_persist_pending_user_choice_state,
+            )
+
+            choice_state = pending_user_choice_state_snapshot(session)
+            if should_persist_pending_user_choice_state(choice_state, prior_records=records):
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                    content=choice_state or {},
+                    display=False,
+                )
+        if trailing_leaf:
+            return
+        if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
+            for role, content in session.agent.messages:
+                self.append_message(
+                    session.session_id,
+                    role=role,
+                    content=content,
+                    metadata={"kind": "chat"},
+                )
+        duration_secs = max(
+            0,
+            int(
+                (
+                    datetime.now(UTC) - datetime.fromtimestamp(session.started_at, tz=UTC)
+                ).total_seconds()
+            ),
+        )
+        self._append_entry(
+            session.session_id,
+            "leaf",
+            {
+                "duration_secs": duration_secs,
+                "total_turns": self._count_turns(records),
+                "chat_turns": self._count_chat_turns(records),
+                "ended_at": _now(),
+            },
+        )
 
     def reopen_session(self, session_id: str) -> None:
         # V2 session files are append-only; drop the tip cache so the next
@@ -445,35 +677,42 @@ class JsonlSessionStore:
             path = session_path(session_id)
             if not path.exists():
                 return ""
-            entry_id = _new_id()
-            parent = parent_id
-            if parent is None and resolve_parent and not sidecar:
-                parent = self._current_leaf_id(session_id, path)
-            record = {
-                "id": entry_id,
-                "parent_id": parent,
-                "timestamp": _now(),
-                "type": entry_type,
-                **({"sidecar": True} if sidecar else {}),
-                **{key: value for key, value in payload.items() if value is not None},
-            }
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
-                if durable:
-                    fh.flush()
-                    os.fsync(fh.fileno())
-            if not sidecar:
-                self._remember_leaf(
-                    session_id,
-                    path,
-                    entry_type,
-                    entry_id,
-                    parent=parent,
-                )
-            # Refresh the sig even for sidecars: the tip is unchanged but the
-            # file grew, and a stale sig would force a cold rescan next append.
-            self._leaf_file_sig[(session_id, str(path))] = self._file_sig(path)
-            return entry_id
+            with self._locked(path):
+                entry_id = _new_id()
+                parent = parent_id
+                if parent is None and resolve_parent and not sidecar:
+                    parent, needs_separator = self._current_leaf_id(session_id, path)
+                else:
+                    needs_separator = self._tail_needs_separator(path)
+                record = {
+                    "id": entry_id,
+                    "parent_id": parent,
+                    "timestamp": _now(),
+                    "type": entry_type,
+                    **({"sidecar": True} if sidecar else {}),
+                    **{key: value for key, value in payload.items() if value is not None},
+                }
+                with path.open("a", encoding="utf-8") as fh:
+                    if needs_separator:
+                        fh.write("\n")
+                    fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+                    # S3 Files needs fsync for conversation records and durable
+                    # WAL sidecars to survive a hosted task restart.
+                    if durable or not sidecar:
+                        fh.flush()
+                        os.fsync(fh.fileno())
+                if not sidecar:
+                    self._remember_leaf(
+                        session_id,
+                        path,
+                        entry_type,
+                        entry_id,
+                        parent=parent,
+                    )
+                # Refresh the sig even for sidecars: the tip is unchanged but the
+                # file grew, and a stale sig would force a cold rescan next append.
+                self._leaf_file_sig[(session_id, str(path))] = self._file_sig(path)
+                return entry_id
         return ""
 
     def _remember_leaf(
@@ -497,32 +736,49 @@ class JsonlSessionStore:
         self._leaf_ids[key] = entry_id
 
     @staticmethod
-    def _loads_record(line: str) -> dict[str, Any] | None:
-        """Parse one JSONL line into a record dict, or ``None`` if unusable."""
+    def _loads_record(line: bytes, *, path: Path | None = None) -> dict[str, Any] | None:
+        """Parse one JSONL line into a record dict, or ``None`` if unusable.
+
+        A decode failure here is a torn tail or truncation on the read side —
+        recorded distinctly from a write-side lock timeout, since the two catch
+        different failure modes on either end of the same file.
+        """
         try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
+            rec = json.loads(line.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            record_operation(
+                "session_jsonl_decode_failed",
+                {"line_chars": len(line), "path": str(path) if path else ""},
+            )
             return None
         return rec if isinstance(rec, dict) else None
 
     @staticmethod
     def _read_records(path: Path) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            rec = JsonlSessionStore._loads_record(line)
+        for line in path.read_bytes().splitlines():
+            rec = JsonlSessionStore._loads_record(line, path=path)
             if rec is not None:
                 records.append(rec)
         return records
 
-    def _current_leaf_id(self, session_id: str, path: Path) -> str | None:
+    @staticmethod
+    def _tail_needs_separator(path: Path) -> bool:
+        if path.stat().st_size <= 0:
+            return False
+        with path.open("rb") as fh:
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) != b"\n"
+
+    def _current_leaf_id(self, session_id: str, path: Path) -> tuple[str | None, bool]:
         key = (session_id, str(path))
         sig = self._file_sig(path)
         if key in self._leaf_ids and self._leaf_file_sig.get(key) == sig:
-            return self._leaf_ids[key]
-        leaf = self._scan_leaf_id(path)
+            return self._leaf_ids[key], self._tail_needs_separator(path)
+        leaf, needs_separator = self._scan_leaf_id(path)
         self._leaf_ids[key] = leaf
         self._leaf_file_sig[key] = sig
-        return leaf
+        return leaf, needs_separator
 
     @staticmethod
     def _tip_id_from_record(rec: dict[str, Any]) -> tuple[bool, str | None]:
@@ -548,7 +804,7 @@ class JsonlSessionStore:
         entry_id = rec.get("id")
         return True, str(entry_id) if entry_id else None
 
-    def _scan_leaf_id(self, path: Path) -> str | None:
+    def _scan_leaf_id(self, path: Path) -> tuple[str | None, bool]:
         """Cold-path tip resolve, reading the file tail backwards in deltas.
 
         Each loop iteration reads only the bytes not yet seen (one chunk,
@@ -557,23 +813,27 @@ class JsonlSessionStore:
         entry. Lines are scanned newest-first and each complete line is parsed
         at most once. Peak memory is the buffered tail, bounded by the file.
 
-        Tip rules (first matching record from the end):
+        Returns the resolved tip and whether a separator is needed before the
+        next append. Tip rules (first matching record from the end):
         - ``trace_span`` / ``sidecar``-flagged / ``session``: skip (sidecar / header)
         - ``leaf``: tip is that marker's ``parent_id``
         - anything else: tip is that record's ``id``
         """
         size = path.stat().st_size
         if size <= 0:
-            return None
+            return None, False
         with path.open("rb") as fh:
             buffer = b""
             start = size
+            needs_separator = False
             scanned_low: int | None = None  # buffer offset of oldest scanned line
             while True:
                 if start > 0:
                     new_start = max(0, start - _TAIL_SCAN_CHUNK_BYTES)
                     fh.seek(new_start)
                     delta = fh.read(start - new_start)
+                    if not buffer:
+                        needs_separator = not delta.endswith(b"\n")
                     buffer = delta + buffer
                     if scanned_low is not None:
                         scanned_low += len(delta)
@@ -589,26 +849,35 @@ class JsonlSessionStore:
                 region_end = scanned_low if scanned_low is not None else len(buffer)
                 if region_start < region_end:
                     region = buffer[region_start:region_end]
-                    for line in reversed(region.decode("utf-8").splitlines()):
+                    for line in reversed(region.splitlines()):
                         if not line.strip():
                             continue
-                        rec = self._loads_record(line)
+                        rec = self._loads_record(line, path=path)
                         if rec is None:
                             continue
                         resolved, tip = self._tip_id_from_record(rec)
                         if resolved:
-                            return tip
+                            return tip, needs_separator
                     scanned_low = region_start
                 if start == 0:
-                    return None
+                    return None, needs_separator
 
     @staticmethod
     def _has_turns(records: list[dict[str, Any]]) -> bool:
         return any(
-            rec.get("type") in {"message", "investigation_result"}
+            rec.get("type") == "message"
             or (rec.get("type") == "custom_message" and rec.get("custom_type") == "turn_stub")
             for rec in records
         )
+
+    @staticmethod
+    def _conversation_tip_is_closed(records: list[dict[str, Any]]) -> bool:
+        """Return whether the newest non-sidecar record is a closing leaf."""
+        for record in reversed(records):
+            if record.get("sidecar") or record.get("type") == "trace_span":
+                continue
+            return bool(record.get("type") == "leaf")
+        return False
 
     @staticmethod
     def _count_turns(records: list[dict[str, Any]]) -> int:
@@ -626,14 +895,4 @@ class JsonlSessionStore:
             if rec.get("type") == "custom_message"
             and rec.get("custom_type") == "turn_stub"
             and rec.get("kind") in CHAT_KINDS
-        )
-
-    @staticmethod
-    def _count_investigation_turns(records: list[dict[str, Any]]) -> int:
-        return sum(
-            1
-            for rec in records
-            if rec.get("type") == "custom_message"
-            and rec.get("custom_type") == "turn_stub"
-            and rec.get("kind") in {"alert", "incoming_alert"}
         )

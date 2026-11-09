@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 import textwrap
@@ -9,11 +11,27 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.github import GITHUB_TOKEN_ENV, OPENSRE_INSTALL_GITHUB_TOKEN_ENV
+
 INSTALL_PS1 = Path(__file__).parents[2] / "install.ps1"
 
 
 def _powershell() -> str | None:
     return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def test_install_ps1_is_ascii_only() -> None:
+    # Windows PowerShell 5.1 reads a BOM-less script in the legacy ANSI code page,
+    # where the bytes of characters like U+2500 or U+2014 decode to a curly quote
+    # that ends the string early and breaks parsing of the whole installer.
+    offenders = [
+        (number, char)
+        for number, line in enumerate(INSTALL_PS1.read_bytes().decode("utf-8").splitlines(), 1)
+        for char in line
+        if ord(char) > 127
+    ]
+
+    assert offenders == []
 
 
 def test_install_ps1_defines_branded_progress_helpers() -> None:
@@ -28,6 +46,7 @@ def test_install_ps1_defines_branded_progress_helpers() -> None:
         "function Get-OpenSreProgressFrame",
         "function New-OpenSreProgressBar",
         "function Invoke-OpenSreStep",
+        "function Invoke-OpenSreFirstLaunchWarmup",
         "function Invoke-OpenSreDownloadFileWithProgress",
     ):
         assert helper in source
@@ -58,7 +77,50 @@ def test_install_ps1_preserves_retry_contract_source() -> None:
 
     assert 'Write-Warning "Attempt $attempt to $Description failed' in source
     assert "after $attempt attempts" in source
-    assert "$statusCode -ge 400 -and $statusCode -lt 500" in source
+    assert (
+        "$statusCode -ge 400 -and $statusCode -lt 500 "
+        "-and $statusCode -ne 403 -and $statusCode -ne 429"
+    ) in source
+
+
+@pytest.mark.parametrize("token", ["", "canary-token"])
+def test_powershell_scopes_canary_token_to_github_metadata(token: str) -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+
+    script = f"""
+        . '{INSTALL_PS1}' -SkipMain
+        $env:OPENSRE_INSTALL_VERBOSE = '0'
+        function Invoke-RestMethod {{
+            param([string]$Uri, [hashtable]$Headers)
+            if ($env:OPENSRE_INSTALL_GITHUB_TOKEN) {{ throw 'Token leaked into environment' }}
+            return @{{ uri = $Uri; headers = $Headers }}
+        }}
+        @{{
+            metadata = Invoke-OpenSreRestMethod -Uri 'https://api.github.com/repos/Tracer-Cloud/opensre/releases/latest'
+            other = Invoke-OpenSreRestMethod -Uri 'https://api.github.com.example.com/releases/latest'
+            download_headers = Get-OpenSreRequestHeaders
+            user_token = $env:GITHUB_TOKEN
+        }} | ConvertTo-Json -Depth 4
+    """
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        env=os.environ | {OPENSRE_INSTALL_GITHUB_TOKEN_ENV: token, GITHUB_TOKEN_ENV: "user-token"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    recorded = json.loads(result.stdout)
+    assert recorded["metadata"]["headers"].get("Authorization") == (
+        f"Bearer {token}" if token else None
+    )
+    assert "Authorization" not in recorded["other"]["headers"]
+    assert "Authorization" not in recorded["download_headers"]
+    assert recorded["user_token"] == "user-token"
 
 
 def test_install_ps1_defaults_to_main_build_channel() -> None:
@@ -78,12 +140,106 @@ def test_install_ps1_contains_auto_onboarding_launch_hook() -> None:
     assert "function Test-OpenSreAutoLaunchEnabled" in source
     assert "function Start-OpenSreOnboardingAfterInstall" in source
     assert "OPENSRE_AUTO_LAUNCH" in source
-    assert "& $BinaryPath onboard" in source
+    assert "& $BinaryPath setup" in source
     assert "Start-OpenSreOnboardingAfterInstall -BinaryPath $installedBinaryPath" in source
     # A redirected/piped host must be treated as non-interactive so the
     # full-screen prompt is not launched into a terminal it cannot control
     # (issue #3273).
     assert "[System.Console]::IsInputRedirected" in source
+
+
+def test_install_ps1_records_install_analytics_without_blocking_install() -> None:
+    source = INSTALL_PS1.read_text()
+
+    assert "function Send-OpenSreInstallAnalytics" in source
+    assert '$env:OPENSRE_INSTALL_SOURCE = "powershell_installer"' in source
+    assert "& $BinaryPath --record-install *> $null" in source
+    assert "Analytics is best-effort and must never fail installation." in source
+
+
+@pytest.mark.parametrize("prior_marker", [False, True])
+@pytest.mark.parametrize("wizard_override", [False, True])
+def test_install_ps1_records_original_marker_and_restores_environment(
+    tmp_path: Path, prior_marker: bool, wizard_override: bool
+) -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    if prior_marker:
+        (state_dir / "installed").touch()
+    fake_binary = tmp_path / "binary.ps1"
+    fake_binary.write_text(
+        "$env:OPENSRE_INSTALL_MARKER_STATE | Set-Content -LiteralPath $env:OPENSRE_TEST_MARKER_LOG\n"
+        'throw "Telemetry failed"\n'
+    )
+    recorded = tmp_path / "recorded"
+    script = textwrap.dedent(
+        f"""
+        . '{str(INSTALL_PS1).replace("'", "''")}' -SkipMain
+        $env:OPENSRE_INSTALL_MARKER_STATE = 'original'
+        function Write-OpenSreHeader {{
+            # Called by the real installer after its initial snapshot.
+            $marker = Join-Path $env:OPENSRE_TEST_STATE_DIR 'installed'
+            if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker }}
+            else {{ New-Item -ItemType File -Path $marker | Out-Null }}
+            Send-OpenSreInstallAnalytics -BinaryPath $env:OPENSRE_TEST_BINARY -Channel main -Version test -InstallMarkerState $installMarkerState
+            if ($env:OPENSRE_INSTALL_MARKER_STATE -ne 'original') {{ throw 'Environment leaked' }}
+            throw 'TEST_FINISHED'
+        }}
+        try {{ Install-OpenSre }}
+        catch {{ if ($_.Exception.Message -ne 'TEST_FINISHED') {{ throw }} }}
+        # A caught terminating error leaves pwsh -Command's exit status failed.
+        # Report successful completion only after all test assertions ran.
+        Write-Output 'INSTALLER_SNAPSHOT_OK'
+        """
+    )
+
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        env=os.environ
+        | {
+            "OPENSRE_HOME": str(tmp_path / "unused home" if wizard_override else state_dir),
+            "OPENSRE_WIZARD_STORE_PATH": str(state_dir / "wizard.json") if wizard_override else "",
+            "OPENSRE_TEST_STATE_DIR": str(state_dir),
+            "OPENSRE_TEST_BINARY": str(fake_binary),
+            "OPENSRE_TEST_MARKER_LOG": str(recorded),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "INSTALLER_SNAPSHOT_OK" in result.stdout
+    assert (state_dir / "installed").exists() is not prior_marker
+    assert recorded.read_text(encoding="utf-8-sig").strip() == (
+        "present" if prior_marker else "absent"
+    )
+
+
+def test_install_ps1_preserves_full_binary_name_in_next_steps() -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+
+    script = textwrap.dedent(
+        f"""
+        . '{INSTALL_PS1}' -SkipMain
+        Get-OpenSreCommandName -BinaryName 'opensre.exe'
+        """
+    )
+
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "opensre"
 
 
 def test_install_ps1_soft_installs_github_cli_via_winget() -> None:
@@ -173,3 +329,72 @@ def test_install_ps1_dot_sources_when_powershell_available() -> None:
     assert "Unit progress step" in output
     assert "OK Unit progress step" in output
     assert "result-value" in output
+
+
+@pytest.mark.parametrize(
+    ("tag", "origin"),
+    [("-lp", "landing_page"), ("-gh", "github"), ("-dc", "documentation"), ("", "")],
+)
+def test_powershell_origin_reaches_binary_and_restores_environment(
+    tmp_path: Path, tag: str, origin: str
+) -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+    fake_binary = tmp_path / "binary.ps1"
+    fake_binary.write_text(
+        "@{ origin = [string]$env:OPENSRE_INSTALL_ORIGIN; track = $env:OPENSRE_INSTALL_CHANNEL; source = $env:OPENSRE_INSTALL_SOURCE } | ConvertTo-Json | Set-Content -LiteralPath $env:OPENSRE_TEST_ORIGIN_LOG\n"
+        "throw 'Telemetry failed'\n"
+    )
+    recorded = tmp_path / "recorded.json"
+    script = f"""
+        $source = Get-Content -Raw -LiteralPath '{str(INSTALL_PS1).replace("'", "''")}'
+        $probe = @'
+        $env:OPENSRE_INSTALL_ORIGIN = 'previous'
+        Send-OpenSreInstallAnalytics -BinaryPath $env:OPENSRE_TEST_BINARY -Channel $Channel -Version test
+        if ($env:OPENSRE_INSTALL_ORIGIN -ne 'previous') {{ throw 'Environment leaked' }}
+        Write-Output 'ORIGIN_OK'
+'@
+        & ([scriptblock]::Create($source + "`n" + $probe)) -SkipMain -Channel release {tag}
+    """
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        env=os.environ
+        | {"OPENSRE_TEST_BINARY": str(fake_binary), "OPENSRE_TEST_ORIGIN_LOG": str(recorded)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ORIGIN_OK" in result.stdout
+    assert json.loads(recorded.read_text(encoding="utf-8-sig")) == {
+        "origin": origin,
+        "track": "release",
+        "source": "powershell_installer",
+    }
+
+
+def test_powershell_rejects_conflicting_origins() -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+    result = subprocess.run(
+        [
+            shell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(INSTALL_PS1),
+            "-SkipMain",
+            "-lp",
+            "-gh",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "parameter set" in (result.stdout + result.stderr).lower()

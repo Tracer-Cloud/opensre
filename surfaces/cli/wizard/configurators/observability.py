@@ -3,26 +3,27 @@
 from __future__ import annotations
 
 from config.env_file import sync_env_values
-from integrations.coralogix.setup import CORALOGIX_SETUP
-from integrations.datadog.setup import DATADOG_SETUP
-from integrations.grafana.setup import GRAFANA_SETUP
-from integrations.honeycomb.setup import HONEYCOMB_SETUP
-from integrations.opensearch.setup import OPENSEARCH_SETUP
+from infrastructure.terminal.theme import ERROR, HIGHLIGHT, SECONDARY
+from integrations.coralogix import CORALOGIX_SETUP
+from integrations.datadog import DATADOG_SETUP
+from integrations.grafana import GRAFANA_SETUP
+from integrations.honeycomb import HONEYCOMB_SETUP
+from integrations.new_relic import NEW_RELIC_SETUP
+from integrations.opensearch import OPENSEARCH_SETUP
 from integrations.store import remove_integration, upsert_integration
 from integrations.tempo.setup import TEMPO_SETUP
-from platform.terminal.theme import ERROR, HIGHLIGHT, SECONDARY
-from surfaces.cli.wizard._ui import (
-    _confirm,
-    _console,
-    _integration_defaults,
-    _prompt_value,
-    _render_integration_result,
-    _string_value,
+from surfaces.cli.wizard.components import (
+    confirm,
+    console,
+    integration_defaults,
+    prompt_value,
+    string_value,
 )
 from surfaces.cli.wizard.configurators.spec_configurator import configure_from_spec
 from surfaces.cli.wizard.integration_health import (
     validate_splunk_integration,
 )
+from surfaces.cli.wizard.summaries import render_integration_result
 
 
 def _configure_grafana() -> tuple[str, str]:
@@ -35,8 +36,8 @@ def _configure_grafana_local() -> tuple[str, str]:
     from pathlib import Path
 
     if not shutil.which("docker"):
-        _console.print(f"[{ERROR}]Docker not found.[/]")
-        _console.print(f"[{SECONDARY}]Install Docker Desktop and retry.[/]")
+        console.print(f"[{ERROR}]Docker not found.[/]")
+        console.print(f"[{SECONDARY}]Install Docker Desktop and retry.[/]")
         return "Grafana Local (skipped)", ""
 
     # Check Docker daemon is actually running
@@ -48,14 +49,15 @@ def _configure_grafana_local() -> tuple[str, str]:
         errors="replace",
     )
     if ping.returncode != 0:
-        _console.print(f"[{ERROR}]Docker is not running.[/]")
-        _console.print(
-            f"[{SECONDARY}]Start Docker Desktop, then run [bold]opensre onboard[/bold] again.[/]"
+        console.print(f"[{ERROR}]Docker is not running.[/]")
+        console.print(
+            f"[{SECONDARY}]Start Docker Desktop, then run "
+            "[bold]opensre integrations setup grafana[/bold] again.[/]"
         )
         return "Grafana Local (skipped)", ""
 
     compose_file = str(Path(__file__).parent.parent / "local_grafana_stack/docker-compose.yml")
-    with _console.status("Starting Grafana + Loki (docker compose up -d)...", spinner="dots"):
+    with console.status("Starting Grafana + Loki (docker compose up -d)...", spinner="dots"):
         result = subprocess.run(
             ["docker", "compose", "-f", compose_file, "up", "-d"],
             capture_output=True,
@@ -64,17 +66,17 @@ def _configure_grafana_local() -> tuple[str, str]:
             errors="replace",
         )
     if result.returncode != 0:
-        _console.print(f"[{ERROR}]Docker compose failed.[/]")
-        _console.print(result.stderr or result.stdout)
+        console.print(f"[{ERROR}]Docker compose failed.[/]")
+        console.print(result.stderr or result.stdout)
         return "Grafana Local (skipped)", ""
 
-    with _console.status("Waiting for Loki to be ready and seeding logs...", spinner="dots"):
+    with console.status("Waiting for Loki to be ready and seeding logs...", spinner="dots"):
         try:
             from surfaces.cli.wizard.grafana_seed import seed_logs
 
             seed_logs()
         except (SystemExit, Exception) as exc:
-            _console.print(f"[{ERROR}]Loki seed failed: {exc}[/]")
+            console.print(f"[{ERROR}]Loki seed failed: {exc}[/]")
             return "Grafana Local (skipped)", ""
 
     endpoint = "http://localhost:3000"
@@ -82,11 +84,9 @@ def _configure_grafana_local() -> tuple[str, str]:
     remove_integration("grafana")  # clean up any stale grafana record pointing to localhost
     upsert_integration("grafana_local", {"credentials": {"endpoint": endpoint, "api_key": api_key}})
     env_path = sync_env_values({"GRAFANA_INSTANCE_URL": endpoint})
-    _console.print(f"[{HIGHLIGHT}]Grafana Local · ready[/]")
-    _console.print(f"[{SECONDARY}]UI: {endpoint}[/]")
-    _console.print(f"[{SECONDARY}]Loki seeded with events_fact pipeline failure logs.[/]")
-    _console.print(f"[{SECONDARY}]Run RCA:[/]")
-    _console.print("[bold]  opensre investigate -i tests/fixtures/grafana_local_alert.json[/]")
+    console.print(f"[{HIGHLIGHT}]Grafana Local · ready[/]")
+    console.print(f"[{SECONDARY}]UI: {endpoint}[/]")
+    console.print(f"[{SECONDARY}]Loki seeded with events_fact pipeline failure logs.[/]")
     return "Grafana Local", str(env_path)
 
 
@@ -102,6 +102,10 @@ def _configure_coralogix() -> tuple[str, str]:
     return configure_from_spec(CORALOGIX_SETUP, title="Coralogix")
 
 
+def _configure_new_relic() -> tuple[str, str]:
+    return configure_from_spec(NEW_RELIC_SETUP, title="New Relic")
+
+
 _TEMPO_INTRO = (
     f"[{SECONDARY}]Tempo commonly runs without auth behind a gateway — a URL alone is enough.\n"
     "For auth, provide either a bearer token OR a username/password (not both).[/]"
@@ -113,33 +117,33 @@ def _configure_tempo() -> tuple[str, str]:
 
 
 def _configure_splunk() -> tuple[str, str]:
-    _, credentials = _integration_defaults("splunk")
+    _, credentials = integration_defaults("splunk")
     while True:
-        base_url = _prompt_value(
+        base_url = prompt_value(
             "Splunk REST API base URL (e.g. https://splunk.corp.com:8089)",
-            default=_string_value(credentials.get("base_url")),
+            default=string_value(credentials.get("base_url")),
         )
-        token = _prompt_value(
+        token = prompt_value(
             "Splunk API bearer token",
-            default=_string_value(credentials.get("token")),
+            default=string_value(credentials.get("token")),
             secret=True,
         )
-        index = _prompt_value(
+        index = prompt_value(
             "Default Splunk index to search",
-            default=_string_value(credentials.get("index"), "main"),
+            default=string_value(credentials.get("index"), "main"),
         )
-        verify_ssl = _confirm(
+        verify_ssl = confirm(
             "Verify SSL certificate?",
             default=bool(credentials.get("verify_ssl", True)),
         )
         ca_bundle = ""
         if verify_ssl:
-            ca_bundle = _prompt_value(
+            ca_bundle = prompt_value(
                 "Path to CA bundle for SSL verification (leave empty to use system defaults)",
-                default=_string_value(credentials.get("ca_bundle")),
+                default=string_value(credentials.get("ca_bundle")),
                 allow_empty=True,
             )
-        with _console.status("Validating Splunk integration...", spinner="dots"):
+        with console.status("Validating Splunk integration...", spinner="dots"):
             result = validate_splunk_integration(
                 base_url=base_url,
                 token=token,
@@ -147,7 +151,7 @@ def _configure_splunk() -> tuple[str, str]:
                 verify_ssl=verify_ssl,
                 ca_bundle=ca_bundle,
             )
-        _render_integration_result("Splunk", result)
+        render_integration_result("Splunk", result)
         if result.ok:
             upsert_integration(
                 "splunk",
@@ -171,7 +175,7 @@ def _configure_splunk() -> tuple[str, str]:
                 env_values["SPLUNK_CA_BUNDLE"] = ca_bundle
             env_path = sync_env_values(env_values)
             return "Splunk", str(env_path)
-        _console.print(f"[{SECONDARY}]Try again or press Ctrl+C to cancel.[/]")
+        console.print(f"[{SECONDARY}]Try again or press Ctrl+C to cancel.[/]")
 
 
 def _configure_opensearch() -> tuple[str, str]:

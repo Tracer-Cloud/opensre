@@ -2,7 +2,8 @@
 
 import os
 
-from config.config import get_tracer_base_url
+from config.tracer_urls import get_tracer_base_url
+from infrastructure.safety.auth.jwt_auth import extract_org_id_from_jwt
 from integrations.tracer.aws_batch_jobs import AWSBatchJobResult
 from integrations.tracer.client import TracerClient
 from integrations.tracer.tracer_integrations import (
@@ -15,7 +16,6 @@ from integrations.tracer.tracer_pipelines import (
     TracerRunResult,
 )
 from integrations.tracer.tracer_tools import TracerTaskResult
-from platform.auth.jwt_auth import extract_org_id_from_jwt
 
 __all__ = [
     "AWSBatchJobResult",

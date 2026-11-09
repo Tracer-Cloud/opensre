@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from core.agent_harness.session import SessionCore
+from core.agent_harness import SessionCore
 
 _MESSAGE_ROLES = frozenset({"user", "assistant"})
 

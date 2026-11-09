@@ -6,7 +6,10 @@ Provider adapters choose which keys to strip (e.g. Bedrock Converse rejects
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
+
+from core.llm.types import SchemaDescribedTool
 
 # Keys rejected or unresolvable by strict HTTP tool-schema APIs.
 COMMON_UNSUPPORTED_SCHEMA_KEYS = frozenset(
@@ -207,6 +210,6 @@ def _openai_tool_schema(tool: Any) -> dict[str, Any]:
     }
 
 
-def build_openai_tool_specs(tools: list[Any]) -> list[dict[str, Any]]:
+def build_openai_tool_specs(tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
     """Build OpenAI chat ``tools`` entries from registered tool objects."""
     return [_openai_tool_schema(t) for t in tools]

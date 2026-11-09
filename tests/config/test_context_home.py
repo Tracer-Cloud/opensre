@@ -253,3 +253,73 @@ def test_a_bound_org_still_uses_the_mount(_home: Path, monkeypatch: pytest.Monke
 
     # Assert
     assert sessions == mount / "users" / ALICE.id
+
+
+# --- deployment_home: the one root the shell and a chat transport share -------
+#
+# opensre_home() keeps an unbound caller on the host root so the CLI never writes
+# into a customer's volume. Background investigation records are the one artifact
+# where that separation is wrong: the shell starts the investigation and a chat
+# transport retrieves it, and on a deployment that names an organization those are
+# the same person looking at the same work.
+
+
+def test_deployment_home_matches_opensre_home_for_a_bound_org(
+    _home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bound callers must see no difference: the two roots agree, mounted or not."""
+    with bound_storage_scope(_member(ACME, ALICE)):
+        assert paths.deployment_home() == paths.opensre_home()
+
+    mount = _home / "workspace" / "memories"
+    monkeypatch.setenv(paths.CONTEXT_ROOT_ENV, str(mount))
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, ACME.id)
+    with bound_storage_scope(_member(ACME, ALICE)):
+        assert paths.deployment_home() == paths.opensre_home() == mount
+
+
+def test_deployment_home_resolves_an_unbound_caller_to_the_configured_org(
+    _home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shell binds no scope. Without this it writes the host root while a chat
+    turn for the same deployment reads the org root, so the two never meet."""
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, ACME.id)
+
+    unbound = paths.deployment_home()
+    with bound_storage_scope(_member(ACME, ALICE)):
+        bound = paths.deployment_home()
+
+    assert unbound == bound == _home / "orgs" / ACME.id
+    # opensre_home() must keep its own contract: unbound stays on the host root.
+    assert paths.opensre_home() == _home
+
+
+def test_deployment_home_stays_on_the_host_root_with_no_organization(_home: Path) -> None:
+    """A laptop names no organization, so nothing changes for it."""
+    assert paths.deployment_home() == _home
+
+
+def test_deployment_home_refuses_a_mount_owned_by_another_org(
+    _home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owner check is the whole tenancy guarantee; it must survive being
+    shared with a second entry point rather than being reimplemented beside it."""
+    monkeypatch.setenv(paths.CONTEXT_ROOT_ENV, str(_home / "memories"))
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, ACME.id)
+
+    with (
+        bound_storage_scope(_member(GLOBEX, ALICE)),
+        pytest.raises(paths.ContextRootOwnerMismatchError),
+    ):
+        paths.deployment_home()
+
+
+def test_deployment_home_rejects_a_hostile_configured_organization(
+    _home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unbound caller takes the org id from the environment rather than from a
+    validated principal, so it must pass through the same segment check."""
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "../escape")
+
+    with pytest.raises(paths.UnsafePathSegmentError):
+        paths.deployment_home()

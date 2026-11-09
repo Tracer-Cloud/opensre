@@ -5,29 +5,30 @@ from __future__ import annotations
 import time
 
 from rich.console import Console
+from rich.markup import escape
 
-from platform.terminal import theme as ui_theme
-from platform.terminal.theme import (
+from infrastructure.terminal import theme as ui_theme
+from infrastructure.terminal.theme import (
     get_active_theme_name,
     list_theme_names,
     set_active_theme,
 )
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui.components.choice_menu import (
+from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
 )
 
 
 def _refresh_prompt_style(session: Session) -> None:
-    """Defer prompt-toolkit style refresh until the next prompt_async turn."""
+    """Defer prompt-toolkit style refresh until the prompt input loop resumes."""
     session.terminal.pending_theme_refresh = True
 
 
 def _settle_and_drain_cpr() -> None:
     """Let in-flight terminal CPR replies land, then discard them from stdin."""
-    from surfaces.interactive_shell.ui.components.cpr_stdin import drain_stale_cpr_bytes
+    from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
     time.sleep(0.05)
     drain_stale_cpr_bytes()
@@ -38,14 +39,14 @@ def _persist_and_report_theme(
     console: Console,
     selected: str,
 ) -> None:
-    from surfaces.cli.commands.config import _load_config, _save_config, _set_nested_key
-    from surfaces.interactive_shell.ui.components.rendering import refresh_welcome_poster
+    from config.local_settings import load_local_settings, save_local_settings, set_nested_key
+    from surfaces.interactive_shell.ui.poster import refresh_welcome_poster
 
     active = set_active_theme(selected)
     session.terminal.active_theme_name = active.name
 
-    updated = _set_nested_key(_load_config(), "interactive.theme", active.name)
-    _save_config(updated)
+    updated = set_nested_key(load_local_settings(), "interactive.theme", active.name)
+    save_local_settings(updated)
 
     # Poster redraw and prompt invalidation both trigger prompt_toolkit DSR/CPR
     # queries under patch_stdout. Drain between each step so bytes never leak into
@@ -61,7 +62,9 @@ def _cmd_theme(session: Session, console: Console, args: list[str]) -> bool:
         selected = args[0].strip().lower()
         if selected not in list_theme_names():
             supported = ", ".join(list_theme_names())
-            console.print(f"[{ui_theme.ERROR}]unknown theme:[/] {selected}  (choose: {supported})")
+            console.print(
+                f"[{ui_theme.ERROR}]unknown theme:[/] {escape(selected)}  (choose: {supported})"
+            )
             return True
         _persist_and_report_theme(session, console, selected)
         return True

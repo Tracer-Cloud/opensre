@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from integrations.config_models import GroundcoverIntegrationConfig
+from integrations.groundcover.config import GroundcoverIntegrationConfig
 from integrations.groundcover.verifier import verify_groundcover as _verify_groundcover
 from integrations.probes import ProbeResult
 from integrations.verify import resolve_effective_integrations

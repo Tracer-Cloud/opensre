@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
+from infrastructure.delivery.notifications.delivery_transport import DeliveryResponse
 from integrations.twilio.delivery import post_twilio_sms, send_twilio_sms_report
-from platform.notifications.delivery_transport import DeliveryResponse
 
 
 def _success_response(**kwargs: Any) -> DeliveryResponse:

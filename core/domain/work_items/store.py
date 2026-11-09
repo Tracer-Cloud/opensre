@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Final
 
 from filelock import FileLock
 
@@ -23,17 +23,20 @@ from core.domain.work_items.models import (
     WorkItemChannelTarget,
     WorkItemPriority,
     WorkItemStatus,
+    WorkItemUpdates,
     make_work_item,
     mark_work_item_completed,
     parse_status,
     update_work_item_fields,
 )
+from core.domain.work_items.scoring import PRIORITY_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
 _LOCK_FILENAME = ".work_items.lock"
 _LEGACY_SLACK_FILENAME = "slack_captured_tasks.jsonl"
 _LEGACY_IMPORT_SENTINEL = ".legacy_slack_imported"
+_SELECTOR_PREFIX_MIN_LEN: Final[int] = 4
 
 
 class WorkItemStoreError(RuntimeError):
@@ -90,21 +93,27 @@ def list_work_items(
     project: str = "",
     owner: str = "",
     store_path: Path | None = None,
+    read_only: bool = False,
 ) -> list[WorkItem]:
     path = store_path or work_items_path()
+    if read_only and not path.exists():
+        return []
     with _store_lock(path):
-        _import_legacy_slack_tasks_once(path)
+        if not read_only:
+            _import_legacy_slack_tasks_once(path)
         items = _load_items_no_lock(path)
     filtered = _filter_items(items, status=status, project=project, owner=owner)
     filtered.sort(key=_sort_key)
     return filtered
 
 
-def get_work_item(item_id: str, store_path: Path | None = None) -> WorkItem | None:
+def get_work_item(
+    item_id: str, store_path: Path | None = None, *, read_only: bool = False
+) -> WorkItem | None:
     clean = item_id.strip()
     if not clean:
         return None
-    for item in list_work_items(status=None, store_path=store_path):
+    for item in list_work_items(status=None, store_path=store_path, read_only=read_only):
         if item.id == clean or item.display_id == clean:
             return item
     return None
@@ -126,8 +135,6 @@ def add_work_item(
     created_by: str = "",
     store_path: Path | None = None,
 ) -> WorkItem:
-    from core.domain.work_items.models import WorkItemChannelTarget
-
     item = make_work_item(
         title=title,
         priority=priority,
@@ -213,7 +220,7 @@ def complete_work_items(
 def update_work_item(
     selector: str,
     *,
-    changes: Mapping[str, Any],
+    changes: WorkItemUpdates,
     store_path: Path | None = None,
 ) -> UpdateWorkItemResult:
     if not changes:
@@ -275,55 +282,49 @@ def _filter_items(
 
 def _sort_key(item: WorkItem) -> tuple[int, int, str]:
     status_order = 1 if item.status is WorkItemStatus.COMPLETED else 0
-    priority_order = {
-        WorkItemPriority.URGENT: 0,
-        WorkItemPriority.HIGH: 1,
-        WorkItemPriority.NORMAL: 2,
-        WorkItemPriority.LOW: 3,
-    }[item.priority]
-    return (status_order, priority_order, item.created_at)
+    return (status_order, -PRIORITY_WEIGHTS[item.priority], item.created_at)
+
+
+def _match_id(item: WorkItem, clean: str) -> bool:
+    return item.id == clean or item.display_id == clean
+
+
+def _match_id_prefix(item: WorkItem, clean: str) -> bool:
+    return len(clean) >= _SELECTOR_PREFIX_MIN_LEN and item.id.startswith(clean)
+
+
+def _match_exact_title(item: WorkItem, clean: str) -> bool:
+    return item.title.lower() == clean.lower()
+
+
+def _match_title_contains(item: WorkItem, clean: str) -> bool:
+    return clean.lower() in item.title.lower()
+
+
+_SELECTOR_MATCHERS: Final[tuple[Callable[[WorkItem, str], bool], ...]] = (
+    _match_id,
+    _match_id_prefix,
+    _match_exact_title,
+    _match_title_contains,
+)
+
+
+def _unique_match(selector: str, matches: Sequence[WorkItem]) -> WorkItemResolution | None:
+    if len(matches) == 1:
+        return WorkItemResolution(selector=selector, item=matches[0])
+    if len(matches) > 1:
+        return WorkItemResolution(selector=selector, error="ambiguous", candidates=tuple(matches))
+    return None
 
 
 def _resolve_selector_from_items(selector: str, items: Sequence[WorkItem]) -> WorkItemResolution:
     clean = _clean_selector(selector)
     if not clean:
         return WorkItemResolution(selector=selector, error="empty_selector")
-
-    exact_id = [item for item in items if item.id == clean or item.display_id == clean]
-    if len(exact_id) == 1:
-        return WorkItemResolution(selector=selector, item=exact_id[0])
-    if len(exact_id) > 1:
-        return WorkItemResolution(selector=selector, error="ambiguous", candidates=tuple(exact_id))
-
-    if len(clean) >= 4:
-        prefix_matches = [item for item in items if item.id.startswith(clean)]
-        if len(prefix_matches) == 1:
-            return WorkItemResolution(selector=selector, item=prefix_matches[0])
-        if len(prefix_matches) > 1:
-            return WorkItemResolution(
-                selector=selector,
-                error="ambiguous",
-                candidates=tuple(prefix_matches),
-            )
-
-    title = clean.lower()
-    exact_title = [item for item in items if item.title.lower() == title]
-    if len(exact_title) == 1:
-        return WorkItemResolution(selector=selector, item=exact_title[0])
-    if len(exact_title) > 1:
-        return WorkItemResolution(
-            selector=selector, error="ambiguous", candidates=tuple(exact_title)
-        )
-
-    contains_title = [item for item in items if title in item.title.lower()]
-    if len(contains_title) == 1:
-        return WorkItemResolution(selector=selector, item=contains_title[0])
-    if len(contains_title) > 1:
-        return WorkItemResolution(
-            selector=selector,
-            error="ambiguous",
-            candidates=tuple(contains_title),
-        )
+    for matches in _SELECTOR_MATCHERS:
+        resolution = _unique_match(selector, [item for item in items if matches(item, clean)])
+        if resolution is not None:
+            return resolution
     return WorkItemResolution(selector=selector, error="not_found")
 
 
@@ -346,7 +347,7 @@ def _load_items_no_lock(path: Path) -> list[WorkItem]:
     if not path.exists():
         return []
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw: object = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to read work item store: %s", exc)
         raise WorkItemStoreError(f"Failed to read work item store at {path}") from exc
@@ -399,7 +400,7 @@ def _import_legacy_slack_tasks_once(path: Path) -> int:
 
     for line in lines:
         try:
-            raw = json.loads(line)
+            raw: object = json.loads(line)
         except json.JSONDecodeError:
             continue
         if not isinstance(raw, Mapping):
@@ -419,10 +420,13 @@ def _import_legacy_slack_tasks_once(path: Path) -> int:
         )
         created_at = str(raw.get("created_at") or "").strip()
         if created_at:
+            status_value = raw.get("status", WorkItemStatus.OPEN.value)
             item = update_work_item_fields(
                 item,
                 {
-                    "status": raw.get("status", WorkItemStatus.OPEN.value),
+                    "status": str(status_value)
+                    if status_value is not None
+                    else WorkItemStatus.OPEN.value
                 },
             )
             payload = item.to_dict()

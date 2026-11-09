@@ -16,8 +16,10 @@ import json
 import logging
 from typing import Any, cast
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.domain.types.evidence import CATALOG_ENTRIES_KEY, record_evidence_entry
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 from integrations.sqs import (
     DEFAULT_SQS_MAX_QUEUES,
@@ -29,6 +31,11 @@ from integrations.sqs import (
 )
 
 logger = logging.getLogger(__name__)
+
+_BACKLOG_ALERT_USE_CASE = (
+    "Investigating a queue-age or backlog alert — returns depth, in-flight "
+    "count, and DLQ configuration"
+)
 
 
 def _queue_name_from_url(url: str) -> str:
@@ -72,6 +79,57 @@ def _parse_attributes(raw_attrs: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def _sqs_summary(queues: list[dict[str, Any]]) -> str:
+    measured = [
+        q
+        for q in queues
+        if "attributes_error" not in q
+        and isinstance(q.get("visible_count"), int)
+        and isinstance(q.get("in_flight_count"), int)
+    ]
+    parts = [f"{len(queues)} queues"]
+    if measured:
+        visible = sum(q["visible_count"] for q in measured)
+        in_flight = sum(q["in_flight_count"] for q in measured)
+        with_dlq = sum(1 for q in measured if q.get("has_dlq"))
+        parts.append(f"{visible} visible, {in_flight} in-flight, {with_dlq} with DLQ")
+        if len(measured) < len(queues):
+            parts[-1] += f" across {len(measured)} measured"
+    unreadable = len(queues) - len(measured)
+    if unreadable:
+        parts.append(f"{unreadable} unreadable")
+    return ", ".join(parts)
+
+
+def _map_get_sqs_queue_attributes(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    queues = output.get("queues") or []
+    if not isinstance(queues, list):
+        return
+    existing = evidence.get("sqs_queues")
+    merged: dict[str, dict[str, Any]] = {}
+    for q in [*(existing if isinstance(existing, list) else []), *queues]:
+        if isinstance(q, dict):
+            merged[str(q.get("url") or q.get("name") or id(q))] = q
+    if not merged:
+        return
+    evidence["sqs_queues"] = list(merged.values())
+    summary = _sqs_summary(list(merged.values()))
+    entries = evidence.get(CATALOG_ENTRIES_KEY)
+    if isinstance(entries, list):
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("source") == "get_sqs_queue_attributes":
+                entry["summary"] = summary
+                return
+    record_evidence_entry(
+        evidence,
+        source="get_sqs_queue_attributes",
+        label="SQS Queues",
+        summary=summary,
+    )
+
+
 @tool(
     name="get_sqs_queue_attributes",
     display_name="SQS queues",
@@ -87,8 +145,7 @@ def _parse_attributes(raw_attrs: dict[str, str]) -> dict[str, Any]:
         "Diagnosing stuck consumers: in-flight count equals the consumer/pod count",
         "Identifying a poison-pill message cycling due to a short VisibilityTimeout",
         "Checking whether a queue has a dead-letter queue configured at all",
-        "Investigating a queue-age or backlog alert — returns depth, in-flight "
-        "count, and DLQ configuration",
+        _BACKLOG_ALERT_USE_CASE,
         "Confirming whether a queue is draining after a consumer deploy or scale-up",
     ],
     requires=[],
@@ -117,7 +174,8 @@ def _parse_attributes(raw_attrs: dict[str, str]) -> dict[str, Any]:
     injected_params=("aws_backend",),
     is_available=sqs_is_available,
     extract_params=sqs_extract_params,
-    surfaces=("investigation", "chat"),
+    surfaces=(ToolSurface.CHAT,),
+    evidence_mapper=_map_get_sqs_queue_attributes,
 )
 def get_sqs_queue_attributes(
     queue_name_prefix: str = "",
@@ -220,7 +278,7 @@ def get_sqs_queue_attributes(
         queues.append({"name": name, "url": url, **_parse_attributes(raw_attrs)})
 
     # No "error" key on success: the runtime tool loop flags failure on a truthy
-    # "error" (core.execution._normalize_result).
+    # "error" (core.tool.execution._normalize_result).
     return {
         "source": "sqs",
         "available": True,

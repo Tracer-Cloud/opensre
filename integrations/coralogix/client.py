@@ -9,10 +9,10 @@ from typing import Any
 
 import httpx
 
+from infrastructure.observability.errors.service import capture_service_error
+from infrastructure.observability.streaming import StreamingParseStats
 from integrations.config_models import CoralogixIntegrationConfig
 from integrations.probes import ProbeResult
-from platform.observability.errors.service import capture_service_error
-from platform.observability.streaming import StreamingParseStats
 
 logger = logging.getLogger(__name__)
 

@@ -6,15 +6,15 @@ so a second machine can pick up where the first left off.
 
 The backend is selected by ``OPENSRE_REMOTE_SYNC_PROVIDER`` (default ``aws``;
 built-in also ``gcs`` and ``vercel``). New vendors register under
-``platform.filestorage.providers`` without changing the sync engine.
+``infrastructure.filestorage.providers`` without changing the sync engine.
 """
 
 from __future__ import annotations
 
 # Master switch. Sync stays off until this is truthy, even if a bucket is named.
 REMOTE_SYNC_ENV = "OPENSRE_REMOTE_SYNC"
-# Cloud provider registered in platform.filestorage.providers (default: aws).
-# Value must stay aligned with BuiltInProvider in platform.filestorage.enums.
+# Cloud provider registered in infrastructure.filestorage.providers (default: aws).
+# Value must stay aligned with BuiltInProvider in infrastructure.filestorage.enums.
 REMOTE_SYNC_PROVIDER_ENV = "OPENSRE_REMOTE_SYNC_PROVIDER"
 # Top-level store name the user owns (S3 bucket, GCS bucket, Vercel Blob store
 # name/id, …). Required when sync is on.
@@ -36,6 +36,9 @@ REMOTE_SYNC_EXCLUDE_OFF_ENV = "OPENSRE_REMOTE_SYNC_EXCLUDE_OFF"
 # Same name Vercel documents for @vercel/blob / vercel CLI.
 BLOB_READ_WRITE_TOKEN_ENV = "BLOB_READ_WRITE_TOKEN"
 
+# Endpoint URL override for S3-compatible stores (MinIO, R2, Spaces, …).
+REMOTE_SYNC_ENDPOINT_URL_ENV = "OPENSRE_REMOTE_SYNC_ENDPOINT_URL"
+
 DEFAULT_REMOTE_SYNC_PREFIX = "opensre"
 DEFAULT_REMOTE_SYNC_PROVIDER = "aws"
 # Uploads run in parallel, capped per provider. This is the cap for a provider
@@ -50,6 +53,7 @@ __all__ = [
     "DEFAULT_REMOTE_SYNC_PREFIX",
     "DEFAULT_REMOTE_SYNC_PROVIDER",
     "REMOTE_SYNC_BUCKET_ENV",
+    "REMOTE_SYNC_ENDPOINT_URL_ENV",
     "REMOTE_SYNC_ENV",
     "REMOTE_SYNC_EXCLUDE_ENV",
     "REMOTE_SYNC_EXCLUDE_OFF_ENV",

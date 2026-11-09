@@ -11,6 +11,7 @@ from integrations.gitlab import GitlabConfig
 from integrations.gitlab.repo_scope import (
     apply_gitlab_repo_scope,
     detect_git_remote_repo_scope,
+    find_gitlab_repository_references,
     infer_gitlab_repo_scope,
     parse_gitlab_repository_reference,
 )
@@ -44,6 +45,15 @@ def test_parse_gitlab_repository_reference(text: str, expected: tuple[str, str, 
 
 def test_parse_gitlab_repository_reference_rejects_non_gitlab_url() -> None:
     assert parse_gitlab_repository_reference("https://example.com/group/project") is None
+
+
+def test_find_gitlab_repository_references_keeps_multiple_projects() -> None:
+    text = "Compare gitlab:first/project with https://gitlab.com/second/project"
+
+    assert find_gitlab_repository_references(text) == (
+        ("first/project", "", ""),
+        ("second/project", "", ""),
+    )
 
 
 def test_infer_gitlab_repo_scope_prefers_message_over_cache() -> None:

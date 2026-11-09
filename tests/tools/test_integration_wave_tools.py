@@ -131,6 +131,7 @@ def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
         base_url="https://openobserve.example.invalid",
         org="acme",
         api_token="oo-token",
+        stream="app_logs",
         limit=1000,
         max_results=4,
     )
@@ -138,7 +139,7 @@ def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
     assert captured["size"] == 4
     assert (
         captured["sql"]
-        == "SELECT * FROM \"default\" WHERE level = 'error' ORDER BY _timestamp DESC"
+        == "SELECT * FROM \"app_logs\" WHERE level = 'error' ORDER BY _timestamp DESC"
     )
     assert result["available"] is True
     assert len(result["records"]) == 4

@@ -52,6 +52,13 @@ class TestTimeAgo:
         result = time_ago(None)
         assert result == "unknown"
 
+    def test_naive_datetime_treated_as_utc(self) -> None:
+        # POST /alerts keeps sender-supplied timestamps, so an offset-less ISO
+        # string arrives here as a naive datetime; it must not raise.
+        then = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=3)
+        result = time_ago(then)
+        assert "3m ago" in result
+
 
 class TestFormatIncomingAlert:
     """Test format_incoming_alert rendering."""

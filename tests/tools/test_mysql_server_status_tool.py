@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.mysql.tools.mysql_server_status_tool import get_mysql_server_status
+from integrations.mysql.tools.mysql_server_status_tool import (
+    _map_get_mysql_server_status,
+    get_mysql_server_status,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -60,3 +64,47 @@ def test_run_error_propagated() -> None:
         result = get_mysql_server_status(host="invalid", database="testdb")
     assert "error" in result
     assert result["available"] is False
+
+
+class TestMapGetMysqlServerStatus:
+    def test_records_entry_with_deadlocks(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_server_status(
+            evidence,
+            {
+                "available": True,
+                "version": "8.0.32",
+                "connections": {"current": 25, "max": 151},
+                "innodb": {"deadlocks": 3},
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mysql_server_status"
+        assert entries[0]["summary"] == "MySQL 8.0.32, 25/151 connections, 3 InnoDB deadlock(s)"
+
+    def test_records_entry_without_deadlock_clause_when_zero(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_server_status(
+            evidence,
+            {
+                "available": True,
+                "version": "8.0.32",
+                "connections": {"current": 5, "max": 151},
+                "innodb": {"deadlocks": 0},
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "MySQL 8.0.32, 5/151 connections"
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_server_status(evidence, {"available": False, "error": "timeout"}, {})
+
+        assert "catalog_entries" not in evidence

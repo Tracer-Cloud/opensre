@@ -1,4 +1,0 @@
-{
-  "description": "order-service latency spike caused by a Redis failover in inventory-service propagating through synchronous calls with no circuit breaker. Alert is sparse; root cause found in OpenClaw conversations.",
-  "expected_root_cause_keywords": ["redis", "timeout", "downstream", "cascade", "inventory", "circuit", "latency", "failover"]
-}

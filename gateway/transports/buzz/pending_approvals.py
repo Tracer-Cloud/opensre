@@ -4,7 +4,7 @@ Written by :class:`gateway.transports.buzz.approvals.BuzzApprovalPrompter` on
 the turn's executor thread; read by the poll loop
 (:mod:`gateway.transports.buzz.background`) on the asyncio loop thread — the
 lock is what makes that safe, mirroring
-:class:`gateway.core.runtime.approvals.ApprovalBroker`'s own locking.
+:class:`gateway.core.middleware.approvals.ApprovalBroker`'s own locking.
 
 Each entry carries the *request's* own authority, not just its approval id.
 Buzz channels are multi-member, and a reply only has to quote the prompt's

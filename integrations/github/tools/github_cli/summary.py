@@ -75,7 +75,7 @@ def summarize_gh_result(
         if error_type == "missing_binary":
             return "GitHub CLI (`gh`) is not installed or not on PATH."
         if error_type == "configuration_error":
-            return "GitHub token is missing; configure GitHub integration or GH_TOKEN."
+            return "GitHub token is missing; connect or reconnect GitHub in the OpenSRE app."
         if error_type == "timeout":
             return err or "gh timed out."
         return f"GitHub action failed to run: {err or 'unknown error'}"
@@ -108,6 +108,13 @@ def summarize_gh_result(
     if url:
         return url
     if out:
+        # Raw JSON from ``gh api`` is for the model, not the transcript — a sliced
+        # JSON string still reads as a dump. Keep a short prose acknowledgement.
+        stripped = out.lstrip()
+        if stripped[:1] in "{[" or out.count('":') >= 2:
+            if command == "api":
+                return "GitHub API call succeeded."
+            return "GitHub command succeeded."
         lines = [line for line in out.splitlines() if line.strip()]
         if not lines:
             return "GitHub command succeeded."

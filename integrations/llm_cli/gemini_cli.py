@@ -38,6 +38,7 @@ from integrations.llm_cli.constants import (
 from integrations.llm_cli.constants import (
     MIN_EXEC_TIMEOUT_SEC as _MIN_EXEC_TIMEOUT_SEC,
 )
+from integrations.llm_cli.output import require_nonempty_output
 from integrations.llm_cli.probe_utils import run_version_probe
 from integrations.llm_cli.semver_utils import parse_semver_three_part
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
@@ -259,12 +260,7 @@ class GeminiCLIAdapter:
         )
 
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
-        text = (stdout or "").strip()
-        if not text:
-            raise RuntimeError(
-                self.explain_failure(stdout=stdout, stderr=stderr, returncode=returncode)
-                + " (empty output)"
-            )
+        text = require_nonempty_output(stdout, stderr, returncode, self.explain_failure)
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:

@@ -21,7 +21,7 @@ from core.events import (
     tuple_payload_from_event,
 )
 from core.messages import UserRuntimeMessage
-from core.types import RuntimeTool
+from core.tool.contracts import RuntimeTool
 
 if TYPE_CHECKING:
     from core.messages import RuntimeMessage

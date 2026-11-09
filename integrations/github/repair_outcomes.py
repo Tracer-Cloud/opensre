@@ -1,0 +1,116 @@
+"""Translate GitHub repair evidence into scheduler work outcomes."""
+
+from typing import Any
+
+from config.constants.scheduler import NON_RETRYABLE_WORK_ERROR_KINDS
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
+
+_REPAIR_MERGE_STATES = frozenset({"dirty", "unstable"})
+#: Repair results that verified there was nothing to do: green checks, or no finding left.
+_NOTHING_TO_REPAIR = frozenset({"no_failing_checks", "no_eligible_alert"})
+
+
+def _needs_repair(pr: dict[str, Any]) -> bool:
+    """Failing checks or a conflict; pending checks and unknown mergeability are read next tick."""
+    return (
+        pr["check_status"] == "failed"
+        or pr["mergeable"] is False
+        or pr["mergeable_state"] in _REPAIR_MERGE_STATES
+    )
+
+
+def _may_conflict(pr: dict[str, Any]) -> bool:
+    """Not proven mergeable: a conflict, or mergeability GitHub has not computed yet."""
+    return pr["mergeable"] is not True
+
+
+def attach_ci_scan_outcome(
+    output: dict[str, Any], *, fully_inspected: bool, conflicts_only: bool = False
+) -> dict[str, Any]:
+    """Record no repair needed only when a complete scan finds no repairable PR needing one.
+
+    Fork, draft and closed PRs are never repairable, so they cannot hold the scan open.
+    A ``conflicts_only`` scan judges merge conflicts alone, so a PR whose checks fail
+    does not hold open a loop that only repairs conflicts.
+    """
+    prs = output["pull_requests"]
+    repairable = [pr for pr in prs if pr["repairable"]]
+    needs_repair = _may_conflict if conflicts_only else _needs_repair
+    if not fully_inspected or any(needs_repair(pr) for pr in repairable):
+        return output
+    owner, repo = output["owner"], output["repo"]
+    scan = "conflict-scan" if conflicts_only else "ci-scan"
+    outcome = WorkOutcome(
+        status=WorkStatus.NOOP,
+        operation=f"{scan}:{owner.casefold()}/{repo.casefold()}",
+        evidence={
+            "owner": owner,
+            "repo": repo,
+            "checked_heads": {str(pr["number"]): pr["head_sha"] for pr in repairable},
+            "skipped_prs": [pr["number"] for pr in prs if not pr["repairable"]],
+        },
+    )
+    return {**output, "work_outcome": outcome.model_dump(mode="json")}
+
+
+def attach_repair_outcome(output: dict[str, Any], *, operation: str) -> dict[str, Any]:
+    """Attach a terminal outcome derived from the repair tool's verification result."""
+    owner, repo = output.get("owner"), output.get("repo")
+    if owner and repo:
+        prefix = operation.partition(":")[0]
+        if prefix == "ci":
+            number = output.get("pr_number")
+            target = (
+                f"pr:{number}" if number is not None else f"branch:{output.get('target_branch')}"
+            )
+        else:
+            target = f"{output.get('alert_type')}:{output.get('alert_number')}"
+        operation = f"{prefix}:{str(owner).casefold()}/{str(repo).casefold()}:{target}"
+    kind = str(output.get("error_kind") or "")
+    if kind in _NOTHING_TO_REPAIR:
+        status = WorkStatus.NOOP
+    elif kind in {"checks_timeout", "checks_superseded", "timeout"}:
+        status = WorkStatus.INCOMPLETE
+    elif kind in {
+        "repo_mismatch",
+        "repo_scope_unresolved",
+        "workspace_busy",
+        "invalid_input",
+        "github_token_missing",
+        "confirmation_denied",
+        "unsupported_pr_branch",
+        "cli_unavailable",
+        "pr_not_open",
+        "alert_not_found",
+        "merge_decision_required",
+    }:
+        status = WorkStatus.BLOCKED
+    elif output.get("success") is True:
+        status = WorkStatus.SUCCEEDED
+    else:
+        status = WorkStatus.FAILED
+    evidence: dict[str, Any] = {
+        key: output[key]
+        for key in (
+            "owner",
+            "repo",
+            "pr_number",
+            "pr_url",
+            "source_head_sha",
+            "fix_head_sha",
+            "branch_name",
+            "checks_state",
+            "check_names",
+            "alert_number",
+            "alert_type",
+        )
+        if key in output
+    }
+    outcome = WorkOutcome(
+        status=status,
+        error_kind=kind,
+        operation=operation,
+        evidence=evidence,
+        retryable=kind not in NON_RETRYABLE_WORK_ERROR_KINDS,
+    )
+    return {**output, "work_outcome": outcome.model_dump(mode="json")}

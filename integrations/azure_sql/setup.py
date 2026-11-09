@@ -15,8 +15,9 @@ from config.constants.azure_sql import (
     AZURE_SQL_PORT_ENV,
     AZURE_SQL_SERVER_ENV,
     AZURE_SQL_USERNAME_ENV,
+    DEFAULT_AZURE_SQL_DRIVER,
+    DEFAULT_AZURE_SQL_PORT,
 )
-from integrations.azure_sql import DEFAULT_AZURE_SQL_DRIVER
 from integrations.azure_sql.verifier import verify_azure_sql
 from integrations.setup_flow import IntegrationSetupSpec, SetupField
 
@@ -46,7 +47,7 @@ AZURE_SQL_SETUP = IntegrationSetupSpec(
             name=PORT_FIELD,
             label="Port",
             env_var=AZURE_SQL_PORT_ENV,
-            default="1433",
+            default=str(DEFAULT_AZURE_SQL_PORT),
         ),
         SetupField(
             name=USERNAME_FIELD,

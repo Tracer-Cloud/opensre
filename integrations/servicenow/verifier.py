@@ -10,12 +10,13 @@ truth for both ``opensre integrations setup`` and the onboarding wizard.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any
 
 import httpx
 
+from infrastructure.text.url_validation import validate_https_or_loopback_http_url
 from integrations.verification import register_validation_verifier
-from platform.common.url_validation import validate_https_or_loopback_http_url
 
 
 @dataclass(frozen=True)
@@ -66,17 +67,17 @@ def validate_servicenow_config(config: dict[str, str]) -> ServiceNowValidationRe
     except Exception as err:
         return ServiceNowValidationResult(ok=False, detail=f"ServiceNow validation failed: {err}")
 
-    if resp.status_code == 200:
+    if resp.status_code == HTTPStatus.OK:
         return ServiceNowValidationResult(
             ok=True,
             detail=f"ServiceNow connected as {username} at {base_url}.",
             instance_url=base_url,
         )
-    if resp.status_code == 401:
+    if resp.status_code == HTTPStatus.UNAUTHORIZED:
         return ServiceNowValidationResult(
             ok=False, detail="ServiceNow credentials invalid. Check username and password."
         )
-    if resp.status_code == 403:
+    if resp.status_code == HTTPStatus.FORBIDDEN:
         return ServiceNowValidationResult(
             ok=False,
             detail=(
@@ -84,7 +85,7 @@ def validate_servicenow_config(config: dict[str, str]) -> ServiceNowValidationRe
                 "Grant a role with table read access (e.g. itil)."
             ),
         )
-    if resp.status_code == 404:
+    if resp.status_code == HTTPStatus.NOT_FOUND:
         return ServiceNowValidationResult(
             ok=False, detail="ServiceNow instance URL not found. Check the URL."
         )

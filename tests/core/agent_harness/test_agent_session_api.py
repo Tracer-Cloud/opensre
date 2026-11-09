@@ -1,18 +1,11 @@
-"""Characterization: AgentSession is the public host API (chat + investigate)."""
+"""Characterization: AgentSession is the public host API (``start`` + ``chat``)."""
 
 from __future__ import annotations
 
 from typing import Any
 from unittest.mock import patch
 
-import pytest
-
-from core.agent_harness.harness import AgentSession
-from core.agent_harness.investigation_api import (
-    InvestigationResult,
-    install_investigation_payload_runner,
-    reset_investigation_payload_runner_for_tests,
-)
+from core.agent_harness.harness import AgentSession, SessionConfig
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
 
@@ -27,8 +20,96 @@ def _stub_turn_result() -> TurnResult:
             handled=True,
         ),
         assistant_response_text="ok",
-        llm_run=object(),
     )
+
+
+def test_startup_runs_the_boot_step_the_host_supplied() -> None:
+    """An embedded host must not resolve zero integrations.
+
+    ``core`` may not import ``bootstrap``, so the host passes the boot step in
+    rather than the harness reaching up a tier for it.
+    """
+    # Arrange — what an embedded caller supplies.
+    from bootstrap.process import EMBEDDED_PROFILE, configure_process
+
+    seen: list[Any] = []
+
+    def _boot() -> None:
+        seen.append(EMBEDDED_PROFILE.name)
+        configure_process(EMBEDDED_PROFILE)
+
+    # Act.
+    AgentSession(
+        SessionConfig(open_store=False, persistent_tasks=False, boot_process=_boot)
+    ).startup()
+
+    # Assert.
+    assert seen == [EMBEDDED_PROFILE.name]
+
+
+def test_startup_boots_nothing_when_the_host_supplies_no_step() -> None:
+    """CLI, gateway and web boot their own profile; the harness must not add one."""
+    # Arrange.
+    seen: list[Any] = []
+
+    def _boot() -> None:
+        seen.append("booted")
+
+    # Act — the default leaves boot_process unset.
+    AgentSession(SessionConfig(open_store=False, persistent_tasks=False)).startup()
+
+    # Assert.
+    assert seen == []
+    assert _boot  # the step exists but was never wired in
+
+
+def test_start_registers_harness_adapters_so_integrations_resolve() -> None:
+    """Without adapters, resolve is empty; the host's boot step must install them.
+
+    ``core`` may not import ``bootstrap``, so the caller passes an explicit
+    ``boot_process`` (or uses :func:`bootstrap.embedded.start_embedded_session`).
+    """
+    from bootstrap.process import (
+        EMBEDDED_PROFILE,
+        configure_process,
+        reset_process_runtime_for_tests,
+    )
+    from core.domain.types.tools import ToolSurface
+    from infrastructure.harness_providers import (
+        configured_integration_services,
+        reset_harness_providers,
+        resolve_integrations,
+        resolve_surface_tools,
+    )
+
+    reset_harness_providers()
+    reset_process_runtime_for_tests()
+    assert configured_integration_services() == ()
+    assert resolve_integrations() == {}
+    assert resolve_surface_tools(ToolSurface.CHAT) == []
+
+    AgentSession.start(
+        SessionConfig(
+            open_store=False,
+            persistent_tasks=False,
+            warm_integrations=True,
+            boot_process=lambda: configure_process(EMBEDDED_PROFILE),
+        )
+    )
+
+    # Tool registry is populated even when the local store is empty (CI).
+    chat_tools = resolve_surface_tools(ToolSurface.CHAT)
+    assert any(tool.name.startswith("query_grafana") for tool in chat_tools)
+
+
+def test_start_does_not_inject_an_embedded_boot_step() -> None:
+    """CLI/gateway leave ``boot_process`` unset; ``start`` must not fill one in.
+
+    ``core`` may not import ``bootstrap``. Embedded hosts use
+    ``start_embedded_session`` (or pass an explicit boot step).
+    """
+    session = AgentSession.start(SessionConfig(open_store=False, persistent_tasks=False))
+    assert session._config.boot_process is None
 
 
 def test_chat_is_the_public_verb(monkeypatch: Any) -> None:
@@ -48,61 +129,6 @@ def test_chat_is_the_public_verb(monkeypatch: Any) -> None:
     # Compatibility alias
     session.chat("follow-up")
     assert captured == ["why is checkout-api slow?", "follow-up"]
-
-
-def test_investigate_uses_installed_runner() -> None:
-    reset_investigation_payload_runner_for_tests()
-
-    def _fake_runner(
-        *,
-        raw_alert: Any,
-        opensre_evaluate: bool = False,
-        investigation_metadata: tuple[str, str] | None = None,
-    ) -> dict[str, Any]:
-        assert raw_alert == {"alert_name": "HighLatency"}
-        assert opensre_evaluate is False
-        assert investigation_metadata == ("HighLatency", "warning")
-        return {
-            "report": "done",
-            "problem_md": "p",
-            "root_cause": "r",
-            "is_noise": False,
-            "validity_score": 0.9,
-        }
-
-    install_investigation_payload_runner(_fake_runner)
-    try:
-        result = AgentSession().investigate(
-            {"alert_name": "HighLatency"},
-            investigation_metadata=("HighLatency", "warning"),
-        )
-        assert isinstance(result, InvestigationResult)
-        assert result.report == "done"
-        assert result.root_cause == "r"
-        assert result.as_dict()["report"] == "done"
-    finally:
-        reset_investigation_payload_runner_for_tests()
-
-
-def test_investigate_fails_closed_without_runner() -> None:
-    reset_investigation_payload_runner_for_tests()
-    with pytest.raises(RuntimeError, match="Investigation payload runner is not installed"):
-        AgentSession().investigate("spike")
-
-
-def test_investigation_result_round_trips_optional_fields() -> None:
-    payload = {
-        "report": "r",
-        "problem_md": "p",
-        "root_cause": "c",
-        "is_noise": True,
-        "validity_score": 0.1,
-        "tool_calls": [{"name": "x"}],
-        "opensre_llm_eval": {"score": 1},
-        "custom": 42,
-    }
-    result = InvestigationResult.from_payload(payload)
-    assert result.as_dict() == payload
 
 
 def test_one_shot_turn_reuses_the_start_bootstrap_instead_of_repeating_it() -> None:

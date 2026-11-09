@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import OpenSearchIntegrationConfig
+from integrations.opensearch.setup import OPENSEARCH_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["OPENSEARCH_SETUP", "classify"]
 
 
 def classify(

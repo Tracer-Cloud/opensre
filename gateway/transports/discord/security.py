@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from config.constants.gateway import ROTATE_SESSION
+from gateway.core.middleware.identity_policy import (
+    load_identity_policy,
+)
 from integrations.messaging_security import (
     AuthorizationResult,
     MessagingIdentityPolicy,
@@ -13,10 +17,8 @@ from integrations.messaging_security import (
     complete_pairing,
     message_hash,
 )
-from integrations.store import get_integration, upsert_instance
 
 _PLATFORM = MessagingPlatform.DISCORD.value
-_ROTATE_SESSION = "__ROTATE_SESSION__"
 _HELP_TEXT = (
     "OpenSRE Discord gateway.\n"
     "DM the bot or @mention it in a server to chat with the agent.\n"
@@ -36,36 +38,6 @@ class DiscordInboundDecision:
     reply_text: str = ""
     persist_policy: bool = False
     updated_policy: MessagingIdentityPolicy | None = None
-
-
-def _load_policy() -> tuple[dict | None, MessagingIdentityPolicy]:
-    record = get_integration(_PLATFORM)
-    if record is None:
-        return None, MessagingIdentityPolicy(inbound_enabled=True)
-    credentials = record.get("credentials", {})
-    raw_policy = credentials.get("identity_policy")
-    if raw_policy and isinstance(raw_policy, dict):
-        return record, MessagingIdentityPolicy.model_validate(raw_policy)
-    return record, MessagingIdentityPolicy(inbound_enabled=True)
-
-
-def _save_policy(record: dict | None, policy: MessagingIdentityPolicy) -> None:
-    instances = record.get("instances", []) if record else []
-    first_instance = instances[0] if instances else {}
-    instance_name = (
-        first_instance.get("name", "default") if isinstance(first_instance, dict) else "default"
-    )
-    credentials = dict(record.get("credentials", {})) if record else {}
-    credentials["identity_policy"] = policy.model_dump(mode="json")
-    upsert_instance(
-        _PLATFORM,
-        {
-            "name": instance_name,
-            "tags": first_instance.get("tags", {}) if isinstance(first_instance, dict) else {},
-            "credentials": credentials,
-        },
-        record_id=record.get("id") if record else None,
-    )
 
 
 def _audit(
@@ -113,7 +85,7 @@ def enforce_inbound_discord_message_security(
     anyone sharing a server with the bot can DM it, so an open-DM mode would
     let arbitrary users consume credits and reach agent turns.
     """
-    _record, policy = _load_policy()
+    _record, policy = load_identity_policy(_PLATFORM)
     policy = _merge_env_allowlist(policy, env_allowed_user_ids)
     open_guild_applies = allow_open_guild and is_guild_message
 
@@ -183,7 +155,7 @@ def enforce_inbound_discord_message_security(
             authorized=True,
             reason="session rotate",
         )
-        return DiscordInboundDecision(allowed=True, reply_text=_ROTATE_SESSION)
+        return DiscordInboundDecision(allowed=True, reply_text=ROTATE_SESSION)
 
     _audit(
         user_id=user_id,
@@ -195,16 +167,7 @@ def enforce_inbound_discord_message_security(
     return DiscordInboundDecision(allowed=bool(result))
 
 
-def persist_policy_if_needed(decision: DiscordInboundDecision) -> None:
-    if not decision.persist_policy or decision.updated_policy is None:
-        return
-    record, _ = _load_policy()
-    _save_policy(record, decision.updated_policy)
-
-
 __all__ = [
     "DiscordInboundDecision",
-    "_ROTATE_SESSION",
     "enforce_inbound_discord_message_security",
-    "persist_policy_if_needed",
 ]

@@ -110,6 +110,25 @@ class TestMongoDBValidation:
         assert "Conn error" in result.detail
 
 
+class TestMongoDBCurrentOps:
+    @patch("integrations.mongodb._get_client")
+    def test_duration_filter_is_sent_as_a_command_field(self, mock_get_client):
+        mock_get_client.return_value.admin.command.return_value = {"inprog": []}
+
+        result = get_current_ops(
+            MongoDBConfig(connection_string="mongodb://host"),
+            threshold_ms=1000,
+        )
+
+        assert result["operations"] == []
+        mock_get_client.return_value.admin.command.assert_called_once_with(
+            {
+                "currentOp": 1,
+                "microsecs_running": {"$gte": 1_000_000},
+            }
+        )
+
+
 class TestMongoDBAdminUnauthorized:
     """Admin commands should return graceful errors without Sentry reports when unauthorized."""
 

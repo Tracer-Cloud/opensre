@@ -15,7 +15,7 @@ def validate_google_docs_integration(
     folder_id: str,
 ) -> IntegrationHealthResult:
     """Validate Google Docs credentials and folder access."""
-    from integrations.google_docs.client import GoogleDocsClient
+    from integrations.google_docs import GoogleDocsClient
 
     try:
         config = GoogleDocsIntegrationConfig.model_validate(

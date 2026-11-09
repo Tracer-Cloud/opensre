@@ -1,7 +1,6 @@
 """Rocket.Chat alarm dispatcher with per-key cooldown.
 
-Shared by features that need throttled Rocket.Chat alerts (watchdog
-thresholds, Hermes incident sinks) — mirrors
+Provides reusable throttled Rocket.Chat delivery and mirrors
 :class:`integrations.telegram.alarms.AlarmDispatcher`.
 
 Credential resolution lives in :mod:`integrations.rocketchat.credentials`;
@@ -14,11 +13,11 @@ from __future__ import annotations
 import logging
 import time
 
+from infrastructure.delivery.notifications.cooldown import CooldownGate
+from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
+from infrastructure.text.truncation import truncate
 from integrations.rocketchat.credentials import RocketChatCredentials
 from integrations.rocketchat.delivery import post_rocketchat_message, post_rocketchat_webhook
-from platform.common.truncation import truncate
-from platform.notifications.cooldown import CooldownGate
-from platform.notifications.limits import MAX_MESSAGE_SIZE
 
 logger = logging.getLogger(__name__)
 

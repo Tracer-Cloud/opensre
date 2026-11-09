@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from gateway.core.runtime.errors import GatewayConfigurationError
+from gateway.core.lifecycle.errors import GatewayConfigurationError
 from gateway.transports.slack.settings import (
     SlackGatewayEnv,
     SlackInboundTransport,

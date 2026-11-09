@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from infrastructure.text.truncation import truncate as _truncate_shared
 from integrations.catalog import classify_integrations as _classify_integrations
 from integrations.mariadb import (
     _QUERY_TRUNCATE_LEN,
@@ -25,7 +26,6 @@ from integrations.mariadb import (
     mariadb_is_available,
     validate_mariadb_config,
 )
-from platform.common.truncation import truncate as _truncate_shared
 
 
 def _truncate(text: str, max_len: int = _QUERY_TRUNCATE_LEN) -> str:

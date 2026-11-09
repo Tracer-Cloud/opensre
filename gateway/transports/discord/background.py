@@ -6,10 +6,11 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from gateway.core.runtime.sink_protocol import GatewayAgentCallback
+from config.constants.gateway import DEFAULT_STOP_TIMEOUT_SECONDS
 from gateway.core.storage.session.binding_store import BindingStore, open_binding_store
 from gateway.transports.discord.settings import DiscordGatewaySettings
 from gateway.transports.discord.worker import run_discord_gateway_thread
+from infrastructure.turn_host.turn_callback import TurnCallback
 
 
 class DiscordGatewayBackground:
@@ -30,7 +31,7 @@ class DiscordGatewayBackground:
         self._bindings = bindings
         self._executor = executor
 
-    def stop(self, *, timeout: float = 8.0) -> bool:
+    def stop(self, *, timeout: float = DEFAULT_STOP_TIMEOUT_SECONDS) -> bool:
         self._stop_event.set()
         self._thread.join(timeout=timeout)
         self._executor.shutdown(wait=False, cancel_futures=False)
@@ -50,7 +51,7 @@ def start_discord_gateway_background(
     *,
     settings: DiscordGatewaySettings,
     logger: logging.Logger,
-    handler: GatewayAgentCallback,
+    handler: TurnCallback,
 ) -> DiscordGatewayBackground:
     """Connect to Discord and dispatch inbound messages until stopped."""
     bindings = open_binding_store()

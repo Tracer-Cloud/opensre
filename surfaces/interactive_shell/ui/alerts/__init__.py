@@ -14,7 +14,7 @@ from rich.markup import escape
 from rich.panel import Panel
 
 from core.domain.alerts.inbox import IncomingAlert
-from platform.terminal.theme import (
+from infrastructure.terminal.theme import (
     DIM,
     INCOMING_ALERT_ACCENT,
     TEXT,
@@ -31,6 +31,11 @@ def time_ago(then: datetime | None) -> str:
     """Format a relative time string like '5 seconds ago', '1 minute ago', etc."""
     if then is None:
         return "unknown"
+
+    # POST /alerts accepts sender-supplied timestamps, so ``received_at`` may be
+    # offset-naive; treat it as UTC like format_repl_timestamp does.
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
 
     now = datetime.now(UTC)
     delta = now - then

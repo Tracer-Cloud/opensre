@@ -11,13 +11,14 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import Field, field_validator
 
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_classify_failure
 
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ def validate_supabase_config(config: SupabaseConfig) -> SupabaseValidationResult
 
     try:
         status, _ = _make_request(config, "/rest/v1/")
-        if status == 200:
+        if status == HTTPStatus.OK:
             return SupabaseValidationResult(
                 ok=True,
                 detail=f"Connected to Supabase project at {config.url}.",
@@ -213,7 +214,7 @@ def get_service_health(config: SupabaseConfig) -> dict[str, Any]:
     try:
         status, _ = _make_request(config, "/rest/v1/")
         services["postgrest"] = {
-            "healthy": status == 200,
+            "healthy": status == HTTPStatus.OK,
             "status_code": status,
         }
     except Exception as err:
@@ -228,7 +229,7 @@ def get_service_health(config: SupabaseConfig) -> dict[str, Any]:
         elif isinstance(body, str):
             detail = body
         services["auth"] = {
-            "healthy": status == 200,
+            "healthy": status == HTTPStatus.OK,
             "status_code": status,
             "detail": detail,
         }
@@ -239,7 +240,7 @@ def get_service_health(config: SupabaseConfig) -> dict[str, Any]:
     try:
         status, _ = _make_request(config, "/storage/v1/health")
         services["storage"] = {
-            "healthy": status == 200,
+            "healthy": status == HTTPStatus.OK,
             "status_code": status,
         }
     except Exception as err:
@@ -271,7 +272,7 @@ def get_storage_buckets(config: SupabaseConfig) -> dict[str, Any]:
     try:
         status, body = _make_request(config, "/storage/v1/bucket")
 
-        if status != 200:
+        if status != HTTPStatus.OK:
             return tool_unavailable("supabase", f"Storage API returned HTTP {status}.")
 
         raw_buckets: list[dict[str, Any]] = body if isinstance(body, list) else []

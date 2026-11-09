@@ -315,12 +315,15 @@ class IncidentIoClient:
                 "incident": incident_result.get("incident", {}),
                 "error": updates_result.get("error", "unknown error"),
             }
-        return {
+        context_result: dict[str, Any] = {
             "success": True,
             "incident": incident_result.get("incident", {}),
             "incident_updates": updates_result.get("incident_updates", []),
             "total_updates": updates_result.get("total", 0),
         }
+        if "pagination_meta" in updates_result:
+            context_result["pagination_meta"] = updates_result["pagination_meta"]
+        return context_result
 
     def append_summary_update(
         self,

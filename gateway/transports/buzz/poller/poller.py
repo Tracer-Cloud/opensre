@@ -9,7 +9,7 @@ import time
 from gateway.transports.buzz.poller.cursor import load_cursor, save_cursor
 from gateway.transports.buzz.poller.parse_buzz_event import parse_feed_event
 from gateway.transports.buzz.settings import BuzzInboundMessage
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 
 logger = logging.getLogger(__name__)
 

@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from config.constants.gateway import ROTATE_SESSION
+from gateway.core.middleware.identity_policy import (
+    load_identity_policy,
+)
 from integrations.messaging_security import (
     AuthorizationResult,
     MessagingIdentityPolicy,
@@ -19,7 +23,6 @@ from integrations.messaging_security import (
     complete_pairing,
     message_hash,
 )
-from integrations.store import get_integration, upsert_instance
 
 
 @dataclass(frozen=True)
@@ -32,36 +35,6 @@ class InboundDecision:
     updated_policy: MessagingIdentityPolicy | None = None
 
 
-def _load_policy() -> tuple[dict | None, MessagingIdentityPolicy]:
-    record = get_integration(MessagingPlatform.BUZZ.value)
-    if record is None:
-        return None, MessagingIdentityPolicy(inbound_enabled=True)
-    credentials = record.get("credentials", {})
-    raw_policy = credentials.get("identity_policy")
-    if raw_policy and isinstance(raw_policy, dict):
-        return record, MessagingIdentityPolicy.model_validate(raw_policy)
-    return record, MessagingIdentityPolicy(inbound_enabled=True)
-
-
-def _save_policy(record: dict | None, policy: MessagingIdentityPolicy) -> None:
-    instances = record.get("instances", []) if record else []
-    first_instance = instances[0] if instances else {}
-    instance_name = (
-        first_instance.get("name", "default") if isinstance(first_instance, dict) else "default"
-    )
-    credentials = dict(record.get("credentials", {})) if record else {}
-    credentials["identity_policy"] = policy.model_dump(mode="json")
-    upsert_instance(
-        MessagingPlatform.BUZZ.value,
-        {
-            "name": instance_name,
-            "tags": first_instance.get("tags", {}) if isinstance(first_instance, dict) else {},
-            "credentials": credentials,
-        },
-        record_id=record.get("id") if record else None,
-    )
-
-
 def enforce_inbound_buzz_message_security(
     *,
     pubkey: str,
@@ -70,7 +43,7 @@ def enforce_inbound_buzz_message_security(
     env_allowed_pubkeys: list[str],
 ) -> InboundDecision:
     """Authorize an inbound Buzz mention/reply and handle ``/pair`` attempts."""
-    record, policy = _load_policy()
+    record, policy = load_identity_policy(MessagingPlatform.BUZZ.value)
     if env_allowed_pubkeys and not policy.allowed_user_ids:
         policy.allowed_user_ids = list(env_allowed_pubkeys)
         policy.inbound_enabled = True
@@ -136,7 +109,7 @@ def enforce_inbound_buzz_message_security(
             authorized=True,
             reason="session rotate",
         )
-        return InboundDecision(allowed=True, reply_text="__ROTATE_SESSION__")
+        return InboundDecision(allowed=True, reply_text=ROTATE_SESSION)
 
     audit_log_inbound_message(
         platform=MessagingPlatform.BUZZ.value,
@@ -151,13 +124,6 @@ def enforce_inbound_buzz_message_security(
     return InboundDecision(allowed=False, reply_text=result.reason)
 
 
-def persist_policy_if_needed(decision: InboundDecision) -> None:
-    if not decision.persist_policy or decision.updated_policy is None:
-        return
-    record, _ = _load_policy()
-    _save_policy(record, decision.updated_policy)
-
-
 def is_pubkey_authorized(*, pubkey: str, channel_id: str, env_allowed_pubkeys: list[str]) -> bool:
     """Whether *pubkey* is an authorized Buzz identity right now.
 
@@ -166,7 +132,7 @@ def is_pubkey_authorized(*, pubkey: str, channel_id: str, env_allowed_pubkeys: l
     able to approve or deny a pending write-tool action just by replying to
     its prompt message.
     """
-    _, policy = _load_policy()
+    _, policy = load_identity_policy(MessagingPlatform.BUZZ.value)
     if env_allowed_pubkeys and not policy.allowed_user_ids:
         policy.allowed_user_ids = list(env_allowed_pubkeys)
         policy.inbound_enabled = True
@@ -185,5 +151,4 @@ __all__ = [
     "InboundDecision",
     "enforce_inbound_buzz_message_security",
     "is_pubkey_authorized",
-    "persist_policy_if_needed",
 ]

@@ -413,26 +413,11 @@ html.dark span:not(code span):not(pre span) {
     color: #d4d4d4 !important;
 }
 
-/* Dark mode sidebar text */
-html.dark #sidebar *:not(svg):not(path):not(img):not(code):not(pre),
-html.dark #sidebar-content *:not(svg):not(path):not(img):not(code):not(pre),
-html.dark #navigation-items *:not(svg):not(path):not(img):not(code):not(pre) {
-    color: #d4d4d4 !important;
-}
-
-/* Dark mode sidebar group headers: white like headings */
-html.dark #sidebar .sidebar-group-header,
-html.dark #sidebar .sidebar-group-header h5,
-html.dark #navigation-items .sidebar-group-header,
-html.dark #navigation-items .sidebar-group-header h5 {
-    color: #ffffff !important;
-}
-
-/* Dark mode sidebar child links: neutral-500 */
-html.dark #sidebar a:not([href*="sign-up"]),
+/* Dark mode sidebar base color — group/link specifics live in sidebar.css */
 html.dark #sidebar button,
 html.dark #sidebar li,
-html.dark #navigation-items a:not([href*="sign-up"]),
+html.dark #sidebar-content button,
+html.dark #sidebar-content li,
 html.dark #navigation-items button,
 html.dark #navigation-items li {
     color: #a3a3a3 !important;
@@ -711,18 +696,87 @@ summary {
     font-family: "Britti Sans Trial", sans-serif !important;
 }
 
-/* Transparent table borders */
-table,
+/* Reference tables: light row rules so columns stay scannable */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
 table th,
-table td,
-table tr,
-table thead,
-table tbody,
-thead th,
-thead td {
+table td {
     border-color: transparent !important;
     border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+    vertical-align: top;
+}
+
+table thead th {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+html.dark table thead th {
+    border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+table tbody tr {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+html.dark table tbody tr {
+    border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+table tbody tr:last-child {
     border-bottom: none !important;
+}
+
+/* Keep env-var / default chips from mid-word wrapping */
+table td:first-child code,
+table td:nth-child(2) code {
+    white-space: nowrap;
+    word-break: keep-all;
+}
+
+table td code {
+    font-size: 0.8125rem;
+}
+
+/* LLM providers quick-ref: scroll wide tables; allow multi-line cells */
+.llm-provider-ref {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0.25rem 0 1.25rem;
+}
+
+.llm-provider-ref table {
+    min-width: 36rem;
+}
+
+.llm-provider-ref table td:first-child {
+    white-space: nowrap;
+}
+
+.llm-provider-ref table td:nth-child(2) code,
+.llm-provider-ref table td:nth-child(3) {
+    white-space: normal;
+    word-break: break-word;
+}
+
+.llm-provider-ref table td:nth-child(3) code {
+    white-space: nowrap;
+}
+
+/* Command / env reference tables: tighter rows, clearer first column */
+table td:first-child {
+    width: 1%;
+    white-space: nowrap;
+    padding-right: 1.25rem;
+}
+
+table tbody td {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
 }
 
 /* Larger bold text in features table only */
@@ -731,49 +785,11 @@ thead td {
     font-size: 1.1rem !important;
 }
 
-/* Sidebar/nav: consistent Britti Sans 14.5px for ALL text elements.
-   Uses #sidebar ID for maximum specificity to override Mintlify's
-   Tailwind classes (text-sm, font-medium, etc.) on nested group
-   buttons (e.g. "Getting started ›" under Monitoring). */
+/* Sidebar font family only — size/weight/color for groups vs links in sidebar.css */
 #sidebar *:not(svg):not(path):not(img):not(code):not(pre),
 #sidebar-content *:not(svg):not(path):not(img):not(code):not(pre),
 #navigation-items *:not(svg):not(path):not(img):not(code):not(pre) {
     font-family: "Britti Sans Trial", sans-serif !important;
-    font-size: 14.5px !important;
-    font-weight: 400 !important;
-    letter-spacing: normal !important;
-    line-height: 1.5 !important;
-}
-
-/* Sidebar group headers: override Mintlify's font-medium (500) */
-#sidebar .sidebar-group-header,
-#sidebar [class*="sidebar-group"],
-#sidebar h5,
-#sidebar button,
-#sidebar a {
-    font-family: "Britti Sans Trial", sans-serif !important;
-    font-size: 14.5px !important;
-    font-weight: 400 !important;
-    letter-spacing: normal !important;
-    line-height: 1.5 !important;
-}
-
-/* Sidebar top-level group titles: dark black like headings */
-#sidebar .sidebar-group-header,
-#sidebar .sidebar-group-header h5,
-#navigation-items .sidebar-group-header,
-#navigation-items .sidebar-group-header h5 {
-    color: #171717 !important;
-}
-
-/* Sidebar child links: grey like body copy meta */
-#sidebar a:not([href*="sign-up"]),
-#sidebar button,
-#sidebar li,
-#navigation-items a:not([href*="sign-up"]),
-#navigation-items button,
-#navigation-items li {
-    color: #737373 !important;
 }
 
 body {
@@ -792,6 +808,138 @@ main {
 }
 
 /* Let Mintlify handle default content width/padding for consistency */
+
+/* Index hero — hide Mintlify title / “Overview” / description (custom lockup instead) */
+main:has(.index-hero) [data-component-part="page-header"],
+main:has(.index-hero) .page-header,
+article:has(.index-hero) > header {
+    display: none !important;
+}
+
+main:has(.index-hero) h1#opensre,
+article:has(.index-hero) h1#opensre,
+main:has(.index-hero) h1:first-of-type,
+article:has(.index-hero) h1:first-of-type {
+    display: none !important;
+}
+
+/* Description under title often renders as the first prose paragraph before hero */
+main:has(.index-hero) article > p:first-of-type:not(.index-hero-lead):not(.index-hero-dek),
+article:has(.index-hero) > p:first-of-type:not(.index-hero-lead):not(.index-hero-dek) {
+    display: none !important;
+}
+
+.index-hero {
+    margin: 0 0 2.5rem !important;
+    padding: 0 !important;
+}
+
+.index-hero-lockup {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 1rem !important;
+    margin: 0 auto 1.75rem !important;
+}
+
+.index-hero-mark {
+    display: block !important;
+    width: 64px !important;
+    height: 64px !important;
+    flex: 0 0 64px !important;
+    color: #171717 !important;
+    /* SVG uses currentColor — force via filter for <img> */
+    filter: none !important;
+}
+
+html.dark .index-hero-mark {
+    filter: invert(1) !important;
+}
+
+.index-hero-name {
+    font-family: "Britti Sans Trial", sans-serif !important;
+    font-size: clamp(2.75rem, 6vw, 4rem) !important;
+    font-weight: 500 !important;
+    letter-spacing: -0.05em !important;
+    line-height: 1 !important;
+    color: #171717 !important;
+}
+
+html.dark .index-hero-name {
+    color: #ffffff !important;
+}
+
+.index-hero-quote {
+    margin: 0 0 1.5rem !important;
+    padding: 0.15rem 0 0.15rem 1.125rem !important;
+    border-left: 3px solid #d4d4d4 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    font-style: italic !important;
+}
+
+html.dark .index-hero-quote {
+    border-left-color: #404040 !important;
+    background: transparent !important;
+}
+
+.index-hero-quote p {
+    margin: 0 !important;
+    font-size: 1.125rem !important;
+    line-height: 1.5 !important;
+    color: #525252 !important;
+}
+
+html.dark .index-hero-quote p {
+    color: #a3a3a3 !important;
+}
+
+.index-hero-lead {
+    margin: 0 auto 1.25rem !important;
+    max-width: 40rem !important;
+    font-size: 1.0625rem !important;
+    font-weight: 700 !important;
+    line-height: 1.45 !important;
+    letter-spacing: -0.01em !important;
+    color: #171717 !important;
+    text-align: center !important;
+}
+
+html.dark .index-hero-lead {
+    color: #f5f5f5 !important;
+}
+
+@media (max-width: 640px) {
+    .index-hero-lead {
+        font-size: 0.95rem !important;
+    }
+}
+
+.index-hero-dek {
+    margin: 0 0 0.5rem !important;
+    font-size: 1rem !important;
+    font-weight: 400 !important;
+    line-height: 1.65 !important;
+    color: #525252 !important;
+    max-width: 42rem !important;
+}
+
+html.dark .index-hero-dek {
+    color: #a3a3a3 !important;
+}
+
+@media (max-width: 640px) {
+    .index-hero-mark {
+        width: 48px !important;
+        height: 48px !important;
+        flex-basis: 48px !important;
+    }
+
+    .index-hero-lockup {
+        gap: 0.75rem !important;
+        margin-bottom: 1.25rem !important;
+    }
+}
 
 .index-hero-row {
     display: flex;
@@ -986,7 +1134,7 @@ html.dark .index-diagram-kicker {
     color: #a3a3a3;
 }
 
-/* Prevent how_tracer_works image from stretching in lightbox */
+/* Prevent how_opensre / how_tracer works image from stretching in lightbox */
 img[src*="how_tracer_works"] {
     object-fit: contain !important;
     width: 100% !important;
@@ -1313,7 +1461,7 @@ html.dark svg g[fill="currentColor"] {
     fill: #ffffff !important;
 }
 
-/* Try Tracer CTA */
+/* Primary CTA */
 nav a[href*="sign-up"],
 header a[href*="sign-up"],
 #sidebar a[href*="sign-up"],
@@ -1641,4 +1789,153 @@ aside ul > li,
     padding-left: 0 !important;
     position: static !important;
     list-style: none !important;
+}
+
+/* ========================================
+   Sidebar hierarchy (must load last)
+   Group labels: small uppercase muted
+   Page links: quieter body text
+   ======================================== */
+#sidebar .sidebar-group {
+    margin-bottom: 0.75rem !important;
+}
+
+#sidebar .sidebar-group-header,
+#sidebar .sidebar-group-header .sidebar-title,
+#sidebar .sidebar-group-header h5,
+#navigation-items .sidebar-group-header,
+#navigation-items .sidebar-group-header .sidebar-title,
+#navigation-items .sidebar-group-header h5 {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    line-height: 1.4 !important;
+    color: #737373 !important;
+}
+
+html:not(.dark) #sidebar .sidebar-group-header,
+html:not(.dark) #sidebar .sidebar-group-header .sidebar-title,
+html:not(.dark) #sidebar .sidebar-group-header h5,
+html:not(.dark) #navigation-items .sidebar-group-header,
+html:not(.dark) #navigation-items .sidebar-group-header .sidebar-title,
+html:not(.dark) #navigation-items .sidebar-group-header h5 {
+    color: #a3a3a3 !important;
+}
+
+#sidebar .sidebar-group a,
+#navigation-items .sidebar-group a {
+    font-size: 14px !important;
+    font-weight: 400 !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+}
+
+html.dark #sidebar .sidebar-group a:not([aria-current="page"]):not([data-active="true"]),
+html.dark #navigation-items .sidebar-group a:not([aria-current="page"]):not([data-active="true"]) {
+    color: #a3a3a3 !important;
+}
+
+html:not(.dark) #sidebar .sidebar-group a:not([aria-current="page"]):not([data-active="true"]),
+html:not(.dark) #navigation-items .sidebar-group a:not([aria-current="page"]):not([data-active="true"]) {
+    color: #525252 !important;
+}
+
+/* Nested collapsible groups (Integrations dropdowns): spacing + chevron on right */
+#sidebar li[data-title] > button[aria-expanded],
+#navigation-items li[data-title] > button[aria-expanded] {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    gap: 0.75rem !important;
+    margin: 0.35rem 0 !important;
+    padding-top: 0.55rem !important;
+    padding-bottom: 0.55rem !important;
+    padding-right: 0.75rem !important;
+}
+
+#sidebar li[data-title] + li[data-title],
+#navigation-items li[data-title] + li[data-title] {
+    margin-top: 0.35rem !important;
+}
+
+#sidebar li[data-title] > button[aria-expanded] > div:first-child,
+#navigation-items li[data-title] > button[aria-expanded] > div:first-child {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    text-align: left !important;
+}
+
+#sidebar li[data-title] > button[aria-expanded] > div:last-child,
+#navigation-items li[data-title] > button[aria-expanded] > div:last-child {
+    margin-left: auto !important;
+    order: 2 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    flex: 0 0 auto !important;
+}
+
+#sidebar li[data-title] > button[aria-expanded] > div:last-child svg,
+#navigation-items li[data-title] > button[aria-expanded] > div:last-child svg {
+    margin-right: 0 !important;
+    width: 0.65rem !important;
+    height: 1lh !important;
+}
+
+/* Space between nested pages under an open dropdown */
+#sidebar li[data-title] > ul,
+#sidebar li[data-title] > div,
+#navigation-items li[data-title] > ul,
+#navigation-items li[data-title] > div {
+    margin-top: 0.25rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Start page — action buttons under the title.
+   The class is repeated to outrank the !important article-link colour rules above. */
+.index-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0.5rem 0 2.5rem;
+}
+
+a.index-action.index-action.index-action.index-action.index-action.index-action,
+a.index-action.index-action.index-action.index-action.index-action.index-action:hover {
+    display: inline-block;
+    padding: 0.6rem 1.1rem;
+    border: 1px solid #171717 !important;
+    border-radius: 0.375rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-decoration: none !important;
+    color: #171717 !important;
+    background: transparent !important;
+}
+
+a.index-action.index-action.index-action.index-action.index-action.index-action:first-child,
+a.index-action.index-action.index-action.index-action.index-action.index-action:first-child:hover {
+    background: #171717 !important;
+    color: #ffffff !important;
+}
+
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action,
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action:hover {
+    border-color: #f5f5f5 !important;
+    color: #f5f5f5 !important;
+    background: transparent !important;
+}
+
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action:first-child,
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action:first-child:hover {
+    background: #f5f5f5 !important;
+    color: #111111 !important;
+}
+
+a.index-action.index-action.index-action.index-action.index-action.index-action:hover {
+    opacity: 0.85;
 }

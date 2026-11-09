@@ -5,12 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from urllib.error import URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
-from config.config import get_tracer_base_url
-from surfaces.cli.wizard.config import PROJECT_ENV_PATH
+from surfaces.shared.llm_setup.catalog import PROJECT_ENV_PATH
 
 
 @dataclass(frozen=True)
@@ -35,10 +31,6 @@ def _is_writable(path: Path) -> bool:
     return os.access(parent, os.W_OK)
 
 
-def _open_probe_request(request: Request, timeout_seconds: float):
-    return urlopen(request, timeout=timeout_seconds)  # nosemgrep
-
-
 def probe_local_target(store_path: Path) -> ProbeResult:
     """Check whether the local wizard targets are writable."""
     writable = _is_writable(store_path) and _is_writable(PROJECT_ENV_PATH)
@@ -46,31 +38,3 @@ def probe_local_target(store_path: Path) -> ProbeResult:
     if not writable:
         detail = f"Local config is not writable: {store_path} or {PROJECT_ENV_PATH}"
     return ProbeResult(target="local", reachable=writable, detail=detail)
-
-
-def probe_remote_target(timeout_seconds: float = 3.0) -> ProbeResult:
-    """Probe the hosted Tracer base URL used for future remote setup."""
-    url = get_tracer_base_url()
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return ProbeResult(
-            target="remote",
-            reachable=False,
-            detail=f"Tracer remote target has an invalid URL: {url}",
-        )
-    request = Request(url, method="GET")
-    try:
-        with _open_probe_request(request, timeout_seconds) as response:
-            status = getattr(response, "status", 200)
-            return ProbeResult(
-                target="remote",
-                reachable=200 <= status < 500,
-                detail=f"Tracer remote target reachable at {url} (HTTP {status})",
-            )
-    except URLError as err:
-        reason = getattr(err, "reason", err)
-        return ProbeResult(
-            target="remote",
-            reachable=False,
-            detail=f"Tracer remote target unreachable at {url}: {reason}",
-        )

@@ -1,20 +1,26 @@
 name: Improvement
-description: Suggest a refactor, optimization, or quality improvement
+description: Propose a measurable improvement to scheduled tasks, CI/CD, performance, reliability, or parallel execution
 title: "[IMPROVEMENT] "
 labels:
   - enhancement
 body:
+  - type: markdown
+    attributes:
+      value: |
+        The public roadmap focuses on scheduled tasks, CI/CD skills, and parallelization.
+        Cleanup-only refactors (renames, moves, style, comment edits) are out of scope —
+        please do not open them unless a maintainer asked for one as part of a real fix.
   - type: textarea
     id: current
     attributes:
       label: Current state
-      description: How does it work now? Link to code (`file:line`), snippets, or behavior/architecture.
+      description: How does it work now? Link to code (`file:line`), snippets, or observed behavior.
     validations:
       required: true
   - type: textarea
     id: desired
     attributes:
       label: Desired state
-      description: What should change, why it is better (metrics if possible), and any architectural notes.
+      description: What should change and the measurable outcome (e.g. faster CI, safer releases, more reliable scheduled runs, higher parallel throughput). Include before/after metrics where possible.
     validations:
       required: true

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from infrastructure.text.markdown import tighten_markdown_emphasis
+
 # Align copy across docs-aware and conversational CLI assistants so wording
 # does not drift between modules.
 INTERACTIVE_SHELL_TERMINOLOGY_RULE = (
@@ -16,7 +18,24 @@ INTERACTIVE_SHELL_TERMINOLOGY_RULE = (
 CLI_ASSISTANT_MARKDOWN_RULE = (
     "Formatting: respond in concise Markdown. Markdown will be rendered "
     "in the user's terminal, so tables, **bold**, lists, and `code spans` "
-    "will display correctly - do not wrap the whole answer in a code fence."
+    "will display correctly - do not wrap the whole answer in a code fence. "
+    "Keep **bold** tight: write **I found:** and **Want me to:** with no "
+    "spaces inside the asterisks (**this**, never ** this **). Do not use "
+    "__underscore__ bold — it eats filenames like __init__.py."
+)
+
+SENIOR_ENGINEER_WORKING_STYLE = (
+    "Work like a senior on-call engineer pairing with the user: name the "
+    "goal of this turn, then take the shortest path that achieves it. Prefer "
+    "evidence you already have (tool results, session context, references) "
+    "over asking. When something is wrong, diagnose from the error and keep "
+    "going — do not stop at the first obstacle or dump a menu of options. "
+    "Explain the non-obvious why as you go, the way you would at 2am, not as "
+    "a tutorial. Be direct. Do not flatter. Do not pad. The user's request is "
+    "the finish line, not that a tool ran. Listing tools, schemas, or a "
+    "drafted query is not completion when they asked to change something or "
+    "fetch a number. Propose done with the evidence. If you cannot complete "
+    "the request, say what blocked you and stop.\n"
 )
 
 AGENT_RESPONSE_THREE_TIER_RULE = (
@@ -40,7 +59,7 @@ AGENT_RESPONSE_THREE_TIER_RULE = (
 
 def normalize_three_tier_spacing(text: str) -> str:
     """Ensure three-tier section headers are separated by a Markdown paragraph break."""
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = tighten_markdown_emphasis(text.replace("\r\n", "\n").replace("\r", "\n"))
     for marker in ("**Here's what that looks like:**", "**Want me to:**"):
         normalized = re.sub(
             rf"\n(?!\n)(?={re.escape(marker)})",
@@ -85,6 +104,7 @@ __all__ = [
     "AGENT_RESPONSE_THREE_TIER_RULE",
     "CLI_ASSISTANT_MARKDOWN_RULE",
     "INTERACTIVE_SHELL_TERMINOLOGY_RULE",
+    "SENIOR_ENGINEER_WORKING_STYLE",
     "format_agent_response",
     "normalize_three_tier_spacing",
 ]

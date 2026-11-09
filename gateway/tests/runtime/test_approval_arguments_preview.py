@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gateway.core.runtime.approvals import arguments_preview
+from gateway.core.middleware.approvals import arguments_preview
 
 
 def test_arguments_preview_redacts_sensitive_keys() -> None:

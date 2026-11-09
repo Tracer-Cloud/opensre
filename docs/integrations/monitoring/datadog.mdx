@@ -1,0 +1,155 @@
+---
+title: "Datadog"
+description: "Connect Datadog so OpenSRE can query logs, metrics, monitors, and events"
+---
+
+## Overview
+
+OpenSRE queries Datadog when you ask about an incident — logs, metrics, monitor state, and events correlated with it.
+
+## Prerequisites
+
+- Datadog account with API access
+- API key (organization settings)
+- Application key with read scopes (`events_read`, `logs_read_data`, `logs_read_index_data`, `monitors_read`)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup datadog
+```
+
+You will be prompted for API key, application key, and site (for example `datadoghq.com` or `datadoghq.eu`).
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+DD_API_KEY=your-api-key
+DD_APP_KEY=your-application-key
+DD_SITE=datadoghq.com          # optional — default datadoghq.com; use datadoghq.eu for EU
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DD_API_KEY` | — | **Required.** Datadog API key |
+| `DD_APP_KEY` | — | **Required.** Datadog application key |
+| `DD_SITE` | `datadoghq.com` | Datadog site hostname (EU: `datadoghq.eu`) |
+
+For multiple Datadog orgs or sites, use [multi-instance](/platform/multi-instance-integrations) with `DD_INSTANCES` (not `DATADOG_INSTANCES`).
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "datadog-prod",
+      "service": "datadog",
+      "status": "active",
+      "credentials": {
+        "api_key": "your-api-key",
+        "app_key": "your-application-key",
+        "site": "datadoghq.com"
+      }
+    }
+  ]
+}
+```
+
+### Option 4: Hosted web app (OpenSRE Cloud)
+
+<Info>
+Hosted OpenSRE Cloud is **coming soon**. Until then, use the local CLI, environment variables, or persistent store above.
+</Info>
+
+When available, organization-wide Datadog connectors will be configured in the hosted web app:
+
+1. In [app.opensre.com](https://app.opensre.com), go to **Integrations** → **Datadog**
+2. Enter a name, and paste your API and application keys
+
+<Frame>
+  ![Connect Datadog](/images/connect_datadog.png)
+</Frame>
+
+## Credentials
+
+### API key
+
+1. In Datadog, go to **Organization Settings** → **API Keys** ([direct link](https://app.datadoghq.com/organization-settings/api-keys))
+2. Click **+ New Key** and name it (for example `opensre`)
+3. Copy the key
+
+<Frame>
+  ![Datadog API Key](/images/datadog_api_key.webp)
+</Frame>
+
+### Application key
+
+1. Go to **User Settings** → **Application Keys** ([direct link](https://app.datadoghq.com/personal-settings/application-keys))
+2. Click **+ New Key** and name it (for example `opensre`)
+3. Under **Edit Scope**, enable at minimum: `events_read`, `logs_read_data`, `logs_read_index_data`, `monitors_read`
+4. Under **Actions API Access**, click **Enable**
+5. Copy the key
+
+<Frame>
+  ![Datadog App Key](/images/datadog_app_key.webp)
+</Frame>
+
+<Frame>
+  ![Datadog App Key Scope](/images/datadog_app_key_scope.webp)
+</Frame>
+
+<Note>
+  Some Datadog UI labels may still show an older product name. Any key name works — use `opensre` for clarity.
+</Note>
+
+## Tools
+
+| Tool | Use it for |
+| --- | --- |
+| `query_datadog_logs` | Search logs with a concrete query (for example `service:checkout status:error`) |
+| `query_datadog_metrics` | Infrastructure and application metrics |
+| `query_datadog_monitors` | Monitor configuration and current states |
+| `query_datadog_events` | Deployments, alerts, and system change events |
+| `query_datadog_all` | Logs, monitors, and events in parallel for a fast first pass |
+
+## Verify
+
+```bash
+opensre integrations verify datadog
+```
+
+Expected output:
+
+```
+Service: datadog
+Status: passed
+Detail: Connected to api.{site} and listed {N} monitors.
+```
+
+Example for the default US site with 12 monitors:
+
+```
+Detail: Connected to api.datadoghq.com and listed 12 monitors.
+```
+
+Inside the REPL: `/integrations verify datadog` or `/verify datadog`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **403 Forbidden** | Confirm application key scopes include `logs_read_data` and `monitors_read` |
+| **Wrong site / EU account** | Set `DD_SITE=datadoghq.eu` (or your site hostname) |
+| **Verify passes but no logs returned** | Check index retention and that the app key can read the target log index |
+| **Multiple Datadog accounts** | Use `DD_INSTANCES` — see [Multi-instance integrations](/platform/multi-instance-integrations) |
+
+## Security
+
+- Create a dedicated application key with read-only scopes.
+- Store keys in `.env` or your secret manager — not in source control.

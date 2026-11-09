@@ -23,7 +23,7 @@ class Principal:
     """Owner of credentials, integrations, and bill for one install context.
 
     ``kind="org"`` uses a Clerk (or equivalent) organization id.
-    ``kind="individual"`` is reserved for non-organization contexts.
+    ``kind="individual"`` uses a Clerk user id for a personal context.
     """
 
     kind: PrincipalKind

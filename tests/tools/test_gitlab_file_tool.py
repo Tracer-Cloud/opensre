@@ -8,7 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from integrations.gitlab.tools.gitlab_file_tool import get_gitlab_file_contents
+from integrations.gitlab.tools.gitlab_file_tool import (
+    _map_get_gitlab_file_contents,
+    get_gitlab_file_contents,
+)
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -154,6 +157,7 @@ def test_run_returns_unavailable_when_config_missing() -> None:
         "source": "gitlab",
         "available": False,
         "error": "gitlab integration is not configured.",
+        "failure_state": "missing_config",
         "file": {},
     }
 
@@ -240,3 +244,72 @@ def test_run_handles_empty_content() -> None:
         result = get_gitlab_file_contents(project_id="42", file_path="empty.txt")
     assert result["available"] is True
     assert result["file"]["content"] == ""
+
+
+class TestMapGetGitlabFileContents:
+    def test_records_entry_with_line_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_gitlab_file_contents(
+            evidence,
+            {
+                "available": True,
+                "file": {
+                    "file_path": "config/settings.yaml",
+                    "ref": "main",
+                    "content": "line1\nline2\nline3",
+                },
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_gitlab_file"
+        assert entries[0]["summary"] == "'config/settings.yaml' @ main, 3 line(s)"
+
+    def test_records_correct_line_count_with_trailing_newline(self) -> None:
+        """Regression: a trailing newline must not be counted as an extra line."""
+        evidence: dict[str, Any] = {}
+
+        _map_get_gitlab_file_contents(
+            evidence,
+            {
+                "available": True,
+                "file": {
+                    "file_path": "config/settings.yaml",
+                    "ref": "main",
+                    "content": "line1\nline2\nline3\n",
+                },
+            },
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"] == "'config/settings.yaml' @ main, 3 line(s)"
+        )
+
+    def test_records_entry_with_zero_lines_for_empty_file(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_gitlab_file_contents(
+            evidence,
+            {"available": True, "file": {"file_path": "empty.txt", "ref": "main", "content": ""}},
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "'empty.txt' @ main, 0 line(s)"
+
+    def test_records_nothing_when_file_empty_dict(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_gitlab_file_contents(evidence, {"available": True, "file": {}}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_gitlab_file_contents(evidence, {"available": False, "error": "not configured"}, {})
+
+        assert "catalog_entries" not in evidence

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field
 
 from core.domain.alerts.fields import (
     alert_annotations,
@@ -52,8 +51,6 @@ class AlertDetails(BaseModel):
     ``extra="allow"`` so this model stays constructible from vendor kwargs
     (``AlertDetails(kube_namespace=...)``) and introspectable via
     ``getattr(details, name, None)`` without core hardcoding vendor field names.
-    Use :func:`build_alert_details_model` where the LLM's output schema should
-    declare the registered vendor fields explicitly (structured-output calls).
     """
 
     model_config = ConfigDict(extra="allow")
@@ -66,37 +63,6 @@ class AlertDetails(BaseModel):
     summary: str | None = Field(default=None)
     error_message: str | None = Field(default=None)
     log_query: str | None = Field(default=None)
-
-
-def build_alert_details_model() -> type[AlertDetails]:
-    """Return an ``AlertDetails`` subclass with registered vendor fields declared.
-
-    Structured-output LLM calls need the vendor fields declared (not just
-    allowed as extras) so the generated JSON schema instructs the model to
-    extract them. Falls back to ``AlertDetails`` itself when no vendor fields
-    are registered.
-    """
-    if not _registered_alert_detail_fields:
-        return AlertDetails
-    vendor_fields: dict[str, Any] = {
-        name: (str | None, Field(default=None)) for name in _registered_alert_detail_fields
-    }
-    return create_model(
-        "AlertDetailsWithVendorFields",
-        __base__=AlertDetails,
-        **vendor_fields,
-    )
-
-
-def format_raw_alert(raw_alert: Any) -> str:
-    """Render raw alert payload as prompt text for the extract_alert LLM call."""
-    if isinstance(raw_alert, str):
-        return raw_alert
-    if isinstance(raw_alert, dict):
-        if raw_alert.get("text") and not needs_full_json_prompt(raw_alert):
-            return str(raw_alert["text"])
-        return json.dumps(raw_alert, indent=2, sort_keys=True)
-    return json.dumps(raw_alert, indent=2, sort_keys=True)
 
 
 def needs_full_json_prompt(raw_alert: dict[str, Any]) -> bool:
@@ -152,44 +118,3 @@ def fallback_details(state: Mapping[str, Any], raw_alert: Any) -> AlertDetails:
         alert_name=alert_name or "unknown",
         severity=severity or "unknown",
     )
-
-
-def make_problem_md(details: AlertDetails) -> str:
-    """Build the operator-facing problem markdown header from extracted details."""
-    parts = [
-        f"# {details.alert_name}",
-        f"Severity: {details.severity}",
-    ]
-    namespace = getattr(details, "kube_namespace", None)
-    if namespace:
-        parts.append(f"Namespace: {namespace}")
-    if details.error_message:
-        parts.append(f"\nError: {details.error_message}")
-    return "\n".join(parts)
-
-
-def enrich_raw_alert(raw_alert: Any, details: AlertDetails) -> Any:
-    """Merge extracted details back into the raw alert dict for downstream stages."""
-    if not isinstance(raw_alert, dict):
-        raw_alert = {}
-    enriched = dict(raw_alert)
-    prior_source = str(raw_alert.get("alert_source", "")).lower()
-
-    for field_name in alert_detail_field_names():
-        value = getattr(details, field_name, None)
-        if value:
-            enriched[field_name] = value
-
-    if details.alert_name and details.alert_name != "unknown":
-        enriched["alert_name"] = details.alert_name
-
-    canonical = enriched.get("canonical_alert")
-    if isinstance(canonical, dict):
-        updated_canonical = dict(canonical)
-        if details.alert_name and details.alert_name != "unknown":
-            updated_canonical["alert_name"] = details.alert_name
-        enriched["canonical_alert"] = updated_canonical
-
-    if details.alert_source and prior_source not in CANONICAL_ALERT_SOURCES:
-        enriched["alert_source"] = details.alert_source
-    return enriched

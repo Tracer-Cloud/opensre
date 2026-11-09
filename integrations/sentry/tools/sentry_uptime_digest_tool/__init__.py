@@ -6,7 +6,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.sentry.uptime import (
     UptimeTransitionRecord,
     WatchState,
@@ -171,6 +173,8 @@ def _build_rollup(
 @tool(
     name="get_sentry_uptime_digest",
     source="sentry",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description=(
         "Retrieve an uptime digest rollup from the local watch transition log. "
         "Returns monitors that are still down or recovered within the time window. "
@@ -201,7 +205,7 @@ def _build_rollup(
     injected_params=("project_slug",),
     is_available=_sentry_available,
     extract_params=_extract_params,
-    surfaces=("chat",),
+    surfaces=(ToolSurface.CHAT,),
 )
 def get_sentry_uptime_digest(
     window_hours: int = 24,

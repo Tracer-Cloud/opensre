@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.shared.product_sources import product_python_files
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PRODUCT_ROOTS = (
     "bootstrap",
@@ -20,7 +22,7 @@ _PRODUCT_ROOTS = (
     "core",
     "gateway",
     "integrations",
-    "platform",
+    "infrastructure",
     "surfaces",
     "tools",
 )
@@ -70,7 +72,7 @@ def test_product_packages_have_no_constant_condition_toggles(package: str) -> No
         pytest.skip(f"{package}/ missing")
 
     offenders: list[str] = []
-    for path in sorted(root.rglob("*.py")):
+    for path in product_python_files(root):
         if _is_test_path(path):
             continue
         source = path.read_text(encoding="utf-8")

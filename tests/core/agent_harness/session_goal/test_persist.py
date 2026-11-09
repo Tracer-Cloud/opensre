@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
-from core.agent_harness.session.pending_offer import PendingIntegrationSetupOffer
+from core.agent_harness.session.pending_offer import (
+    PendingIntegrationSetupOffer,
+    PendingScheduleOffer,
+)
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalStatus,
@@ -17,6 +22,7 @@ from core.agent_harness.session_goal.persist import (
     session_goal_state_snapshot,
     session_goal_to_payload,
 )
+from core.agent_harness.session_goal.run_until import goal_has_stalled
 
 
 def test_session_goal_round_trips_through_payload() -> None:
@@ -28,6 +34,7 @@ def test_session_goal_round_trips_through_payload() -> None:
         step_count=3,
         checklist=("a", "b", "c"),
         completed=frozenset({0}),
+        last_progress_turns_used=2,
         last_reason="checklist 1/3 done — next: b",
     )
     restored = session_goal_from_payload(session_goal_to_payload(goal))
@@ -49,6 +56,23 @@ def test_paused_session_goal_round_trips_through_payload() -> None:
     assert restored.status == SessionGoalStatus.PAUSED
 
 
+def test_legacy_payload_starts_the_stall_clock_at_restored_turns() -> None:
+    restored = session_goal_from_payload(
+        {
+            "condition": "finish checklist",
+            "max_outer_turns": 5,
+            "status": SessionGoalStatus.ACTIVE,
+            "turns_used": 3,
+            "checklist": ["a", "b", "c"],
+            "completed": [0],
+        }
+    )
+
+    assert restored is not None
+    assert restored.last_progress_turns_used == 3
+    assert goal_has_stalled(restored) is False
+
+
 def test_session_goal_state_snapshot_includes_cta_and_pending() -> None:
     session = SessionCore(store=InMemorySessionStore())
     attach_session_goal(
@@ -68,6 +92,29 @@ def test_session_goal_state_snapshot_includes_cta_and_pending() -> None:
     assert other.offered_upgrade_ctas == {"cta:posthog_mcp"}
     assert isinstance(other.pending_integration_setup_offer, PendingIntegrationSetupOffer)
     assert other.pending_integration_setup_offer.service_id == "posthog_mcp"
+
+
+def test_pending_schedule_offer_survives_snapshot_and_restore() -> None:
+    """Gateway turns resolve a fresh session per message; the offer must persist."""
+    offer = PendingScheduleOffer(
+        kind="recurring_skill",
+        cron="0 9 * * 1-5",
+        timezone="UTC",
+        provider="slack",
+        chat_id="D1",
+        skill_name="delivering-morning-briefings",
+        skill_inputs={"city": "Berlin"},
+    )
+    session = SessionCore(store=InMemorySessionStore())
+    session.pending_schedule_offer = offer
+
+    other = SessionCore(store=InMemorySessionStore())
+    apply_session_goal_state(other, session_goal_state_snapshot(session))
+    assert other.pending_schedule_offer == offer
+
+    session.pending_schedule_offer = None
+    apply_session_goal_state(other, session_goal_state_snapshot(session))
+    assert other.pending_schedule_offer is None
 
 
 def test_flush_persists_session_goal_state_and_restore_context_applies_it() -> None:
@@ -244,3 +291,175 @@ def test_clearing_a_goal_is_persisted_so_resume_does_not_revive_it() -> None:
     ]
     assert len(snapshots) == 2, "the clear was not tombstoned"
     assert snapshots[-1].get("session_goal") is None
+
+
+def test_pending_goal_clear_tombstones_the_restored_task_plan() -> None:
+    """A deferred clear must not let its associated plan reappear on a later resume."""
+    from core.agent_harness.session.persistence.contracts import RestoreContextKey
+    from core.agent_harness.session_goal.persist import pending_session_goal_controls
+    from core.agent_harness.task_plan.persist import TASK_PLAN_STATE_CUSTOM_TYPE
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    storage = InMemorySessionStore()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    attach_session_goal(session, SessionGoal(condition="finish it", max_outer_turns=3))
+    session.task_plan = TaskPlan(
+        steps=(PlanStep(step="finish it", status=PlanStepStatus.IN_PROGRESS),)
+    )
+    storage.flush(session)
+    records = storage.read(session.session_id)
+    goal_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE
+    )
+    plan_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+    )
+    storage.append_session_goal_control(session.session_id, "goal_clear")
+
+    restored = SessionCore(session_id=session.session_id, store=storage)
+    SessionManager(store=storage).restore_context(
+        restored,
+        {
+            RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+            RestoreContextKey.TASK_PLAN_STATE: plan_state,
+            RestoreContextKey.SESSION_GOAL_CONTROLS: pending_session_goal_controls(
+                storage.read(session.session_id)
+            ),
+        },
+    )
+
+    assert restored.session_goal is None
+    assert restored.task_plan is None
+    persisted = storage.read(session.session_id)
+    assert pending_session_goal_controls(persisted) == []
+    assert (
+        next(
+            record["content"]
+            for record in reversed(persisted)
+            if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+        )
+        == {}
+    )
+
+
+def test_pending_goal_clear_waits_for_the_task_plan_tombstone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed plan write must leave the goal intact for a later clear replay."""
+    from core.agent_harness.session.persistence.contracts import RestoreContextKey
+    from core.agent_harness.session_goal.goal import clear_session_goal
+    from core.agent_harness.session_goal.persist import (
+        SESSION_GOAL_STATE_CUSTOM_TYPE,
+        pending_session_goal_controls,
+    )
+    from core.agent_harness.task_plan.persist import TASK_PLAN_STATE_CUSTOM_TYPE
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    storage = InMemorySessionStore()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    attach_session_goal(session, SessionGoal(condition="finish it", max_outer_turns=3))
+    session.task_plan = TaskPlan(
+        steps=(PlanStep(step="finish it", status=PlanStepStatus.IN_PROGRESS),)
+    )
+    storage.flush(session)
+    storage.append_session_goal_control(session.session_id, "goal_clear")
+    clear_session_goal(session)
+
+    def _fail_task_plan_write(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "_append_task_plan_state", _fail_task_plan_write)
+        with pytest.raises(OSError, match="disk full"):
+            storage.flush_session_goal_control_state(session)
+
+    records = storage.read(session.session_id)
+    goal_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE
+    )
+    stale_plan_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+    )
+
+    assert goal_state["session_goal"] is not None
+    assert stale_plan_state
+
+    restored = SessionCore(session_id=session.session_id, store=storage)
+    SessionManager(store=storage).restore_context(
+        restored,
+        {
+            RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+            RestoreContextKey.TASK_PLAN_STATE: stale_plan_state,
+            RestoreContextKey.SESSION_GOAL_CONTROLS: pending_session_goal_controls(records),
+        },
+    )
+
+    assert restored.session_goal is None
+    assert restored.task_plan is None
+    repaired_records = storage.read(session.session_id)
+    assert pending_session_goal_controls(repaired_records) == []
+    assert (
+        next(
+            record["content"]
+            for record in reversed(repaired_records)
+            if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+        )
+        == {}
+    )
+
+
+def test_goal_clear_without_a_goal_keeps_an_unrelated_task_plan() -> None:
+    from core.agent_harness.session_goal.control import apply_session_goal_control
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+    from core.agent_harness.turns.host_cancel import HostCancelReason
+
+    session = SessionCore()
+    plan = TaskPlan(steps=(PlanStep(step="collect evidence", status=PlanStepStatus.PENDING),))
+    session.task_plan = plan
+
+    assert not apply_session_goal_control(session, HostCancelReason.GOAL_CLEAR)
+    assert session.task_plan is plan
+
+
+def test_the_last_verdict_survives_a_round_trip() -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal
+    from core.agent_harness.session_goal.persist import (
+        session_goal_from_payload,
+        session_goal_to_payload,
+    )
+
+    goal = SessionGoal(condition="c", last_verdict="Contradiction: 5 vs 3")
+
+    restored = session_goal_from_payload(session_goal_to_payload(goal))
+
+    assert restored is not None
+    assert restored.last_verdict == "Contradiction: 5 vs 3"
+
+
+def test_cached_token_baseline_round_trips() -> None:
+    from core.agent_harness.session_goal.persist import (
+        session_goal_from_payload,
+        session_goal_to_payload,
+    )
+
+    # Arrange
+    goal = SessionGoal(condition="c", token_baseline_cached=4_200)
+
+    # Act
+    restored = session_goal_from_payload(session_goal_to_payload(goal))
+
+    # Assert
+    assert restored is not None
+    assert restored.token_baseline_cached == 4_200

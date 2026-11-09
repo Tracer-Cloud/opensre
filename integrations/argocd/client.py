@@ -17,9 +17,10 @@ from urllib.parse import quote
 
 import httpx
 
+from infrastructure.observability.errors.service import capture_service_error
+from integrations._validation_helpers import report_validation_failure
 from integrations.config_models import ArgoCDIntegrationConfig
 from integrations.probes import ProbeResult
-from platform.observability.errors.service import capture_service_error
 
 logger = logging.getLogger(__name__)
 
@@ -543,5 +544,8 @@ def make_argocd_client(
                 verify_ssl=_normalize_verify_ssl(verify_ssl),
             )
         )
-    except Exception:
+    except Exception as exc:
+        report_validation_failure(
+            exc, logger=logger, integration="argocd", method="make_client", include_traceback=True
+        )
         return None

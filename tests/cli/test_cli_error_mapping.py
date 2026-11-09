@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from core.llm.shared.llm_retry import LLMCreditExhaustedError
+from core.llm.shared.llm_retry import (
+    LLMCreditExhaustedError,
+    OpenSRECreditsExhaustedError,
+)
 from integrations.llm_cli.errors import CLITimeoutError
 from surfaces.cli.error_mapping import reraise_cli_runtime_error
-from surfaces.interactive_shell.utils.error_handling.errors import OpenSREError
+from surfaces.shared.error_handling.errors import OpenSREError
 
 
 def test_credit_exhausted_error_maps_to_opensre_error_with_auth_hint() -> None:
@@ -19,11 +22,26 @@ def test_credit_exhausted_error_maps_to_opensre_error_with_auth_hint() -> None:
     err = exc_info.value
     assert "credit exhausted" in str(err).lower()
     assert err.suggestion is not None
-    assert "opensre auth login" in err.suggestion
+    assert "opensre login" in err.suggestion
+
+
+def test_opensre_credit_exhaustion_maps_to_stripe_upgrade_hint() -> None:
+    upgrade_url = "https://app.opensre.dev/usage"
+    exc = OpenSRECreditsExhaustedError(
+        "OpenSRE credits exhausted",
+        upgrade_url=upgrade_url,
+    )
+
+    with pytest.raises(OpenSREError) as exc_info:
+        reraise_cli_runtime_error(exc)
+
+    assert exc_info.value.suggestion is not None
+    assert upgrade_url in exc_info.value.suggestion
+    assert "credit top-up" in exc_info.value.suggestion
 
 
 def test_anthropic_model_not_found_raises_opensre_error() -> None:
-    """RuntimeError from an invalid Anthropic model name maps to a user-friendly OpenSREError."""
+    """An invalid Anthropic model name maps to a generic OpenSREError that never echoes the id."""
     exc = RuntimeError(
         "Anthropic model 'not-a-real-model-xyz' was not found. "
         "Check your configured model name and try again."
@@ -32,7 +50,8 @@ def test_anthropic_model_not_found_raises_opensre_error() -> None:
         reraise_cli_runtime_error(exc)
 
     err = exc_info.value
-    assert "not-a-real-model-xyz" in str(err)
+    assert "not-a-real-model-xyz" not in str(err)
+    assert "Anthropic model was not found" in str(err)
     assert err.suggestion is not None
     assert "ANTHROPIC_REASONING_MODEL" in err.suggestion
     assert "ANTHROPIC_TOOLCALL_MODEL" in err.suggestion

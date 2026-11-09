@@ -8,6 +8,6 @@ turn detection).
 
 from __future__ import annotations
 
-from platform.common.task_registry import TaskRegistry
+from infrastructure.scheduling.task_registry import TaskRegistry
 
 __all__ = ["TaskRegistry"]

@@ -20,6 +20,15 @@ def _closing_delimiter_line(line: str, *, delimiter: str, strip_tabs: bool) -> b
     return normalized == delimiter
 
 
+def summarize_shell_command(command: str) -> str:
+    """One quiet ``$`` row: whitespace collapsed, the command left whole.
+
+    Cutting the row to a width and replacing the tail with an ellipsis made a
+    copied path or command stop mid-token.
+    """
+    return " ".join(format_shell_command_for_display(command).split())
+
+
 def format_shell_command_for_display(command: str) -> str:
     """Return a compact, user-facing command string for the REPL prompt area.
 

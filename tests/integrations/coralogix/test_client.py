@@ -247,7 +247,7 @@ def test_parse_user_data_counts_successes_and_failures_symmetrically(
     100 good userData blobs + 5 broken ones would compute as 5/5 = 100% skip
     instead of 5/105 = ~5%, firing a false alert on every response.
     """
-    from platform.observability.streaming import StreamingParseStats
+    from infrastructure.observability.streaming import StreamingParseStats
 
     stats = StreamingParseStats()
     # A JSON-string userData that parses cleanly.

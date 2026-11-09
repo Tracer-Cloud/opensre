@@ -5,9 +5,9 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from core.execution import ToolExecutionRequest
 from core.llm.types import ToolCall
-from gateway.core.runtime.approvals import (
+from core.tool.execution import ToolExecutionRequest
+from gateway.core.middleware.approvals import (
     APPROVE_ACTION_ID,
     DENY_ACTION_ID,
     ApprovalBroker,

@@ -1,0 +1,114 @@
+{
+  "data": {
+    "actor": {
+      "account": {
+        "nrql": {
+          "results": [
+            {
+              "incidentId": "inc-fixture-1001",
+              "event": "open",
+              "priority": "CRITICAL",
+              "title": "Checkout latency &gt;= 3.0s",
+              "conditionName": "checkout-latency",
+              "policyName": "checkout-alerts-default",
+              "nrqlQuery": "SELECT average(duration) FROM Transaction WHERE appName = 'checkout-service' SINCE 5 minutes ago",
+              "threshold": "3.0",
+              "operator": "&gt;=",
+              "runbookUrl": "https://runbooks.example.com/checkout-latency",
+              "entity.name": "checkout-service",
+              "entity.guid": "MTIzNDU2fEFQTXxBUFBMSUNBVElPTnwxMTEx",
+              "muted": false,
+              "openTime": 1754905200000,
+              "closeTime": null
+            },
+            {
+              "incidentId": "inc-fixture-1001",
+              "event": "close",
+              "priority": "CRITICAL",
+              "title": "Checkout latency &gt;= 3.0s (resolved)",
+              "conditionName": "checkout-latency",
+              "policyName": "checkout-alerts-default",
+              "nrqlQuery": "SELECT average(duration) FROM Transaction WHERE appName = 'checkout-service' SINCE 5 minutes ago",
+              "threshold": "3.0",
+              "operator": "&gt;=",
+              "runbookUrl": "https://runbooks.example.com/checkout-latency",
+              "entity.name": "checkout-service",
+              "entity.guid": "MTIzNDU2fEFQTXxBUFBMSUNBVElPTnwxMTEx",
+              "muted": false,
+              "openTime": 1754905200000,
+              "closeTime": 1754905500000
+            },
+            {
+              "incidentId": "inc-fixture-1002",
+              "event": "Open",
+              "priority": "CRITICAL",
+              "title": "Checkout latency &gt;= 3.0s",
+              "conditionName": "checkout-latency",
+              "policyName": "checkout-alerts-default",
+              "nrqlQuery": "SELECT average(duration) FROM Transaction WHERE appName = 'checkout-service' SINCE 5 minutes ago",
+              "threshold": "3.0",
+              "operator": "&gt;=",
+              "runbookUrl": "https://runbooks.example.com/checkout-latency",
+              "entity.name": "checkout-service",
+              "entity.guid": "MTIzNDU2fEFQTXxBUFBMSUNBVElPTnwxMTEx",
+              "muted": false,
+              "openTime": 1754906400000,
+              "closeTime": null
+            },
+            {
+              "incidentId": "inc-fixture-1002",
+              "event": "Close",
+              "priority": "CRITICAL",
+              "title": "Checkout latency &gt;= 3.0s (resolved)",
+              "conditionName": "checkout-latency",
+              "policyName": "checkout-alerts-default",
+              "nrqlQuery": "SELECT average(duration) FROM Transaction WHERE appName = 'checkout-service' SINCE 5 minutes ago",
+              "threshold": "3.0",
+              "operator": "&gt;=",
+              "runbookUrl": "https://runbooks.example.com/checkout-latency",
+              "entity.name": "checkout-service",
+              "entity.guid": "MTIzNDU2fEFQTXxBUFBMSUNBVElPTnwxMTEx",
+              "muted": false,
+              "openTime": 1754906400000,
+              "closeTime": 1754906700000
+            },
+            {
+              "incidentId": "inc-fixture-1003",
+              "event": "open",
+              "priority": "WARNING",
+              "title": "Checkout latency &gt;= 3.0s",
+              "conditionName": "checkout-latency",
+              "policyName": "checkout-alerts-default",
+              "nrqlQuery": "SELECT average(duration) FROM Transaction WHERE appName = 'checkout-service' SINCE 5 minutes ago",
+              "threshold": "3.0",
+              "operator": "&gt;=",
+              "runbookUrl": "https://runbooks.example.com/checkout-latency",
+              "entity.name": "checkout-service",
+              "entity.guid": "MTIzNDU2fEFQTXxBUFBMSUNBVElPTnwxMTEx",
+              "muted": true,
+              "openTime": 1754907600000,
+              "closeTime": null
+            },
+            {
+              "incidentId": "inc-fixture-2001",
+              "event": "open",
+              "priority": "HIGH",
+              "title": "Payments worker error rate &gt; 5%",
+              "conditionName": "payments-worker-errors",
+              "policyName": "payments-alerts-default",
+              "nrqlQuery": "SELECT percentage(count(*), WHERE error IS true) FROM Transaction WHERE appName = 'payments-worker' SINCE 5 minutes ago",
+              "threshold": "5",
+              "operator": "&gt;",
+              "runbookUrl": null,
+              "entity.name": "payments-worker",
+              "entity.guid": "MTIzNDU2fEFQTXxBUFBMSUNBVElPTnwyMjIy",
+              "muted": false,
+              "openTime": 1754908800000,
+              "closeTime": null
+            }
+          ]
+        }
+      }
+    }
+  }
+}

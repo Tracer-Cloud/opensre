@@ -7,8 +7,11 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import SplunkIntegrationConfig
+from integrations.splunk.client import SplunkClient, SplunkConfig
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["SplunkClient", "SplunkConfig", "classify"]
 
 
 def classify(

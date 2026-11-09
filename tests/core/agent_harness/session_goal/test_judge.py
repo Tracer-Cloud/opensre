@@ -1,0 +1,468 @@
+"""Cheap-model transcript judge: met / not yet / impossible + evidence gate."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from core.agent_harness.session.session_core import SessionCore
+from core.agent_harness.session_goal.evaluate import evaluate_session_goal
+from core.agent_harness.session_goal.goal import (
+    SessionGoal,
+    SessionGoalReason,
+    SessionGoalStatus,
+    attach_session_goal,
+)
+from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+from core.llm.types import AgentLLMResponse
+
+
+def _result(text: str, *, executed: int = 0, success: int = 0) -> TurnResult:
+    return TurnResult(
+        final_intent="cli_agent_handled",
+        action_result=ToolCallingTurnResult(
+            planned_count=executed,
+            executed_count=executed,
+            executed_success_count=success,
+            has_unhandled_clause=False,
+            handled=True,
+        ),
+        assistant_response_text=text,
+    )
+
+
+def _reached(**_kw: object) -> SessionGoalJudgeVerdict:
+    return SessionGoalJudgeVerdict(
+        verdict="GOAL_REACHED",
+        reason="272 Windows users in the last 7 days",
+    )
+
+
+def _not_yet(**_kw: object) -> SessionGoalJudgeVerdict:
+    return SessionGoalJudgeVerdict(
+        verdict="NOT_REACHED",
+        reason="use the Actions runs endpoint by SHA",
+    )
+
+
+def _impossible(**_kw: object) -> SessionGoalJudgeVerdict:
+    return SessionGoalJudgeVerdict(
+        verdict="IMPOSSIBLE",
+        reason="signup identity is unverified in this project",
+    )
+
+
+def test_tools_plus_real_answer_meets_without_a_tag() -> None:
+    session = SessionCore()
+    attach_session_goal(
+        session,
+        SessionGoal(
+            condition="How many Windows users in the last 7 days?",
+            max_outer_turns=4,
+            host_owned=True,
+        ),
+    )
+    verdict = evaluate_session_goal(
+        session.session_goal,  # type: ignore[arg-type]
+        _result("I found 272 Windows users.", executed=2, success=2),
+        session=session,
+        judge=_reached,
+    )
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert "272" in verdict.reason
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.ACHIEVED
+
+
+def test_chatty_reply_without_tools_stays_not_yet() -> None:
+    session = SessionCore()
+    attach_session_goal(
+        session,
+        SessionGoal(condition="how many failed Actions runs?", max_outer_turns=4),
+    )
+    verdict = evaluate_session_goal(
+        session.session_goal,  # type: ignore[arg-type]
+        _result("Looks done from history."),
+        session=session,
+        judge=_reached,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert SessionGoalReason.NEED_TOOL_EVIDENCE in verdict.reason
+
+
+def test_judge_not_yet_reason_is_the_status_reason() -> None:
+    verdict = evaluate_session_goal(
+        SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=4,
+            checklist=("list the runs", "filter by SHA"),
+        ),
+        _result("I listed runs on main.", executed=1, success=1),
+        judge=_not_yet,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason == "use the Actions runs endpoint by SHA"
+
+
+def test_impossible_is_terminal() -> None:
+    session = SessionCore()
+    attach_session_goal(
+        session,
+        SessionGoal(condition="D7 retention for Windows signups", max_outer_turns=4),
+    )
+    verdict = evaluate_session_goal(
+        session.session_goal,  # type: ignore[arg-type]
+        _result("signup event unverified"),
+        session=session,
+        judge=_impossible,
+    )
+    assert verdict.status == SessionGoalStatus.IMPOSSIBLE
+    assert "unverified" in verdict.reason
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.IMPOSSIBLE
+
+
+def test_transport_failure_does_not_block_host_accept() -> None:
+    class _Boom:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, system, tools)
+            raise RuntimeError("classifier down")
+
+        def with_structured_output(self, model):  # noqa: ANN001
+            _ = model
+            raise RuntimeError("classifier down")
+
+    session = SessionCore()
+    goal = SessionGoal(condition="finish migration", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("patched", executed=1, success=1),
+        session=session,
+        judge_llm=_Boom(),  # type: ignore[arg-type]
+    )
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert verdict.reason == SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.ACHIEVED
+
+
+def test_transport_failure_without_tools_stays_active() -> None:
+    class _Boom:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, system, tools)
+            raise RuntimeError("classifier down")
+
+        def with_structured_output(self, model):  # noqa: ANN001
+            _ = model
+            raise RuntimeError("classifier down")
+
+    session = SessionCore()
+    goal = SessionGoal(condition="finish migration", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("still working"),
+        session=session,
+        judge_llm=_Boom(),  # type: ignore[arg-type]
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason == SessionGoalReason.JUDGE_UNAVAILABLE
+
+
+def test_structured_llm_not_reached_does_not_false_complete() -> None:
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, system, tools)
+            return AgentLLMResponse(
+                content='{"verdict": "NOT_REACHED", "reason": "still missing the SHA filter"}'
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    status = evaluate_session_goal(
+        SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=3,
+            checklist=("list the runs", "filter by SHA"),
+        ),
+        _result("listed runs", executed=1, success=1),
+        judge_llm=_LLM(),  # type: ignore[arg-type]
+    )
+    assert status.status == SessionGoalStatus.ACTIVE
+    assert "SHA" in status.reason
+
+
+def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
+    """A summary that disagrees with its own table must not pass as met."""
+    # Arrange: a client that records the system prompt it is given.
+    from core.agent_harness.session_goal.judge import invoke_session_goal_judge
+
+    seen: dict[str, str] = {}
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, tools)
+            seen["system"] = system or ""
+            seen["prompt"] = str(messages[-1].get("content", "")) if messages else ""
+            return AgentLLMResponse(content='{"verdict": "NOT_REACHED", "reason": "table says 1"}')
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    # Act
+    invoke_session_goal_judge(
+        _LLM(),  # type: ignore[arg-type]
+        condition="table of five PRs",
+        reply="Found 3 with re-runs. | #1 | Yes | #2 | No |",
+        evidence=True,
+        previous_reason="Contradiction: summary says 3, table shows 1",
+    )
+
+    # Assert: the rules and the previous verdict both reach the model.
+    assert "refute" in seen["system"]
+    assert "Contradiction:" in seen["system"]
+    assert "repeats_previous" in seen["system"]
+    assert "Previous verdict reason:" in seen["prompt"]
+    assert "cannot be met truthfully" in seen["system"]
+    assert "A negative finding can meet the condition" in seen["system"]
+    assert "answered honestly with 'none' or 'no' is met, not impossible" in seen["system"]
+    assert "evidence_quote" in seen["system"]
+    assert "When in doubt, set verdict to NOT_REACHED." in seen["system"]
+    assert "not the assistant reply" in seen["system"]
+    assert "evidence_quote" in seen["system"]
+
+
+def test_the_observations_are_read_without_the_reply() -> None:
+    """The reading call sees the condition and the tool observations only."""
+    from core.agent_harness.session_goal.judge import read_observations
+
+    # Arrange: a client that records what it is given and answers tersely.
+    seen: dict[str, str] = {}
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = tools
+            seen["system"] = system or ""
+            seen["prompt"] = str(messages[-1].get("content", "")) if messages else ""
+            return AgentLLMResponse(content='{"answer": "#6140: no re-run (attempt 1 success)"}')
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    # Act
+    reading = read_observations(
+        _LLM(),  # type: ignore[arg-type]
+        condition="did CI on #6140 fail then pass?",
+        tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: attempt 1 success",
+    )
+
+    # Assert: the reply is not part of the input; the answer comes back.
+    assert reading is not None
+    assert reading.answer == "#6140: no re-run (attempt 1 success)"
+    assert "never see the assistant" in seen["system"]
+    assert "Latest assistant reply" not in seen["prompt"]
+    assert "attempt 1 success" in seen["prompt"]
+
+
+def test_the_judge_compares_the_reply_with_the_independent_reading() -> None:
+    """A Yes the model invents is checked against what the observations say."""
+    # Arrange: first call is the reading, second is the verdict; record the judge prompt.
+    calls: list[str] = []
+    seen: dict[str, str] = {}
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = tools
+            calls.append(system or "")
+            if "never see the assistant" in (system or ""):
+                return AgentLLMResponse(content='{"answer": "#6140: no re-run"}')
+            seen["system"] = system or ""
+            seen["prompt"] = str(messages[-1].get("content", "")) if messages else ""
+            return AgentLLMResponse(
+                content=(
+                    '{"verdict": "NOT_REACHED", "reason": "Contradiction: reply says Yes for '
+                    '#6140, observations read no re-run", "evidence_quote": "attempt 1 success"}'
+                )
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    session = SessionCore()
+    goal = SessionGoal(condition="did CI on #6140 fail then pass?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: attempt 1 success",
+            evidence_success_count=1,
+        ),
+        "| #6140 | Yes |",
+    )
+
+    # Act
+    verdict = evaluate_session_goal(goal, result, session=session, judge_llm=_LLM())  # type: ignore[arg-type]
+
+    # Assert: two calls, the reading reached the judge, the goal stays active.
+    assert len(calls) == 2
+    assert "Independent reading of the observations" in seen["prompt"]
+    assert "#6140: no re-run" in seen["prompt"]
+    assert (
+        "compare the reply's key facts" in seen["system"].lower()
+        or "independent reading" in seen["system"].lower()
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith("Contradiction:")
+
+
+def test_a_not_yet_becomes_reached_when_the_reading_covers_all_and_the_reply_matches() -> None:
+    """Two independent views agreeing beat a judge that asks for proof of a non-event."""
+
+    # Arrange: reading says covered; judge says NOT_REACHED but reply matches reading.
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, tools)
+            if "never see the assistant" in (system or ""):
+                return AgentLLMResponse(
+                    content='{"answer": "#6140: no re-run; #6139: no re-run", "covered": true}'
+                )
+            return AgentLLMResponse(
+                content=(
+                    '{"verdict": "NOT_REACHED", "reason": "no failed-then-green run shown", '
+                    '"reply_matches_reading": true}'
+                )
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    session = SessionCore()
+    goal = SessionGoal(condition="did CI on #6140 or #6139 fail then pass?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: attempt 1 success",
+            evidence_success_count=1,
+        ),
+        "| #6140 | No | #6139 | No |",
+    )
+
+    # Act
+    verdict = evaluate_session_goal(goal, result, session=session, judge_llm=_LLM())  # type: ignore[arg-type]
+
+    # Assert
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert "agrees with an independent reading" in verdict.reason
+
+
+def _conflicting_judge(agreement: str) -> Any:
+    """Reading covers; judge claims a contradiction yet says the reply matches; tie-break answers."""
+
+    class _LLM:
+        model_id = "test"
+        calls: list[str] = []
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, tools)
+            _LLM.calls.append(system or "")
+            if "never see the assistant" in (system or ""):
+                return AgentLLMResponse(
+                    content='{"answer": "#6143: no re-run to green", "covered": true}'
+                )
+            if "compare an assistant reply" in (system or ""):
+                return AgentLLMResponse(content=agreement)
+            return AgentLLMResponse(
+                content=(
+                    '{"verdict": "NOT_REACHED", "reason": "Contradiction: the reply says No '
+                    'but the observations show re_run: true", "reply_matches_reading": true, '
+                    '"evidence_quote": "re_run: true"}'
+                )
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    return _LLM
+
+
+def _trap_result() -> TurnResult:
+    return TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence=(
+                "Tool: gh\nArguments: {}\nOutcome: success\n"
+                "Result: re_run: true, re_run_to_green: false"
+            ),
+            evidence_success_count=1,
+        ),
+        "| #6143 | No | — |",
+    )
+
+
+def test_a_conflicting_verdict_closes_only_when_the_reply_and_reading_agree() -> None:
+    """A correct No called a contradiction by quoting a neighbouring field; the reading said No."""
+    # Arrange
+    llm = _conflicting_judge('{"agrees": true}')
+    session = SessionCore()
+    goal = SessionGoal(condition="was CI on #6143 re-run to green?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+
+    # Act
+    verdict = evaluate_session_goal(goal, _trap_result(), session=session, judge_llm=llm())
+
+    # Assert: closed, and exactly one tie-break call was made.
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert sum("compare an assistant reply" in c for c in llm.calls) == 1
+
+
+def test_a_conflicting_verdict_stays_open_when_the_tie_break_disagrees() -> None:
+    # Arrange
+    llm = _conflicting_judge('{"agrees": false, "difference": "#6143 yes/no"}')
+    session = SessionCore()
+    goal = SessionGoal(condition="was CI on #6143 re-run to green?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+
+    # Act
+    verdict = evaluate_session_goal(goal, _trap_result(), session=session, judge_llm=llm())
+
+    # Assert
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith("Contradiction:")

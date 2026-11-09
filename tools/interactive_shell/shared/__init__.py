@@ -16,6 +16,10 @@ from tools.interactive_shell.shared.execution_policy import (
     ToolExecutionMode,
     ToolExecutionPlan,
     allow_tool,
+    apply_auto_level,
+    apply_plan_only_gate,
+    ask_tool,
+    is_mutating_tool_type,
     plan_foreground_tool,
     resolve_confirmation,
 )
@@ -28,6 +32,10 @@ __all__ = [
     "ToolExecutionMode",
     "ToolExecutionPlan",
     "allow_tool",
+    "apply_auto_level",
+    "apply_plan_only_gate",
+    "ask_tool",
+    "is_mutating_tool_type",
     "plan_foreground_tool",
     "resolve_confirmation",
 ]

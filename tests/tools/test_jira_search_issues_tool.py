@@ -34,7 +34,7 @@ def test_extract_params_maps_source_fields() -> None:
     assert params["project_key"] == "OPS"
 
 
-@patch("integrations.jira.tools.make_jira_client")
+@patch("integrations.jira.tools.search_issues.make_jira_client")
 def test_run_returns_issues(mock_make: MagicMock) -> None:
     mock_client = MagicMock()
     mock_client.search_issues.return_value = {
@@ -57,7 +57,25 @@ def test_run_returns_issues(mock_make: MagicMock) -> None:
     assert result["issues"][0]["issue_key"] == "OPS-1"
 
 
-@patch("integrations.jira.tools.make_jira_client")
+@patch("integrations.jira.tools.search_issues.make_jira_client")
+def test_run_surfaces_truncated_search(mock_make: MagicMock) -> None:
+    mock_client = MagicMock()
+    mock_client.search_issues.return_value = {
+        "success": True,
+        "issues": [{"issue_key": "OPS-1", "summary": "Bug", "status": "Open"}],
+        "total": None,
+        "truncated": True,
+        "next_page_token": "page-2",
+    }
+    mock_make.return_value = mock_client
+
+    result = _tool().run(base_url="https://x.atlassian.net", email="u@e.com", api_token="tok")
+    assert result["truncated"] is True
+    assert result["total"] is None
+    assert result["next_page_token"] == "page-2"
+
+
+@patch("integrations.jira.tools.search_issues.make_jira_client")
 def test_run_returns_unavailable_on_api_failure(mock_make: MagicMock) -> None:
     mock_client = MagicMock()
     mock_client.search_issues.return_value = {"success": False, "error": "HTTP 400"}
@@ -68,7 +86,7 @@ def test_run_returns_unavailable_on_api_failure(mock_make: MagicMock) -> None:
     assert "400" in result["error"]
 
 
-@patch("integrations.jira.tools.make_jira_client")
+@patch("integrations.jira.tools.search_issues.make_jira_client")
 def test_run_returns_unavailable_without_credentials(mock_make: MagicMock) -> None:
     mock_make.return_value = None
     result = _tool().run(base_url="", email="", api_token="")

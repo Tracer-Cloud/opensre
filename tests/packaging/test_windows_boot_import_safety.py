@@ -22,8 +22,8 @@ _POSIX_ONLY_MODULES = ("resource", "fcntl", "termios", "pwd", "grp")
 
 # The exact boot chain __main__ runs at startup (see surfaces .../boundary.py).
 _BOOT_CALL = (
-    "from surfaces.interactive_shell.ui.output.boundary import install_harness_ports\n"
-    "install_harness_ports()"
+    "from surfaces.shared.terminal.output.boundary import install_harness_providers\n"
+    "install_harness_providers()"
 )
 
 
@@ -35,10 +35,15 @@ def test_harness_boot_imports_without_posix_only_modules() -> None:
         _blocked = set({blocked!r})
         _real_import = builtins.__import__
 
-        def _guard(name, *args, **kwargs):
-            if name.split(".", 1)[0] in _blocked:
-                raise ModuleNotFoundError(f"No module named {{name!r}} (simulated Windows)")
-            return _real_import(name, *args, **kwargs)
+        def _guard(name, globals=None, locals=None, fromlist=(), level=0):
+            # Absolute imports only. Relative imports (level > 0) reuse short
+            # names — e.g. oauthlib's ``from .resource import …`` — which are
+            # package modules, not the POSIX stdlib ``resource``.
+            if level == 0 and name.split(".", 1)[0] in _blocked:
+                raise ModuleNotFoundError(
+                    f"No module named {{name!r}} (simulated Windows)"
+                )
+            return _real_import(name, globals, locals, fromlist, level)
 
         builtins.__import__ = _guard
         {boot_call}

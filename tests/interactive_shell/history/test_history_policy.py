@@ -11,6 +11,7 @@ from surfaces.interactive_shell.prompt_history.policy import (
     DEFAULT_REDACTION_RULES,
     HistoryPolicy,
     RedactingFileHistory,
+    RefreshingFileHistory,
     redact_text,
 )
 
@@ -114,6 +115,26 @@ def test_redacting_file_history_writes_redacted_only(tmp_path: Path) -> None:
     contents = history_file.read_text(encoding="utf-8")
     assert "AKIAIOSFODNN7EXAMPLE" not in contents
     assert "[REDACTED:aws_key]" in contents
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("history_type", [RefreshingFileHistory, RedactingFileHistory])
+async def test_file_history_reloads_entries_written_by_peer(
+    tmp_path: Path,
+    history_type: type[RefreshingFileHistory],
+) -> None:
+    history_file = tmp_path / "history"
+    writer = history_type(str(history_file))
+    reader = history_type(str(history_file))
+
+    writer.store_string("first session command")
+    assert [entry async for entry in reader.load()] == ["first session command"]
+
+    writer.store_string("second session command")
+    assert [entry async for entry in reader.load()] == [
+        "second session command",
+        "first session command",
+    ]
 
 
 def test_paused_backend_does_not_persist(tmp_path: Path) -> None:

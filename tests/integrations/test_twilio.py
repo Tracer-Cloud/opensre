@@ -7,7 +7,14 @@ from typing import Any
 import pytest
 
 from integrations.config_models import TwilioIntegrationConfig, TwilioSMSChannelConfig
-from integrations.twilio.verifier import verify_twilio as _verify_twilio
+from integrations.twilio.verifier import (
+    TwilioFailureKind,
+    build_twilio_config,
+    validate_twilio_config,
+)
+from integrations.twilio.verifier import (
+    verify_twilio as _verify_twilio,
+)
 
 
 class _FakeResponse:
@@ -78,6 +85,57 @@ def test_config_rejects_blank_auth_token() -> None:
             auth_token="  ",
             sms=TwilioSMSChannelConfig(enabled=True, from_number="+1"),
         )
+
+
+# ---- build_twilio_config / validate_twilio_config -----------------------------
+
+
+def test_build_twilio_config_raises_for_missing_account_sid() -> None:
+    with pytest.raises(ValueError, match="Missing account_sid"):
+        build_twilio_config({"auth_token": "tok"})
+
+
+def test_build_twilio_config_raises_for_missing_auth_token() -> None:
+    with pytest.raises(ValueError, match="Missing auth_token"):
+        build_twilio_config({"account_sid": "AC1"})
+
+
+def test_validate_twilio_config_api_error_kind(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "twilio-auth-token"
+
+    def _raise(*_a: Any, **_kw: Any) -> Any:
+        raise Exception(f"Connection timeout for {token}")
+
+    monkeypatch.setattr("integrations.twilio.verifier.requests.get", _raise)
+
+    outcome = validate_twilio_config(
+        build_twilio_config({"account_sid": "AC1", "auth_token": "tok"})
+    )
+
+    assert outcome.ok is False
+    assert outcome.failure_kind is TwilioFailureKind.API_ERROR
+    assert token not in outcome.detail
+    assert "<redacted>" in outcome.detail
+
+
+def test_validate_twilio_config_sms_not_ready_kind(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "integrations.twilio.verifier.requests.get",
+        lambda *_a, **_kw: _FakeResponse({"friendly_name": "Demo"}),
+    )
+
+    outcome = validate_twilio_config(
+        build_twilio_config(
+            {
+                "account_sid": "AC1",
+                "auth_token": "tok",
+                "sms": {"enabled": False, "from_number": ""},
+            }
+        )
+    )
+
+    assert outcome.ok is False
+    assert outcome.failure_kind is TwilioFailureKind.SMS_NOT_READY
 
 
 # ---- _verify_twilio -----------------------------------------------------------

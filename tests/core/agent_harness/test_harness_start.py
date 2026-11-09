@@ -105,29 +105,27 @@ def test_omitting_prompts_keeps_the_built_in_context() -> None:
     assert type(harness.agent._prompts).__name__ == "DefaultPromptContextProvider"
 
 
-def test_default_prompt_provider_is_exported_from_package() -> None:
-    """Embedders import the built-in provider from ``core.agent_harness``."""
-    import core.agent_harness as pkg
+def test_default_prompt_provider_is_exported_from_spi_defaults() -> None:
     from core.agent_harness.prompts.grounding import DefaultPromptContextProvider
+    from core.agent_harness.spi import defaults
 
-    assert pkg.DefaultPromptContextProvider is DefaultPromptContextProvider
-    assert "DefaultPromptContextProvider" in dir(pkg)
+    assert defaults.DefaultPromptContextProvider is DefaultPromptContextProvider
 
 
 def test_builder_exposes_the_prompts_port() -> None:
     """The port has to be reachable on the documented second path too.
 
     The README shows callers building the agent themselves via
-    ``build_default_headless_agent``; a port only ``start()`` can reach is not
+    ``DefaultHeadlessBuild(...).agent(...)``; a port only ``start()`` can reach is not
     exposed.
     """
     # Arrange
     import inspect
 
-    from core.agent_harness.turns.default_headless_agent import build_default_headless_agent
+    from core.agent_harness.turns.headless_build import DefaultHeadlessBuild
 
     # Act / Assert
-    assert "prompts" in inspect.signature(build_default_headless_agent).parameters
+    assert "prompts" in inspect.signature(DefaultHeadlessBuild.agent).parameters
 
 
 def test_a_falsy_prompts_provider_is_still_used() -> None:

@@ -16,7 +16,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from platform.terminal.theme import TEXT
+from infrastructure.terminal.theme import TEXT
 
 _CLAUSE_BOUNDARY = re.compile(r";\s+|\s\|\s+")
 

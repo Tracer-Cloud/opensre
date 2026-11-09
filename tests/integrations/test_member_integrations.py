@@ -1,0 +1,158 @@
+"""A hosted Slack turn uses the acting member's personal GitHub default."""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+import integrations.member_integrations as member
+import integrations.webapp_vault as vault
+from config.constants.billing import ORGANIZATION_ID_ENV, WEBAPP_URL_ENV
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope
+from integrations.catalog import classify_integrations, configured_integration_services
+from integrations.harness_adapters import _fetch_webapp_vault
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, Any]) -> None:
+        self.status_code = 200
+        self._payload = payload
+
+    def json(self) -> dict[str, Any]:
+        return self._payload
+
+
+def _github(record_id: str, owner: dict[str, str]) -> dict[str, Any]:
+    return {
+        "id": record_id,
+        "service": "github",
+        "connection_origin": "webapp",
+        "status": "active",
+        "name": record_id,
+        "owner": owner,
+        "is_default": True,
+        "credentials": {"auth_token": f"tok-{record_id}", "is_default": "true"},
+    }
+
+
+@pytest.fixture(autouse=True)
+def _gateway(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://app.example.com")
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_1")
+    monkeypatch.setattr(member, "resolve_account_token", lambda: "ORG-TOKEN")
+    monkeypatch.setattr(vault, "agent_bearer_token", lambda: "ORG-TOKEN")
+    member.reset_member_integrations_cache()
+
+    workspace = _github("workspace-paul", {"kind": "organization", "id": "org_1"})
+    personal = _github("vaibhav-own", {"kind": "user", "id": "user_vaibhav"})
+
+    def fake_get(_url: str, *, params: dict[str, str], **_kwargs: Any) -> _FakeResponse:
+        if params.get("actor") == "U_VAIBHAV":
+            return _FakeResponse(
+                {"success": True, "data": [workspace, personal], "viewerUserId": "user_vaibhav"}
+            )
+        if "actor" in params:
+            return _FakeResponse({"success": True, "data": [workspace], "viewerUserId": None})
+        return _FakeResponse({"success": True, "data": [workspace]})
+
+    monkeypatch.setattr("httpx.get", fake_get)
+
+
+def _token_for(slack_user: str) -> str:
+    scope = StorageScope(principal=Principal.org("org_1"), actor=Actor(id=slack_user))
+    with bound_storage_scope(scope):
+        records = _fetch_webapp_vault()
+    assert records is not None
+    return classify_integrations(records)["github"]["auth_token"]
+
+
+def test_member_personal_default_outranks_the_workspace_default() -> None:
+    """In their own workspace a member's turn uses their GitHub, not whoever connected it."""
+    assert _token_for("U_VAIBHAV") == "tok-vaibhav-own"
+
+
+def test_a_member_without_a_personal_connection_keeps_the_workspace_default() -> None:
+    """One member's personal grant never reaches another member's turn."""
+    assert _token_for("U_VAIBHAV") == "tok-vaibhav-own"
+    assert _token_for("U_SOMEONE_ELSE") == "tok-workspace-paul"
+
+
+def test_member_gmail_joins_the_workspace_apps_for_their_turn_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member's own Gmail is usable in their turn, marked personal, and nobody else's."""
+    workspace = {
+        "id": "pipedream:org_1",
+        "service": "pipedream",
+        "status": "active",
+        "name": "default",
+        "owner": {"kind": "organization", "id": "org_1"},
+        "credentials": {
+            "provider": "pipedream",
+            "access_mode": "webapp_proxy",
+            "apps": '[{"service":"notion","app_slug":"notion","account_id":"apn_ws"}]',
+        },
+    }
+    personal = {
+        "id": "pipedream:org_1:user_vaibhav",
+        "service": "pipedream",
+        "status": "active",
+        "name": "personal:user_vaibhav",
+        "owner": {"kind": "user", "id": "user_vaibhav"},
+        "credentials": {
+            "provider": "pipedream",
+            "access_mode": "webapp_proxy",
+            "scope": "personal",
+            "apps": (
+                '[{"service":"gmail","app_slug":"gmail","account_id":"apn_mail",'
+                '"account_name":"vaibhav@tracer.cloud"}]'
+            ),
+        },
+    }
+
+    def fake_get(_url: str, *, params: dict[str, str], **_kwargs: Any) -> _FakeResponse:
+        if params.get("actor") == "U_VAIBHAV":
+            return _FakeResponse(
+                {"success": True, "data": [workspace, personal], "viewerUserId": "user_vaibhav"}
+            )
+        if "actor" in params:
+            return _FakeResponse({"success": True, "data": [workspace], "viewerUserId": None})
+        return _FakeResponse({"success": True, "data": [workspace]})
+
+    monkeypatch.setattr("httpx.get", fake_get)
+
+    def apps_for(slack_user: str) -> list[dict[str, str]]:
+        member.reset_member_integrations_cache()
+        scope = StorageScope(principal=Principal.org("org_1"), actor=Actor(id=slack_user))
+        with bound_storage_scope(scope):
+            records = _fetch_webapp_vault()
+        assert records is not None
+        return classify_integrations(records)["pipedream"]["apps"]
+
+    assert apps_for("U_VAIBHAV") == [
+        {"service": "notion", "app_slug": "notion", "account_id": "apn_ws"},
+        {
+            "service": "gmail",
+            "app_slug": "gmail",
+            "account_id": "apn_mail",
+            "scope": "personal",
+            "account_name": "vaibhav@tracer.cloud",
+        },
+    ]
+    assert apps_for("U_SOMEONE_ELSE") == [
+        {"service": "notion", "app_slug": "notion", "account_id": "apn_ws"}
+    ]
+
+    # The CONNECTED INTEGRATIONS line reads the same records, so the model is
+    # told the member's own Gmail is connected (it once said "isn't connected").
+    def connected_for(slack_user: str) -> list[str]:
+        member.reset_member_integrations_cache()
+        scope = StorageScope(principal=Principal.org("org_1"), actor=Actor(id=slack_user))
+        with bound_storage_scope(scope):
+            return configured_integration_services()
+
+    assert {"gmail", "notion"} <= set(connected_for("U_VAIBHAV"))
+    assert "gmail" not in connected_for("U_SOMEONE_ELSE")
+    assert "notion" in connected_for("U_SOMEONE_ELSE")

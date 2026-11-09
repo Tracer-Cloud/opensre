@@ -126,13 +126,6 @@ CASES: tuple[MigrationCase, ...] = (
     ),
     MigrationCase("integrations/azure_sql.py", "get_slow_queries", "azure_sql", "get_slow_queries"),
     MigrationCase("integrations/azure_sql.py", "get_wait_stats", "azure_sql", "get_wait_stats"),
-    # openclaw
-    MigrationCase(
-        "integrations/openclaw.py",
-        "validate_openclaw_config",
-        "openclaw",
-        "validate_openclaw_config",
-    ),
     # betterstack
     MigrationCase(
         "integrations/betterstack.py",
@@ -143,20 +136,23 @@ CASES: tuple[MigrationCase, ...] = (
     MigrationCase("integrations/betterstack.py", "query_logs", "betterstack", "query_logs"),
     # gitlab
     MigrationCase(
-        "integrations/gitlab.py", "validate_gitlab_config", "gitlab", "validate_gitlab_config"
+        "integrations/gitlab/client.py",
+        "validate_gitlab_config",
+        "gitlab",
+        "validate_gitlab_config",
     ),
     # bitbucket
     MigrationCase(
-        "integrations/bitbucket.py",
+        "integrations/bitbucket/client.py",
         "validate_bitbucket_config",
         "bitbucket",
         "validate_bitbucket_config",
     ),
-    MigrationCase("integrations/bitbucket.py", "list_commits", "bitbucket", "list_commits"),
+    MigrationCase("integrations/bitbucket/client.py", "list_commits", "bitbucket", "list_commits"),
     MigrationCase(
-        "integrations/bitbucket.py", "get_file_contents", "bitbucket", "get_file_contents"
+        "integrations/bitbucket/client.py", "get_file_contents", "bitbucket", "get_file_contents"
     ),
-    MigrationCase("integrations/bitbucket.py", "search_code", "bitbucket", "search_code"),
+    MigrationCase("integrations/bitbucket/client.py", "search_code", "bitbucket", "search_code"),
     # mongodb
     MigrationCase(
         "integrations/mongodb.py",

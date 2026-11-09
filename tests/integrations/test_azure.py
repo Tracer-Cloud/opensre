@@ -1,6 +1,19 @@
 from __future__ import annotations
 
 from integrations.azure.verifier import verify_azure
+from integrations.config_models import AzureIntegrationConfig
+
+
+def test_azure_max_results_clamped_to_hard_limit() -> None:
+    cfg = AzureIntegrationConfig.model_validate(
+        {
+            "workspace_id": "workspace",
+            "access_token": "token",
+            "max_results": 400,
+        }
+    )
+
+    assert cfg.max_results == 200
 
 
 def test_verify_azure_missing_workspace_id() -> None:

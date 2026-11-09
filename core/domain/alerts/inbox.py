@@ -1,7 +1,7 @@
-"""In-process alert inbox — the pure domain queue for external alert pushes.
+"""In-process alert inbox — the domain queue for external alert pushes.
 
-HTTP intake lives in :mod:`gateway.web.webapp` (``POST /alerts``); this module only
-owns the queue and the process-wide current-inbox handle.
+Owns the queue and the process-wide current-inbox handle. HTTP intake is
+``POST /alerts`` on the gateway web app.
 """
 
 from __future__ import annotations

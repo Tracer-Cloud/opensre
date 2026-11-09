@@ -4,20 +4,15 @@ from __future__ import annotations
 
 import logging
 import threading
-from pathlib import Path
 
 import pytest
 
-from gateway.core.runtime.concurrency import TurnConcurrencyGate
-from gateway.core.runtime.scheduler_concurrency import gate_registered_scheduler_runners
 from gateway.tests.runtime.concurrency_limited_handler import (
     ConcurrencyLimitedTurnHandler,
 )
-from platform.deployment_contracts.models import SizeProfile
-from platform.scheduler.agent_runner import (
-    invoke_agent_runner,
-    register_agent_runner,
-)
+from infrastructure.deployment.contracts.models import SizeProfile
+from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.turn_host.concurrency import TurnConcurrencyGate
 
 
 @pytest.mark.parametrize(
@@ -61,8 +56,8 @@ def test_chat_handler_refuses_excess_turn_without_calling_handler() -> None:
         release.wait(1)
 
     class Sink:
-        def finalize(self, text: str) -> None:
-            finalized.append(text)
+        def finalize(self, answer: str) -> None:
+            finalized.append(answer)
 
     handler = ConcurrencyLimitedTurnHandler(handler=blocking_handler, gate=gate)
     first = threading.Thread(
@@ -79,13 +74,13 @@ def test_chat_handler_refuses_excess_turn_without_calling_handler() -> None:
     assert finalized == ["OpenSRE is at capacity. Please try again shortly."]
 
 
-def test_gateway_turn_handler_gate_refuses_excess_without_second_wrapper(
+def test_gateway_turn_runner_gate_refuses_excess_without_second_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Production path: capacity lives on GatewayTurnHandler itself."""
+    """Production path: capacity lives on TurnRunner itself."""
     from rich.console import Console
 
-    from gateway.core.runtime.turn_handler import GatewayTurnHandler
+    from infrastructure.turn_host.turn_runner import TurnRunner
 
     gate = TurnConcurrencyGate(1)
     entered = threading.Event()
@@ -94,18 +89,19 @@ def test_gateway_turn_handler_gate_refuses_excess_without_second_wrapper(
     ran: list[str] = []
 
     class Sink:
-        def finalize(self, text: str) -> None:
-            finalized.append(text)
+        def finalize(self, answer: str) -> None:
+            finalized.append(answer)
 
-    handler = GatewayTurnHandler(console=Console(force_terminal=False), gate=gate)
+    handler = TurnRunner(console=Console(force_terminal=False), gate=gate)
 
-    def _fake_run(self, text, session, sink, logger):  # noqa: ANN001
+    def _fake_run(self, text, session, sink, logger, **_kwargs):  # noqa: ANN001
+        # ``**_kwargs`` absorbs the caller-context keywords ``run`` forwards.
         _ = (self, session, sink, logger)
         ran.append(text)
         entered.set()
         release.wait(1)
 
-    monkeypatch.setattr(GatewayTurnHandler, "_run_turn", _fake_run)
+    monkeypatch.setattr(TurnRunner, "_run_turn", _fake_run)
 
     first = threading.Thread(
         target=handler,
@@ -123,7 +119,7 @@ def test_gateway_turn_handler_gate_refuses_excess_without_second_wrapper(
 
 
 def test_process_turn_gate_is_shared_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
-    from gateway.core.runtime.concurrency import (
+    from infrastructure.turn_host.concurrency import (
         process_turn_gate,
         reset_process_turn_gate_for_tests,
         set_process_turn_gate,
@@ -140,71 +136,6 @@ def test_process_turn_gate_is_shared_singleton(monkeypatch: pytest.MonkeyPatch) 
     reset_process_turn_gate_for_tests()
 
 
-def test_path2_sync_investigate_busy_drops_when_gate_full(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """POST /investigate shares process_turn_gate — try_acquire like chat."""
-    from fastapi.testclient import TestClient
-
-    from gateway.core.runtime.concurrency import (
-        TurnConcurrencyGate,
-        reset_process_turn_gate_for_tests,
-        set_process_turn_gate,
-    )
-    from gateway.web import webapp
-
-    reset_process_turn_gate_for_tests()
-    gate = TurnConcurrencyGate(1)
-    assert gate.try_acquire() is True  # simulate active chat turn
-    set_process_turn_gate(gate)
-    monkeypatch.setattr(webapp, "_gateway_auth_error", lambda _req: None)
-
-    client = TestClient(webapp.app)
-    resp = client.post("/investigate", json={"raw_alert": {"alert_name": "x"}})
-    assert resp.status_code == 503
-    assert "capacity" in resp.json()["error"].lower()
-    gate.release()
-    reset_process_turn_gate_for_tests()
-
-
-def test_investigation_worker_waits_for_the_same_chat_capacity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from gateway.core.runtime.concurrency import (
-        TurnConcurrencyGate,
-        reset_process_turn_gate_for_tests,
-        set_process_turn_gate,
-    )
-    from gateway.core.storage.investigations.store import InMemoryInvestigationStore
-    from gateway.web.worker import InvestigationWorker
-
-    reset_process_turn_gate_for_tests()
-    gate = TurnConcurrencyGate(1)
-    assert gate.try_acquire() is True
-    set_process_turn_gate(gate)
-    monkeypatch.setenv("OPENSRE_ANALYTICS_DISABLED", "1")
-
-    store = InMemoryInvestigationStore()
-    store.create(clerk_org_id="org_a", trigger={"raw_alert": {"alert_name": "cpu"}})
-    entered = threading.Event()
-    result: list[str] = []
-
-    def runner(_trigger: dict[str, object]) -> dict[str, object]:
-        entered.set()
-        return {"report": "ok"}
-
-    worker = InvestigationWorker(store, runner=runner, artifacts_dir=tmp_path)
-    thread = threading.Thread(target=lambda: result.append(str(worker.run_once())))
-    thread.start()
-    assert not entered.wait(0.05)
-    gate.release()
-    assert entered.wait(1)
-    thread.join(1)
-    assert result == ["True"]
-    reset_process_turn_gate_for_tests()
-
-
 def test_scheduler_runner_waits_for_the_same_chat_capacity() -> None:
     gate = TurnConcurrencyGate(1)
     assert gate.try_acquire() is True  # active chat turn
@@ -215,10 +146,9 @@ def test_scheduler_runner_waits_for_the_same_chat_capacity() -> None:
         entered.set()
         return "done"
 
-    register_agent_runner(scheduled_runner)
-    gate_registered_scheduler_runners(gate)
+    bundle = SchedulerRunners(agent=scheduled_runner).gated(gate)
     thread = threading.Thread(
-        target=lambda: result.append(invoke_agent_runner({})),
+        target=lambda: result.append(bundle.agent({})),
     )
     thread.start()
     assert not entered.wait(0.05)
@@ -226,6 +156,34 @@ def test_scheduler_runner_waits_for_the_same_chat_capacity() -> None:
     gate.release()
     assert entered.wait(1)
     thread.join(1)
-    register_agent_runner(None)
 
     assert result == ["done"]
+
+
+def test_max_concurrent_turns_override_beats_the_size_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A deployment can raise concurrency on the same task without changing tier.
+    from infrastructure.turn_host.concurrency import (
+        process_turn_gate,
+        reset_process_turn_gate_for_tests,
+    )
+
+    reset_process_turn_gate_for_tests()
+    monkeypatch.setenv("OPENSRE_SIZE_PROFILE", "SMALL")  # profile would give 1
+    monkeypatch.setenv("OPENSRE_MAX_CONCURRENT_TURNS", "3")
+    assert process_turn_gate().limit == 3
+    reset_process_turn_gate_for_tests()
+
+
+def test_invalid_override_falls_back_to_the_size_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A typo (non-positive / unparseable) must not drop the gate below the tier.
+    from infrastructure.turn_host.concurrency import configured_turn_limit
+
+    monkeypatch.setenv("OPENSRE_SIZE_PROFILE", "SMALL")
+    monkeypatch.setenv("OPENSRE_MAX_CONCURRENT_TURNS", "0")
+    assert configured_turn_limit() == 1
+    monkeypatch.setenv("OPENSRE_MAX_CONCURRENT_TURNS", "lots")
+    assert configured_turn_limit() == 1

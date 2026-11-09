@@ -14,7 +14,7 @@ permissions:
 jobs:
   remind:
     name: Post Greptile review reminder
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.pull_request.user.type != 'Bot'
     steps:
       - name: Comment with Greptile guidance

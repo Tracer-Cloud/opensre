@@ -32,10 +32,10 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 # ``source_prefix -> forbidden destination roots`` for direct imports only.
 # Enforces the layering contract documented in ``surfaces/__init__.py``:
 # "Nothing first-party may import from surfaces/". Adds an explicit bound
-# on ``platform``, ``core``, ``gateway`` so the surfaces ban
+# on ``infrastructure``, ``core``, ``gateway`` so the surfaces ban
 # is CI-enforced, not just doc-described.
 _FORBIDDEN_DIRECT: dict[str, frozenset[str]] = {
-    "platform": frozenset({"surfaces"}),
+    "infrastructure": frozenset({"surfaces"}),
     "core": frozenset({"surfaces"}),
     "gateway": frozenset({"surfaces"}),
     "integrations": frozenset({"tools", "surfaces"}),
@@ -167,11 +167,11 @@ def main(argv: list[str] | None = None) -> int:
         if module_violations:
             print()
         print(f"FAIL: {len(nested_violations)} forbidden nested direct import edge(s):")
-        for violation in nested_violations:
-            print(f"  {violation.edge} (line {violation.lineno})")
+        for nested_violation in nested_violations:
+            print(f"  {nested_violation.edge} (line {nested_violation.lineno})")
 
     print(
-        "\nFix by moving shared code to a lower layer (platform/common, core/contracts) "
+        "\nFix by moving shared code to a lower layer (a job-named infrastructure.* package, core/contracts) "
         "or add a temporary baseline entry in .github/ci/check_direct_imports.py "
         "with a linked issue — do not use function-level lazy imports to hide "
         "new direct edges."

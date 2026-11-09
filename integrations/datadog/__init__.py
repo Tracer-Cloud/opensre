@@ -7,6 +7,7 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import DatadogIntegrationConfig
+from integrations.datadog.setup import DATADOG_SETUP
 
 logger = logging.getLogger(__name__)
 
@@ -29,3 +30,6 @@ def classify(
     if cfg.api_key and cfg.app_key:
         return cfg, "datadog"
     return None, None
+
+
+__all__ = ["DATADOG_SETUP", "classify"]

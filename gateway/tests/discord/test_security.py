@@ -13,8 +13,8 @@ _SECURITY = "gateway.transports.discord.security"
 @pytest.fixture(autouse=True)
 def mock_integration_store() -> Iterator[None]:
     with (
-        patch(f"{_SECURITY}.get_integration", return_value=None),
-        patch(f"{_SECURITY}.upsert_instance"),
+        patch("gateway.core.middleware.identity_policy.get_integration", return_value=None),
+        patch("gateway.core.middleware.identity_policy.upsert_instance"),
         patch(f"{_SECURITY}.audit_log_inbound_message"),
     ):
         yield

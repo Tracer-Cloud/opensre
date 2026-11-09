@@ -1,4 +1,0 @@
-scenario_id: "008-pid-lock-zombie"
-title: "macOS PID 622 reused by CloudDocs blocks gateway restart (#24067, dup of #16376)"
-source: "https://github.com/NousResearch/hermes-agent/issues/24067"
-log_file: "errors.log"

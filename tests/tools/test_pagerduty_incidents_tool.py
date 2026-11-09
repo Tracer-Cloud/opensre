@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from integrations.pagerduty.tools import PagerDutyIncidentsTool
+from integrations.pagerduty.tools import PagerDutyIncidentsTool, _map_pagerduty_incidents
 
 
 def _tool() -> PagerDutyIncidentsTool:
@@ -114,3 +115,76 @@ def test_metadata_is_valid() -> None:
     assert t.name == "pagerduty_incidents"
     assert t.source == "pagerduty"
     assert "api_key" in t.input_schema["required"]
+
+
+class TestMapPagerdutyIncidents:
+    def test_records_entry_with_active_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_incidents(
+            evidence,
+            {
+                "available": True,
+                "total": 3,
+                "incidents": [{"id": "P1"}, {"id": "P2"}, {"id": "P3"}],
+                "active_incidents": [{"id": "P1"}, {"id": "P2"}],
+            },
+            {"limit": 25},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "pagerduty_incidents"
+        assert entries[0]["summary"] == "3 incident(s), 2 active"
+
+    def test_qualifies_count_when_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_incidents(
+            evidence,
+            {
+                "available": True,
+                "total": 25,
+                "incidents": [{"id": str(i)} for i in range(25)],
+                "active_incidents": [],
+            },
+            {"limit": 25},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "25+ incident(s)"
+
+    def test_qualifies_active_count_when_page_is_truncated(self) -> None:
+        """Regression: active_incidents is filtered from the same page-capped
+        list, so it must inherit the "+" qualifier when the page saturates —
+        an unqualified active count would understate incidents outside the
+        page that could also be active."""
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_incidents(
+            evidence,
+            {
+                "available": True,
+                "total": 25,
+                "incidents": [{"id": str(i)} for i in range(25)],
+                "active_incidents": [{"id": str(i)} for i in range(10)],
+            },
+            {"limit": 25},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "25+ incident(s), 10+ active"
+
+    def test_records_nothing_when_no_incidents(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_incidents(
+            evidence, {"available": True, "total": 0, "incidents": [], "active_incidents": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_pagerduty_incidents(evidence, {"available": False, "error": "HTTP 401"}, {})
+
+        assert "catalog_entries" not in evidence

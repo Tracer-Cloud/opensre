@@ -8,8 +8,8 @@ Resolution rule:
 
 The store, env, and keyring fallbacks match the resolution order the scheduler
 and onboarding wizard use, so credentials saved via ``opensre onboard`` or
-``opensre integrations setup telegram`` work uniformly across the watchdog,
-Hermes incident sinks, the Telegram send-message tool, and any other caller.
+``opensre integrations setup telegram`` work uniformly across the Telegram
+send-message tool and any other caller.
 """
 
 from __future__ import annotations
@@ -18,7 +18,8 @@ import logging
 import os
 from dataclasses import dataclass, field
 
-from platform.common.errors import OpenSREError
+from config.constants.telegram import TELEGRAM_BOT_TOKEN_ENV, TELEGRAM_DEFAULT_CHAT_ID_ENV
+from infrastructure.errors import OpenSREError
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ def _telegram_store_config() -> dict[str, object]:
     """Return the Telegram integration's effective config, or ``{}``.
 
     Reads the merged integration store + environment view used everywhere else
-    (investigation pipeline, scheduler). Returns an empty mapping when the store
+    (agent turns, scheduler). Returns an empty mapping when the store
     is unavailable or has no Telegram integration so callers fall back to the
     environment / keyring. Resolution is wrapped defensively: a malformed or
     locked store must never crash the caller at startup.
@@ -64,7 +65,7 @@ def _resolve_bot_token(store_config: dict[str, object]) -> str:
     # keyring — so guided setup (which stores the token in the keyring) works.
     from config.llm_credentials import resolve_env_credential
 
-    return resolve_env_credential("TELEGRAM_BOT_TOKEN").strip()
+    return resolve_env_credential(TELEGRAM_BOT_TOKEN_ENV).strip()
 
 
 def _resolve_chat_id(store_config: dict[str, object], chat_id_override: str | None) -> str:
@@ -78,7 +79,7 @@ def _resolve_chat_id(store_config: dict[str, object], chat_id_override: str | No
     store_chat_id = str(store_config.get("default_chat_id") or "").strip()
     if store_chat_id:
         return store_chat_id
-    return os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "").strip()
+    return os.getenv(TELEGRAM_DEFAULT_CHAT_ID_ENV, "").strip()
 
 
 def load_credentials_from_env(
@@ -98,7 +99,7 @@ def load_credentials_from_env(
             "TELEGRAM_BOT_TOKEN is not set.",
             suggestion=(
                 "Configure Telegram with `opensre integrations setup telegram` "
-                "(or `opensre onboard`), or export TELEGRAM_BOT_TOKEN=<your-bot-token>. "
+                "or export TELEGRAM_BOT_TOKEN=<your-bot-token>. "
                 "Get a token from @BotFather on Telegram."
             ),
         )

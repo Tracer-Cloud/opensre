@@ -9,9 +9,14 @@ from __future__ import annotations
 
 import re
 
+from infrastructure.text.markdown import tighten_markdown_emphasis
+
 _CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
-_BOLD_RE = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
+# ``**bold**`` always; ``__bold__`` only when it is not a dunder filename
+# (``__init__.py``) — Slack would otherwise bold ``init`` and drop the underscores.
+_ASTERISK_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+_UNDERSCORE_BOLD_RE = re.compile(r"(?<![\w.])__(?!_)(.+?)__(?![\w.])")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$")
 _BULLET_RE = re.compile(r"^(\s*)[-*]\s+")
@@ -40,8 +45,19 @@ def _convert_line(line: str) -> str:
     heading = _HEADING_RE.match(line)
     if heading:
         title = heading.group(1).strip()
-        return f"*{title}*" if title else ""
+        if not title:
+            return ""
+        # Leave existing ``**title**`` for the bold pass; wrap plain titles
+        # the same way so headings and bold share one conversion.
+        if title.startswith("**") and title.endswith("**") and len(title) >= 4:
+            return title
+        return f"**{title}**"
     return _BULLET_RE.sub(lambda m: f"{m.group(1)}• ", line)
+
+
+def _slack_bold(inner: str) -> str:
+    text = inner.strip()
+    return f"*{text}*" if text else ""
 
 
 def markdown_to_slack_mrkdwn(text: str) -> str:
@@ -49,13 +65,15 @@ def markdown_to_slack_mrkdwn(text: str) -> str:
     if not text:
         return text
 
-    protected, stash = _protect(text)
+    # Tight ``**bold**`` first so a padded ``** I found: **`` does not become
+    # a ``* `` bullet after conversion (Slack treats ``* text`` as a list).
+    protected, stash = _protect(tighten_markdown_emphasis(text))
 
     # Links: [label](url) -> <url|label>
     protected = _LINK_RE.sub(lambda m: f"<{m.group(2)}|{m.group(1)}>", protected)
-    # Bold: **x** / __x__ -> *x* (Slack bold is a single asterisk)
-    protected = _BOLD_RE.sub(lambda m: f"*{m.group(1) or m.group(2)}*", protected)
-    # Headings and bullets, line by line.
+    # Headings and bullets before bold, so ``*bold*`` is never parsed as a list.
     protected = "\n".join(_convert_line(line) for line in protected.split("\n"))
+    protected = _ASTERISK_BOLD_RE.sub(lambda m: _slack_bold(m.group(1)), protected)
+    protected = _UNDERSCORE_BOLD_RE.sub(lambda m: _slack_bold(m.group(1)), protected)
 
     return _restore(protected, stash)

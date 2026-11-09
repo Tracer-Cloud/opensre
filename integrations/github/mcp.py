@@ -1,7 +1,7 @@
 """Shared GitHub MCP integration helpers.
 
 This module centralizes GitHub MCP configuration, validation, and tool calling
-so the onboarding wizard, verify CLI, chat tools, and investigation actions all
+so the onboarding wizard, verify CLI, and chat tools all
 use the same transport and parsing logic.
 """
 
@@ -11,26 +11,29 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from http import HTTPStatus
+from typing import TYPE_CHECKING, Any, Literal, cast
 from urllib.parse import urlparse, urlunparse
 
 import httpx
-from mcp import ClientSession, StdioServerParameters, types  # type: ignore[import-not-found]
-from mcp.client.sse import sse_client  # type: ignore[import-not-found]
-from mcp.client.stdio import stdio_client  # type: ignore[import-not-found]
+import mcp_types as types
 from pydantic import Field, field_validator, model_validator
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 
 from config.strict_config import StrictConfigModel
+from infrastructure.terminal.theme import BRAND, DIM, ERROR, HIGHLIGHT
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.mcp_transport import McpTransportMode
-from platform.terminal.theme import BRAND, DIM, ERROR, HIGHLIGHT
+
+if TYPE_CHECKING:
+    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,7 @@ DEFAULT_GITHUB_MCP_TOOLSETS = ("repos", "issues", "pull_requests", "actions", "s
 # Non-transport metadata persisted alongside MCP credentials in the integration store.
 _CREDENTIAL_METADATA_KEYS: frozenset[str] = frozenset({"username"})
 
-REQUIRED_SOURCE_INVESTIGATION_TOOLS = (
+REQUIRED_SOURCE_TOOLS = (
     "get_file_contents",
     "get_repository_tree",
     "list_commits",
@@ -52,7 +55,7 @@ REQUIRED_SOURCE_INVESTIGATION_TOOLS = (
 # Hosted Copilot MCP often omits list_repositories and requires args on the others,
 # so auto falls through to a ``search_repositories user:<login>`` query (the user's own
 # repos). Starred repositories are intentionally excluded here — they are irrelevant for
-# SRE investigations and only surfaced when ``repo_view="starred"`` is chosen explicitly.
+# SRE work and only surfaced when ``repo_view="starred"`` is chosen explicitly.
 _REPO_PROBE_NO_ARG_TOOLS: tuple[str, ...] = (
     "list_repositories",
     "list_user_repositories",
@@ -144,6 +147,8 @@ class GitHubMCPConfig(StrictConfigModel):
     toolsets: tuple[str, ...] = DEFAULT_GITHUB_MCP_TOOLSETS
     timeout_seconds: float = Field(default=15.0, gt=0)
     integration_id: str = ""
+    connection_id: str = ""
+    is_default: bool | None = None
 
     @field_validator("url", mode="before")
     @classmethod
@@ -468,31 +473,15 @@ def github_mcp_is_usably_configured(config: GitHubMCPConfig) -> bool:
     return bool(config.url.strip())
 
 
-def github_integration_is_configured() -> bool:
-    """Return True when GitHub MCP is configured with usable store or env credentials."""
-    from integrations.store import get_integration
-
-    record = get_integration("github")
-    if record is not None:
-        credentials = record.get("credentials") or {}
-        try:
-            if github_mcp_is_usably_configured(build_github_mcp_config(credentials)):
-                return True
-        except Exception:
-            logger.warning(
-                "Ignoring invalid GitHub integration credentials in store",
-                exc_info=True,
-            )
-    try:
-        env_config = github_mcp_config_from_env()
-    except Exception:
-        logger.warning("Ignoring invalid GitHub MCP env configuration", exc_info=True)
-        return False
-    return env_config is not None and github_mcp_is_usably_configured(env_config)
-
-
 @asynccontextmanager
 async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[ClientSession]:
+    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
+    from mcp.client.sse import sse_client  # type: ignore[import-not-found]
+    from mcp.client.stdio import (  # type: ignore[import-not-found]
+        StdioServerParameters,
+        stdio_client,
+    )
+
     stack = AsyncExitStack()
     try:
         if config.mode == "stdio":
@@ -552,7 +541,7 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
                     timeout=httpx.Timeout(config.timeout_seconds, read=read_timeout),
                 )
             )
-            read_stream, write_stream, _ = await stack.enter_async_context(
+            transport_streams = await stack.enter_async_context(
                 streamable_http_client(
                     session_url,
                     http_client=http_client,
@@ -561,6 +550,12 @@ async def _open_github_mcp_session(config: GitHubMCPConfig) -> AsyncIterator[Cli
                     sse_read_timeout=read_timeout,
                 )
             )
+            if len(transport_streams) not in {2, 3}:
+                raise ValueError(
+                    "GitHub MCP streamable HTTP transport returned an unexpected "
+                    f"stream count: {len(transport_streams)} (expected 2 or 3)."
+                )
+            read_stream, write_stream = transport_streams[:2]
         else:
             raise ValueError(
                 f"Unsupported GitHub MCP mode '{config.mode}'. "
@@ -612,6 +607,43 @@ def _connectivity_failure_detail(err: BaseException) -> str:
     ).strip()
 
 
+def _required_oauth_scopes(err: BaseException) -> tuple[str, ...]:
+    """Extract GitHub's missing-scope challenge from a wrapped HTTP failure."""
+    pending = [err]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, httpx.HTTPStatusError):
+            response = current.response
+            if response.status_code == HTTPStatus.FORBIDDEN:
+                challenge = response.headers.get("www-authenticate", "")
+                match = re.search(r'\bscope="([^"]+)"', challenge)
+                if match:
+                    return tuple(sorted(set(match.group(1).split())))
+        if isinstance(current, BaseExceptionGroup):
+            pending.extend(current.exceptions)
+        cause = getattr(current, "__cause__", None)
+        if isinstance(cause, BaseException):
+            pending.append(cause)
+        context = getattr(current, "__context__", None)
+        if isinstance(context, BaseException):
+            pending.append(context)
+    return ()
+
+
+def _oauth_scope_failure_detail(scopes: Sequence[str]) -> str:
+    scope_list = ", ".join(scopes)
+    return (
+        "GitHub rejected this integration because it is missing required OAuth "
+        f"access: {scope_list}. Run `opensre account login` again and approve "
+        "the GitHub repository and security permissions, or replace the integration "
+        "token with one that has those scopes."
+    )
+
+
 def _tool_result_to_dict(result: types.CallToolResult) -> dict[str, Any]:
     text_parts: list[str] = []
     content_items: list[dict[str, Any]] = []
@@ -636,40 +668,56 @@ def _tool_result_to_dict(result: types.CallToolResult) -> dict[str, Any]:
                     {
                         "type": "resource_blob",
                         "uri": str(resource.uri),
-                        "mime_type": resource.mimeType,
+                        "mime_type": resource.mime_type,
                     }
                 )
         else:
             content_items.append({"type": getattr(item, "type", "unknown")})
 
-    structured = getattr(result, "structuredContent", None)
+    structured = result.structured_content
     text_output = "\n".join(part.strip() for part in text_parts if part.strip()).strip()
     return {
-        "is_error": bool(result.isError),
+        "is_error": bool(result.is_error),
         "text": text_output,
         "content": content_items,
         "structured_content": structured,
     }
 
 
-async def _list_tools_async(config: GitHubMCPConfig) -> list[types.Tool]:
-    async with _open_github_mcp_session(config) as session:
-        result = await session.list_tools()
-        return list(result.tools)
+def _tool_defs(tools: Sequence[types.Tool]) -> list[dict[str, Any]]:
+    """Normalize MCP tool objects into the dicts the probe planners consume."""
 
-
-def list_github_mcp_tools(config: GitHubMCPConfig) -> list[dict[str, Any]]:
-    """List available tools from a GitHub MCP server."""
-
-    tools = _run_async(_list_tools_async(config))
     return [
         {
             "name": tool.name,
             "description": tool.description or "",
-            "input_schema": getattr(tool, "inputSchema", None),
+            "input_schema": tool.input_schema,
         }
         for tool in tools
     ]
+
+
+async def _call_tool_on_session(
+    session: ClientSession,
+    tool_name: str,
+    arguments: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Call one tool on an open session, turning failures into an error payload."""
+
+    payload: dict[str, Any]
+    try:
+        payload = _tool_result_to_dict(await session.call_tool(tool_name, arguments or {}))
+    except Exception as err:
+        logger.debug("GitHub MCP tool call failed: %s", tool_name, exc_info=True)
+        payload = {
+            "is_error": True,
+            "text": _root_cause_message(err),
+            "content": [],
+            "structured_content": None,
+        }
+    payload["tool"] = tool_name
+    payload["arguments"] = arguments or {}
+    return payload
 
 
 async def _call_tool_async(
@@ -678,11 +726,7 @@ async def _call_tool_async(
     arguments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     async with _open_github_mcp_session(config) as session:
-        result = await session.call_tool(tool_name, arguments or {})
-        payload = _tool_result_to_dict(result)
-        payload["tool"] = tool_name
-        payload["arguments"] = arguments or {}
-        return payload
+        return await _call_tool_on_session(session, tool_name, arguments)
 
 
 def call_github_mcp_tool(
@@ -695,7 +739,7 @@ def call_github_mcp_tool(
     try:
         return cast(dict[str, Any], _run_async(_call_tool_async(config, tool_name, arguments)))
     except Exception as err:
-        logger.debug("GitHub MCP tool call failed: %s", tool_name, exc_info=True)
+        logger.debug("GitHub MCP session failed for tool: %s", tool_name, exc_info=True)
         return {
             "is_error": True,
             "text": _root_cause_message(err),
@@ -1200,7 +1244,7 @@ def _repo_access_probe_fallback_result(
         note=(
             "authenticated; repo probes inconclusive "
             f"({last_probe_tool}: {last_probe_detail.strip()}); "
-            "MCP investigation tools are available"
+            "MCP tools are available"
         ),
     )
 
@@ -1223,138 +1267,29 @@ def validate_github_mcp_config(
             detail=(
                 "GitHub MCP is configured without an auth token, so the hosted "
                 "GitHub Copilot MCP endpoint cannot be reached (it requires "
-                "authentication). Run `opensre integrations setup` to add a token, "
-                "set GITHUB_MCP_AUTH_TOKEN, or remove it with "
-                "`opensre integrations remove github`."
+                "authentication). Connect or reconnect GitHub in the OpenSRE app."
             ),
             failure_category="not_configured",
         )
 
+    async def _run_validation() -> GitHubMCPValidationResult:
+        async with _open_github_mcp_session(config) as session:
+            return await _validate_github_mcp_config_async(
+                session,
+                repo_view=repo_view,
+                repo_visibility=repo_visibility,
+            )
+
     try:
-        tools = list_github_mcp_tools(config)
-        tool_names = tuple(sorted(tool["name"] for tool in tools))
-        missing = sorted(set(REQUIRED_SOURCE_INVESTIGATION_TOOLS) - set(tool_names))
-        if missing:
+        return cast(GitHubMCPValidationResult, _run_async(_run_validation()))
+    except Exception as err:
+        required_scopes = _required_oauth_scopes(err)
+        if required_scopes:
             return GitHubMCPValidationResult(
                 ok=False,
-                detail=(
-                    "GitHub MCP connected, but required repository investigation tools are missing: "
-                    f"{', '.join(missing)}."
-                ),
-                tool_names=tool_names,
-                failure_category="insufficient_tools",
-            )
-
-        if "get_me" not in tool_names:
-            return GitHubMCPValidationResult(
-                ok=False,
-                detail=(
-                    "GitHub MCP connected, but the required identity tool 'get_me' is not exposed. "
-                    "Widen your toolsets to include it."
-                ),
-                tool_names=tool_names,
-                failure_category="insufficient_tools",
-            )
-
-        me_result = call_github_mcp_tool(config, "get_me", {})
-        if me_result.get("is_error"):
-            detail = me_result.get("text") or "Unknown authentication failure."
-            return GitHubMCPValidationResult(
-                ok=False,
-                detail=f"GitHub MCP connected, but authentication failed: {detail}",
-                tool_names=tool_names,
+                detail=_oauth_scope_failure_detail(required_scopes),
                 failure_category="authentication",
             )
-
-        structured: dict[str, Any] = {}
-        raw_structured = me_result.get("structured_content")
-        if isinstance(raw_structured, dict):
-            structured = raw_structured
-        profile_pub, profile_priv = _repo_visibility_counts_from_get_me_profile(
-            structured, me_result.get("text", "")
-        )
-        user_name = str(structured.get("login") or structured.get("name") or "").strip()
-        if not user_name:
-            try:
-                payload = json.loads(me_result.get("text", "{}"))
-                user_name = str(payload.get("login") or payload.get("name") or "").strip()
-            except json.JSONDecodeError:
-                user_name = ""
-
-        who = user_name or "authenticated GitHub user"
-        probe_plans = _iter_repo_access_probe_plans(tools, user_name, view=repo_view)
-        if not probe_plans:
-            attempted_tools = _repo_probe_attempts(tools, user_name, view=repo_view)
-            profile_result = _validation_result_from_get_me_profile_counts(
-                user_name=user_name,
-                tool_names=tool_names,
-                structured=structured,
-                me_text=me_result.get("text", ""),
-                profile_pub=profile_pub,
-                profile_priv=profile_priv,
-                note=("repository counts from get_me profile (no list/search repo tool exposed)"),
-            )
-            if profile_result is not None:
-                return profile_result
-            return GitHubMCPValidationResult(
-                ok=False,
-                detail=(
-                    f"Authenticated as {who}, but no repository listing or search tool was usable "
-                    f"(tried: {_format_repo_probe_attempts(attempted_tools)}). "
-                    "Enable toolsets that include repo listing or search (e.g. add `search` or "
-                    "`stargazers` alongside repos) for api.githubcopilot.com."
-                ),
-                tool_names=tool_names,
-                authenticated_user=user_name,
-                failure_category="repository_access",
-                profile_public_repos=profile_pub,
-                profile_private_repos=profile_priv,
-            )
-
-        last_probe_tool = ""
-        last_probe_detail = ""
-        for repo_tool, repo_args in probe_plans:
-            list_result = call_github_mcp_tool(config, repo_tool, repo_args)
-            if not list_result.get("is_error"):
-                return _validation_success_from_repo_probe_result(
-                    user_name=user_name,
-                    tool_names=tool_names,
-                    repo_tool=repo_tool,
-                    list_result=list_result,
-                    repo_visibility=repo_visibility,
-                    profile_pub=profile_pub,
-                    profile_priv=profile_priv,
-                )
-            last_probe_tool = repo_tool
-            last_probe_detail = str(
-                list_result.get("text") or "Unknown error listing repositories."
-            )
-            if not _is_recoverable_repo_probe_error(repo_tool, repo_args, last_probe_detail):
-                return GitHubMCPValidationResult(
-                    ok=False,
-                    detail=(
-                        f"Authenticated as {who}, but repository access check failed ({repo_tool}): "
-                        f"{last_probe_detail} "
-                        "(connectivity OK; auth or token scope may be insufficient for repo APIs)."
-                    ),
-                    tool_names=tool_names,
-                    authenticated_user=user_name,
-                    failure_category="repository_access",
-                    profile_public_repos=profile_pub,
-                    profile_private_repos=profile_priv,
-                )
-
-        return _repo_access_probe_fallback_result(
-            user_name=user_name,
-            tool_names=tool_names,
-            structured=structured,
-            me_text=me_result.get("text", ""),
-            profile_pub=profile_pub,
-            profile_priv=profile_priv,
-            last_probe_tool=last_probe_tool,
-            last_probe_detail=last_probe_detail,
-        )
-    except Exception as err:
         report_validation_failure(
             err,
             logger=logger,
@@ -1366,6 +1301,138 @@ def validate_github_mcp_config(
             detail=_connectivity_failure_detail(err),
             failure_category="connectivity",
         )
+
+
+async def _validate_github_mcp_config_async(
+    session: ClientSession,
+    *,
+    repo_view: GitHubMcpRepoView = "auto",
+    repo_visibility: GitHubMcpRepoVisibilityFilter = "any",
+) -> GitHubMCPValidationResult:
+    """Run every validation step on a single MCP session."""
+
+    tools = _tool_defs((await session.list_tools()).tools)
+    tool_names = tuple(sorted(t["name"] for t in tools))
+
+    missing = sorted(set(REQUIRED_SOURCE_TOOLS) - set(tool_names))
+    if missing:
+        return GitHubMCPValidationResult(
+            ok=False,
+            detail=(
+                "GitHub MCP connected, but required repository tools are missing: "
+                f"{', '.join(missing)}."
+            ),
+            tool_names=tool_names,
+            failure_category="insufficient_tools",
+        )
+
+    if "get_me" not in tool_names:
+        return GitHubMCPValidationResult(
+            ok=False,
+            detail=(
+                "GitHub MCP connected, but the required identity tool 'get_me' is not exposed. "
+                "Widen your toolsets to include it."
+            ),
+            tool_names=tool_names,
+            failure_category="insufficient_tools",
+        )
+
+    me_result = await _call_tool_on_session(session, "get_me", {})
+    if me_result.get("is_error"):
+        detail = me_result.get("text") or "Unknown authentication failure."
+        return GitHubMCPValidationResult(
+            ok=False,
+            detail=f"GitHub MCP connected, but authentication failed: {detail}",
+            tool_names=tool_names,
+            failure_category="authentication",
+        )
+
+    structured: dict[str, Any] = {}
+    raw_structured = me_result.get("structured_content")
+    if isinstance(raw_structured, dict):
+        structured = raw_structured
+    profile_pub, profile_priv = _repo_visibility_counts_from_get_me_profile(
+        structured, me_result.get("text", "")
+    )
+    user_name = str(structured.get("login") or structured.get("name") or "").strip()
+    if not user_name:
+        try:
+            payload = json.loads(me_result.get("text", "{}"))
+            user_name = str(payload.get("login") or payload.get("name") or "").strip()
+        except json.JSONDecodeError:
+            user_name = ""
+
+    who = user_name or "authenticated GitHub user"
+    probe_plans = _iter_repo_access_probe_plans(tools, user_name, view=repo_view)
+    if not probe_plans:
+        attempted_tools = _repo_probe_attempts(tools, user_name, view=repo_view)
+        profile_result = _validation_result_from_get_me_profile_counts(
+            user_name=user_name,
+            tool_names=tool_names,
+            structured=structured,
+            me_text=me_result.get("text", ""),
+            profile_pub=profile_pub,
+            profile_priv=profile_priv,
+            note=("repository counts from get_me profile (no list/search repo tool exposed)"),
+        )
+        if profile_result is not None:
+            return profile_result
+        return GitHubMCPValidationResult(
+            ok=False,
+            detail=(
+                f"Authenticated as {who}, but no repository listing or search tool was usable "
+                f"(tried: {_format_repo_probe_attempts(attempted_tools)}). "
+                "Enable toolsets that include repo listing or search (e.g. add `search` or "
+                "`stargazers` alongside repos) for api.githubcopilot.com."
+            ),
+            tool_names=tool_names,
+            authenticated_user=user_name,
+            failure_category="repository_access",
+            profile_public_repos=profile_pub,
+            profile_private_repos=profile_priv,
+        )
+
+    last_probe_tool = ""
+    last_probe_detail = ""
+    for repo_tool, repo_args in probe_plans:
+        list_result = await _call_tool_on_session(session, repo_tool, repo_args)
+        if not list_result.get("is_error"):
+            return _validation_success_from_repo_probe_result(
+                user_name=user_name,
+                tool_names=tool_names,
+                repo_tool=repo_tool,
+                list_result=list_result,
+                repo_visibility=repo_visibility,
+                profile_pub=profile_pub,
+                profile_priv=profile_priv,
+            )
+        last_probe_tool = repo_tool
+        last_probe_detail = str(list_result.get("text") or "Unknown error listing repositories.")
+        if not _is_recoverable_repo_probe_error(repo_tool, repo_args, last_probe_detail):
+            return GitHubMCPValidationResult(
+                ok=False,
+                detail=(
+                    f"Authenticated as {who}, but repository access check failed ({repo_tool}): "
+                    f"{last_probe_detail} "
+                    "(connectivity OK; auth or token scope may be insufficient for repo APIs)."
+                ),
+                tool_names=tool_names,
+                authenticated_user=user_name,
+                failure_category="repository_access",
+                profile_public_repos=profile_pub,
+                profile_private_repos=profile_priv,
+            )
+
+    return _repo_access_probe_fallback_result(
+        user_name=user_name,
+        tool_names=tool_names,
+        structured=structured,
+        me_text=me_result.get("text", ""),
+        profile_pub=profile_pub,
+        profile_priv=profile_priv,
+        last_probe_tool=last_probe_tool,
+        last_probe_detail=last_probe_detail,
+    )
 
 
 def build_github_code_search_query(owner: str, repo: str, query: str) -> str:
@@ -1409,6 +1476,8 @@ def classify(
                 "auth_token": credentials.get("auth_token", ""),
                 "toolsets": credentials.get("toolsets", []),
                 "integration_id": record_id,
+                "connection_id": record_id,
+                "is_default": credentials.get("is_default"),
             }
         )
     except Exception as exc:

@@ -1,26 +1,92 @@
-/* Keep this file small: only sidebar/nav polish. */
+/* Sidebar hierarchy: muted uppercase group labels + quiet page links. */
+
+:root {
+  --opensre-sidebar-muted: #737373;
+  --opensre-sidebar-link: #a3a3a3;
+  --opensre-sidebar-link-hover: #e5e5e5;
+  --opensre-sidebar-active-bg: rgba(255, 255, 255, 0.08);
+}
+
+:root:not(.dark) {
+  --opensre-sidebar-muted: #a3a3a3;
+  --opensre-sidebar-link: #525252;
+  --opensre-sidebar-link-hover: #171717;
+  --opensre-sidebar-active-bg: rgba(0, 0, 0, 0.06);
+}
+
+/* Group headers — concise section labels */
 #sidebar .sidebar-group-header,
 #sidebar .sidebar-group-header h5,
+#sidebar [class*="sidebar-group-header"],
+#sidebar [class*="SidebarGroup"] > :first-child,
 #navigation-items .sidebar-group-header,
-#navigation-items .sidebar-group-header h5 {
-  font-weight: 700 !important;
+#navigation-items .sidebar-group-header h5,
+#navigation-items [class*="sidebar-group-header"] {
+  font-family: "Britti Sans Trial", sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  line-height: 1.4 !important;
+  color: var(--opensre-sidebar-muted) !important;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.35rem !important;
+  padding-top: 0.25rem !important;
 }
 
-:root:not(.dark) #sidebar .sidebar-group-header,
-:root:not(.dark) #sidebar .sidebar-group-header h5,
-:root:not(.dark) #navigation-items .sidebar-group-header,
-:root:not(.dark) #navigation-items .sidebar-group-header h5 {
-  color: #000000 !important;
+/* First group needs less top margin */
+#sidebar .sidebar-group:first-child .sidebar-group-header,
+#sidebar nav > .sidebar-group:first-child .sidebar-group-header,
+#navigation-items .sidebar-group:first-child .sidebar-group-header {
+  margin-top: 0.25rem !important;
 }
 
-html.dark #sidebar .sidebar-group-header,
-html.dark #sidebar .sidebar-group-header h5,
-html.dark #navigation-items .sidebar-group-header,
-html.dark #navigation-items .sidebar-group-header h5 {
+/* Page links under groups */
+#sidebar a:not([href*="sign-up"]),
+#navigation-items a:not([href*="sign-up"]) {
+  font-family: "Britti Sans Trial", sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+  color: var(--opensre-sidebar-link) !important;
+  border-radius: 0.375rem !important;
+}
+
+#sidebar a:not([href*="sign-up"]):hover,
+#navigation-items a:not([href*="sign-up"]):hover {
+  color: var(--opensre-sidebar-link-hover) !important;
+}
+
+/* Active page: readable highlight (keep Mintlify pill, clarify contrast) */
+#sidebar a[aria-current="page"],
+#sidebar a[data-active="true"],
+#sidebar [data-active="true"] > a,
+#sidebar li[data-active="true"] > a,
+#sidebar a.active,
+#navigation-items a[aria-current="page"],
+#navigation-items a[data-active="true"],
+#navigation-items [data-active="true"] > a,
+#navigation-items li[data-active="true"] > a,
+#navigation-items a.active {
   color: #ffffff !important;
+  background: var(--opensre-sidebar-active-bg) !important;
+  font-weight: 500 !important;
 }
 
-/* Use the Tracer mark for the Tracer tab and swap to the white asset in dark mode. */
+:root:not(.dark) #sidebar a[aria-current="page"],
+:root:not(.dark) #sidebar a[data-active="true"],
+:root:not(.dark) #sidebar [data-active="true"] > a,
+:root:not(.dark) #sidebar li[data-active="true"] > a,
+:root:not(.dark) #sidebar a.active,
+:root:not(.dark) #navigation-items a[aria-current="page"],
+:root:not(.dark) #navigation-items a[data-active="true"],
+:root:not(.dark) #navigation-items [data-active="true"] > a,
+:root:not(.dark) #navigation-items li[data-active="true"] > a,
+:root:not(.dark) #navigation-items a.active {
+  color: #171717 !important;
+}
+
+/* Tracer mark sizing when used as a tab icon */
 header img[src*="Tracer-Head-Black.png"],
 header img[src*="Tracer-Head-White.png"],
 nav img[src*="Tracer-Head-Black.png"],
@@ -34,7 +100,7 @@ html.dark img[src*="Tracer-Head-Black.png"] {
   filter: brightness(0) invert(1) !important;
 }
 
-/* Right sidebar ("On this page") alignment: keep TOC items + custom actions flush. */
+/* Right sidebar ("On this page") alignment */
 .toc-custom-actions {
   margin-top: 0.75rem;
   padding-top: 0.75rem;
@@ -49,7 +115,7 @@ html.dark .toc-custom-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding-left: 0.25rem; /* match Mintlify TOC link inset */
+  padding-left: 0.25rem;
   font-size: 0.875rem;
   line-height: 1.75rem;
   color: inherit;
@@ -59,7 +125,6 @@ html.dark .toc-custom-actions {
   display: inline-block;
 }
 
-/* Right sidebar TOC list should align under the "On this page" label. */
 #table-of-contents-content,
 [data-testid="table-of-contents"],
 nav[aria-label*="Table of contents"],
@@ -79,12 +144,10 @@ nav[aria-label*="Table of contents"] ul,
 [data-testid="table-of-contents"] a,
 nav[aria-label*="Table of contents"] a,
 [class*="table-of-contents"] a {
-  padding-left: 0.25rem !important; /* align with header text */
+  padding-left: 0.25rem !important;
   margin-left: 0 !important;
 }
 
-/* Mintlify sometimes centers/indents the right sidebar TOC via flex wrappers.
-   Force a consistent left alignment for all TOC rows. */
 [class*="right-sidebar"] #table-of-contents-content,
 [class*="right-sidebar"] [data-testid="table-of-contents"],
 [class*="right-sidebar"] nav[aria-label*="Table of contents"],

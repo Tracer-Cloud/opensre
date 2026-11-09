@@ -7,6 +7,7 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import DiscordBotConfig
+from integrations.discord.setup import DISCORD_SETUP
 
 logger = logging.getLogger(__name__)
 
@@ -29,3 +30,6 @@ def classify(
         report_classify_failure(exc, logger=logger, integration="discord", record_id=record_id)
         return None, None
     return cfg, "discord"
+
+
+__all__ = ["DISCORD_SETUP", "classify"]

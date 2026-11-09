@@ -4,6 +4,7 @@ from integrations.catalog import load_env_integrations
 from integrations.tempo import (
     TempoConfig,
     build_tempo_config,
+    classify,
     tempo_config_from_env,
     tempo_extract_params,
     validate_tempo_config,
@@ -122,6 +123,26 @@ class TestTempoExtractParams:
         params = tempo_extract_params({})
         assert params["url"] == ""
         assert params["api_key"] == ""
+
+    def test_normalizes_optional_null_credentials_from_setup(self) -> None:
+        credentials = {
+            "url": "http://localhost:3200",
+            "api_key": None,
+            "username": None,
+            "password": None,
+            "org_id": None,
+        }
+
+        config, source = classify(credentials, "tempo-local")
+        params = tempo_extract_params({"tempo": credentials})
+
+        assert source == "tempo"
+        assert config is not None
+        assert config.api_key == ""
+        assert params["api_key"] == ""
+        assert params["username"] == ""
+        assert params["password"] == ""
+        assert params["org_id"] == ""
 
 
 class TestTempoEnvCatalogLoading:

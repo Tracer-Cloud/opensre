@@ -1,4 +1,4 @@
-"""Narrow GitHub CLI access for PR CI inspection."""
+"""Narrow GitHub CLI access for CI inspection."""
 
 from __future__ import annotations
 
@@ -25,20 +25,23 @@ def run_gh_json(
     repo: str,
     github_token: str | None,
     timeout: int = DEFAULT_GH_TIMEOUT_SECONDS,
+    repo_flag: bool = True,
 ) -> dict[str, Any]:
     """Run a read-only ``gh`` command and decode a JSON object."""
-    raw = run_gh_text(args, repo=repo, github_token=github_token, timeout=timeout)
+    raw = run_gh_text(
+        args, repo=repo, github_token=github_token, timeout=timeout, repo_flag=repo_flag
+    )
     try:
         parsed = json.loads(raw or "{}")
     except json.JSONDecodeError as exc:
         raise GitHubCiFixError(
             ERR_GH_UNAVAILABLE,
-            "GitHub CLI returned invalid JSON while inspecting PR CI; no push was made.",
+            "GitHub CLI returned invalid JSON while inspecting CI; no push was made.",
         ) from exc
     if not isinstance(parsed, dict):
         raise GitHubCiFixError(
             ERR_GH_UNAVAILABLE,
-            "GitHub CLI returned an unexpected response while inspecting PR CI; no push was made.",
+            "GitHub CLI returned an unexpected response while inspecting CI; no push was made.",
         )
     return parsed
 
@@ -49,25 +52,32 @@ def run_gh_text(
     repo: str,
     github_token: str | None,
     timeout: int = DEFAULT_GH_TIMEOUT_SECONDS,
+    repo_flag: bool = True,
+    cwd: str | None = None,
 ) -> str:
-    """Run a narrow ``gh`` command with OpenSRE-resolved token auth."""
+    """Run a narrow ``gh`` command with OpenSRE-resolved token auth.
+
+    ``repo_flag=False`` omits the global ``-R`` selector for subcommands that
+    reject it (``gh api``, whose endpoint path already names the repo). *cwd*
+    runs the command inside a checkout, for subcommands that act on one.
+    """
     token = resolve_github_token(github_token)
     if not token:
         raise GitHubCiFixError(
             ERR_GITHUB_TOKEN,
-            "A GitHub token is required to inspect PR CI and push fixes; no push was made.",
+            "A GitHub token is required to inspect CI and push fixes; no push was made.",
         )
     if shutil.which("gh") is None:
         raise GitHubCiFixError(
             ERR_GH_UNAVAILABLE,
-            "GitHub CLI is required to inspect PR CI logs; no push was made.",
+            "GitHub CLI is required to inspect CI logs; no push was made.",
         )
 
     env = os.environ.copy()
     env["GH_TOKEN"] = token
     env["GITHUB_TOKEN"] = token
     env.pop("GH_ENTERPRISE_TOKEN", None)
-    argv = ["gh", "-R", repo, *args]
+    argv = ["gh", "-R", repo, *args] if repo_flag else ["gh", *args]
     try:
         completed = subprocess.run(
             argv,
@@ -76,16 +86,17 @@ def run_gh_text(
             timeout=max(1, timeout),
             env=env,
             check=False,
+            cwd=cwd,
         )
     except subprocess.TimeoutExpired as exc:
         raise GitHubCiFixError(
             ERR_GH_UNAVAILABLE,
-            f"GitHub CLI timed out while inspecting PR CI after {timeout}s; no push was made.",
+            f"GitHub CLI timed out while inspecting CI after {timeout}s; no push was made.",
         ) from exc
     except OSError as exc:
         raise GitHubCiFixError(
             ERR_GH_UNAVAILABLE,
-            f"GitHub CLI failed while inspecting PR CI: {exc}; no push was made.",
+            f"GitHub CLI failed while inspecting CI: {exc}; no push was made.",
         ) from exc
 
     stdout = _redact(completed.stdout or "", token)

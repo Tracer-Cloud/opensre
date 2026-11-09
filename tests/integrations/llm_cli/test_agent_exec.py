@@ -52,6 +52,23 @@ def test_classify_timeout_names_the_agent() -> None:
     assert classified.error == "claude-code timed out after 90s"
 
 
+def test_classify_anthropic_credit_error_is_not_opensre_hosted_exhaustion() -> None:
+    outcome = AgentProcessOutcome(
+        stdout="Your credit balance is too low to access the Anthropic API.",
+        stderr="",
+        returncode=1,
+        timed_out=False,
+    )
+    classified = classify_agent_outcome(
+        outcome, agent_name="claude-code", changed_files=[], timeout_sec=60
+    )
+    assert classified.success is False
+    assert classified.error is not None
+    assert "credit balance is too low" not in classified.error.lower()
+    assert "not your OpenSRE hosted credit balance" in classified.error
+    assert "`opensre credits`" in classified.error
+
+
 def test_classify_clean_exit_with_no_changes_and_no_output_is_a_failure() -> None:
     outcome = AgentProcessOutcome(stdout="", stderr="", returncode=0, timed_out=False)
     classified = classify_agent_outcome(
@@ -97,3 +114,40 @@ def test_poll_agent_process_drains_large_output_without_deadlock(tmp_path: Path)
     assert outcome.returncode == 0
     assert len(outcome.stdout) == payload
     assert len(outcome.stderr) == payload
+
+
+def test_poll_agent_process_accepts_stdin_after_starting_drains(tmp_path: Path) -> None:
+    """Stdin must be fed after drain threads start so large prompts cannot deadlock."""
+    code = "import sys; data = sys.stdin.read(); sys.stdout.write(data.upper())"
+    outcome = poll_agent_process(
+        [sys.executable, "-c", code],
+        cwd=str(tmp_path),
+        env=dict(os.environ),
+        timeout_sec=10,
+        stdin="hello from opensre",
+    )
+    assert outcome.timed_out is False
+    assert outcome.returncode == 0
+    assert outcome.stdout == "HELLO FROM OPENSRE"
+
+
+def test_poll_agent_process_hands_each_stdout_line_to_the_callback_as_it_arrives(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    seen: list[str] = []
+    code = "import sys; [print(f'step {i}') for i in range(3)]; sys.stdout.flush()"
+
+    # Act
+    outcome = poll_agent_process(
+        [sys.executable, "-c", code],
+        cwd=str(tmp_path),
+        env=dict(os.environ),
+        timeout_sec=30,
+        on_stdout_line=seen.append,
+    )
+
+    # Assert
+    assert outcome.returncode == 0
+    assert [line.strip() for line in seen] == ["step 0", "step 1", "step 2"]
+    assert outcome.stdout == "step 0\nstep 1\nstep 2\n"

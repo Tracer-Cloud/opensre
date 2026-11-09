@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Final
 
+from config.constants.llm import CUSTOM_OPENAI_API_KEY_ENV, TRUSTEDROUTER_API_KEY_ENV
 from config.llm_models import (
+    CUSTOM_OPENAI_LLM_CONFIG,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_LLM_CONFIG,
     GEMINI_BASE_URL,
@@ -19,6 +21,8 @@ from config.llm_models import (
     OLLAMA_LLM_CONFIG,
     OPENROUTER_BASE_URL,
     OPENROUTER_LLM_CONFIG,
+    TRUSTEDROUTER_BASE_URL,
+    TRUSTEDROUTER_LLM_CONFIG,
     LLMModelConfig,
 )
 from core.llm.types import ModelType
@@ -55,6 +59,12 @@ OPENAI_COMPATIBLE_PROVIDERS: Final[dict[str, OpenAICompatProvider]] = {
         OPENROUTER_BASE_URL,
         "OPENROUTER_API_KEY",
         "openrouter",
+    ),
+    "trustedrouter": OpenAICompatProvider(
+        TRUSTEDROUTER_LLM_CONFIG,
+        TRUSTEDROUTER_BASE_URL,
+        TRUSTEDROUTER_API_KEY_ENV,
+        "trustedrouter",
     ),
     "deepseek": OpenAICompatProvider(
         DEEPSEEK_LLM_CONFIG,
@@ -94,6 +104,12 @@ OPENAI_COMPATIBLE_PROVIDERS: Final[dict[str, OpenAICompatProvider]] = {
         "ollama",
         api_key_default="ollama",
     ),
+    "custom-openai": OpenAICompatProvider(
+        CUSTOM_OPENAI_LLM_CONFIG,
+        None,
+        CUSTOM_OPENAI_API_KEY_ENV,
+        "custom_openai",
+    ),
 }
 
 
@@ -106,7 +122,8 @@ def select_compat_model(settings: Any, provider: str, model_type: ModelType) -> 
     """Select the configured model for *provider* and *model_type*."""
     if provider == "ollama":
         return str(settings.ollama_model)
-    attr = f"{provider}_{model_type}_model"
+    prefix = OPENAI_COMPATIBLE_PROVIDERS[provider].settings_prefix
+    attr = f"{prefix}_{model_type}_model"
     return str(getattr(settings, attr))
 
 
@@ -120,11 +137,18 @@ def resolve_openai_compat_provider(
     base_url = spec.base_url
     if provider == "ollama":
         base_url = f"{settings.ollama_host.rstrip('/')}/v1"
+    elif provider == "custom-openai":
+        base_url = settings.custom_openai_base_url
     if not base_url:
         raise RuntimeError(f"OpenAI-compatible provider '{provider}' is missing a base URL.")
+    model = select_compat_model(settings, provider, model_type)
+    if provider == "custom-openai":
+        from core.llm.providers.custom_endpoints import log_endpoint_resolution
+
+        log_endpoint_resolution(provider, base_url, model, model_type)
     return ResolvedOpenAICompatProvider(
         name=provider,
-        model=select_compat_model(settings, provider, model_type),
+        model=model,
         config=spec.config,
         base_url=base_url,
         api_key_env=spec.api_key_env,

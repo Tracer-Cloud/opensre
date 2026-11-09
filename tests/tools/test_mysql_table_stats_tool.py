@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.mysql.tools.mysql_table_stats_tool import get_mysql_table_stats
+from integrations.mysql.tools.mysql_table_stats_tool import (
+    _map_get_mysql_table_stats,
+    get_mysql_table_stats,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -76,3 +80,45 @@ def test_run_error_propagated() -> None:
         result = get_mysql_table_stats(host="localhost", database="invalid_db")
     assert "error" in result
     assert result["available"] is False
+
+
+class TestMapGetMysqlTableStats:
+    def test_records_entry_with_largest_table(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_table_stats(
+            evidence,
+            {
+                "available": True,
+                "database": "application_db",
+                "total_tables": 2,
+                "tables": [
+                    {"table_name": "orders", "size": {"total_mb": 640.0}},
+                    {"table_name": "users", "size": {"total_mb": 10.5}},
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mysql_table_stats"
+        assert (
+            entries[0]["summary"] == "2 table(s) in 'application_db', largest 'orders' at 640.0MB"
+        )
+
+    def test_records_nothing_when_no_tables(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_table_stats(
+            evidence, {"available": True, "database": "empty_db", "tables": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_table_stats(evidence, {"available": False, "error": "unknown database"}, {})
+
+        assert "catalog_entries" not in evidence

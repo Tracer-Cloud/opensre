@@ -24,22 +24,31 @@ from http import HTTPStatus
 import uvicorn
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
+from starlette.background import BackgroundTask
 
-from gateway.core.runtime.approvals import ApprovalBroker
-from gateway.core.runtime.errors import GatewayTransportFailedError
+from config.constants.gateway import DEFAULT_STOP_TIMEOUT_SECONDS
+from gateway.core.lifecycle.errors import GatewayTransportFailedError
+from gateway.core.middleware.approvals import ApprovalBroker
+from gateway.core.storage.events.repository import HandledSlackEventRepository
 from gateway.transports.slack.delivery.approvals import handle_block_actions_payload
 from gateway.transports.slack.delivery.feedback import record_feedback_payload
 from gateway.transports.slack.processing.events import SlackInboundMessage
+from gateway.transports.slack.processing.stop_requests import (
+    SlackStopRequest,
+    parse_stop_shortcut_payload,
+)
 from gateway.transports.slack.settings import SlackGatewaySettings
 from gateway.transports.slack.transport.events_api.receiver import (
-    SlackEventDeduplicator,
     SlackHttpStatus,
     admit_slack_http_request,
     admit_slack_interactivity_request,
 )
+from infrastructure.request_body_limit import RequestBodyLimitMiddleware
 
 #: Starts a turn for one inbound message without blocking the request.
 SubmitTurn = Callable[[SlackInboundMessage], None]
+#: Stops the turn a stop button points at.
+StopTurn = Callable[[SlackStopRequest], None]
 
 
 @dataclass
@@ -82,10 +91,10 @@ class SlackHttpServerHandle:
     def bound_address(self) -> str:
         return f"{self.bound_host}:{self.bound_port}"
 
-    def stop(self, *, timeout: float = 8.0) -> bool:
+    def stop(self, *, timeout: float = DEFAULT_STOP_TIMEOUT_SECONDS) -> bool:
         """Stop serving and report whether the listener thread ended in time.
 
-        Signature matches ``gateway.channels.chat.TransportWorker`` so the
+        Signature matches ``gateway.startup.TransportWorker`` so the
         composition root can hold either inbound transport in one handle.
         """
         self.gate.accepting = False  # refuse first; the thread may outlive the join
@@ -99,16 +108,28 @@ def build_slack_http_app(
     *,
     settings: SlackGatewaySettings,
     approvals: ApprovalBroker,
-    deduplicator: SlackEventDeduplicator,
+    handled_events: HandledSlackEventRepository,
     submit_turn: SubmitTurn,
     gate: ListenerGate,
+    stop_turn: StopTurn | None = None,
 ) -> FastAPI:
     """Return the Slack listener app.
 
     ``submit_turn`` takes one :class:`SlackInboundMessage` and starts the turn
-    without blocking — the route must answer Slack first.
+    without blocking — the route must answer Slack first. ``stop_turn`` runs
+    after the answer; without it stop buttons are ignored.
     """
     app = FastAPI()
+
+    def _stop_after_answer(stop_request: SlackStopRequest) -> BackgroundTask | None:
+        # Stopping finalizes the turn's reply over the Web API, which can
+        # outlast Slack's three seconds, so it runs after the answer. Never on
+        # the turn executor: the turn being stopped may hold the last worker.
+        return BackgroundTask(stop_turn, stop_request) if stop_turn is not None else None
+
+    # Slack's signature covers the raw body, so both routes must read it before
+    # they can authenticate the caller. Bound the read itself.
+    app.add_middleware(RequestBodyLimitMiddleware)
 
     async def _admit(request: Request) -> Response:
         if not gate.accepting:
@@ -120,7 +141,7 @@ def build_slack_http_app(
             headers=dict(request.headers),
             body=body,
             signing_secret=settings.signing_secret,
-            deduplicator=deduplicator,
+            handled_events=handled_events,
         )
         if outcome.status is SlackHttpStatus.REJECTED:
             # Detail stays server-side (CWE-209): the caller is unauthenticated.
@@ -128,6 +149,10 @@ def build_slack_http_app(
             return JSONResponse({"error": "unauthorized"}, status_code=HTTPStatus.UNAUTHORIZED)
         if outcome.status is SlackHttpStatus.CHALLENGE:
             return PlainTextResponse(outcome.challenge)
+        if outcome.status is SlackHttpStatus.ACCEPTED and outcome.stop is not None:
+            if not handled_events.confirm(outcome.event_id):
+                logger.error("slack http could not confirm stop event %s", outcome.event_id)
+            return JSONResponse({"ok": True}, background=_stop_after_answer(outcome.stop))
         if outcome.status is SlackHttpStatus.ACCEPTED and outcome.message is not None:
             try:
                 submit_turn(outcome.message)
@@ -136,7 +161,7 @@ def build_slack_http_app(
                 # claim, then 503 so Slack retries. If release fails, still 500
                 # to page — but the next ``claim`` may reclaim the uncommitted
                 # row, so the event is not permanently answered as a duplicate.
-                released = deduplicator.release(outcome.event_id)
+                released = handled_events.release(outcome.event_id)
                 logger.warning("slack http accepted an event with no turn executor")
                 if not released:
                     logger.error(
@@ -151,7 +176,7 @@ def build_slack_http_app(
                 return JSONResponse(
                     {"error": "unavailable"}, status_code=HTTPStatus.SERVICE_UNAVAILABLE
                 )
-            if not deduplicator.confirm(outcome.event_id):
+            if not handled_events.confirm(outcome.event_id):
                 # Turn is already queued; prefer 200 over 5xx (which would
                 # invite a reclaim double-run).
                 logger.error(
@@ -175,6 +200,11 @@ def build_slack_http_app(
             logger.warning("slack interactivity rejected: %s", outcome.reason)
             return JSONResponse({"error": "unauthorized"}, status_code=HTTPStatus.UNAUTHORIZED)
         if outcome.payload is not None:
+            stop_request = parse_stop_shortcut_payload(outcome.payload)
+            if stop_request is not None:
+                return Response(
+                    status_code=HTTPStatus.OK, background=_stop_after_answer(stop_request)
+                )
             # Resolved on the request thread, never the turn executor: workers
             # may all be blocked *waiting* on these very buttons, so a click
             # must never need a free worker to be recorded.

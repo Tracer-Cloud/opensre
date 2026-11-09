@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import StrEnum
 
+from config.constants.llm import REASONING_EFFORT_MODEL_PREFIXES
+
 
 class ReasoningEffort(StrEnum):
     """Closed user-facing reasoning-effort vocabulary for REPL and env overrides."""
@@ -68,11 +70,38 @@ def display_reasoning_effort(choice: ReasoningEffort | str | None) -> str:
     return coerced.value
 
 
+def _bare_model_id(model: str | None) -> str:
+    normalized = (model or "").strip().lower()
+    if "/" in normalized:
+        return normalized.rsplit("/", 1)[-1]
+    return normalized
+
+
+def model_default_reasoning_effort(model: str | None) -> str | None:
+    """Effort sent when neither the session nor the environment sets one.
+
+    GPT-6.1 Sol's product default is extra high. Other models return ``None``
+    so the provider keeps its own default.
+    """
+    if _bare_model_id(model).startswith("gpt-6.1"):
+        return ReasoningEffort.XHIGH.value
+    return None
+
+
+def resolve_reasoning_effort(model: str | None = None) -> str | None:
+    """Session override, then environment, then the model family's built-in default."""
+    active = get_active_reasoning_effort()
+    if active is not None:
+        return active
+    return model_default_reasoning_effort(model)
+
+
 def get_active_reasoning_effort() -> str | None:
     """Return the runtime reasoning-effort value for this logical context.
 
     Order: in-REPL session override (``apply_reasoning_effort``), then
-    ``OPENSRE_REASONING_EFFORT`` in the process environment.
+    ``OPENSRE_REASONING_EFFORT`` in the process environment. Model-family
+    defaults are applied by ``resolve_reasoning_effort``.
     """
     session = _reasoning_effort_session.get()
     if session is not None:
@@ -88,6 +117,16 @@ def provider_supports_reasoning_effort(provider: str | None) -> bool:
     return (provider or "").strip().lower() in {"openai", "codex"}
 
 
+def applied_reasoning_effort(
+    provider: str, model: str, choice: ReasoningEffort | str | None
+) -> str | None:
+    """Effort sent by this connection, not an ignored override or guessed default."""
+    prefixes = REASONING_EFFORT_MODEL_PREFIXES.get(provider, ())
+    if not model.startswith(prefixes):
+        return None
+    return runtime_reasoning_effort(choice) or resolve_reasoning_effort(model)
+
+
 def infer_reasoning_effort_default(provider: str | None, model: str | None) -> str | None:
     """Best-effort default reasoning level for providers we wire today.
 
@@ -96,6 +135,10 @@ def infer_reasoning_effort_default(provider: str | None, model: str | None) -> s
     """
     normalized_provider = (provider or "").strip().lower()
     normalized_model = (model or "").strip().lower()
+    if normalized_provider in {"openai", "codex"}:
+        model_effort = model_default_reasoning_effort(normalized_model)
+        if model_effort is not None:
+            return model_effort
     if normalized_provider == "openai":
         if normalized_model.startswith(("gpt-5.1", "gpt-5.2")):
             return "none"
@@ -141,6 +184,7 @@ def apply_reasoning_effort(choice: ReasoningEffort | str | None) -> Iterator[Non
 
 
 __all__ = [
+    "applied_reasoning_effort",
     "REASONING_EFFORT_OPTIONS",
     "ReasoningEffort",
     "ReasoningEffortChoice",
@@ -149,7 +193,9 @@ __all__ = [
     "display_reasoning_effort",
     "get_active_reasoning_effort",
     "infer_reasoning_effort_default",
+    "model_default_reasoning_effort",
     "parse_reasoning_effort",
+    "resolve_reasoning_effort",
     "provider_supports_reasoning_effort",
     "runtime_reasoning_effort",
 ]

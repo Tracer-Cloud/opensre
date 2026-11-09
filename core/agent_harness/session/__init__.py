@@ -18,13 +18,13 @@ from core.agent_harness.session.persistence import (
     InMemorySessionStore,
     JsonlSessionStore,
 )
-from core.agent_harness.session.persistence.jsonl_repo import JsonlSessionRepo
-from core.agent_harness.session.persistence.ports import (
+from core.agent_harness.session.persistence.contracts import (
     CHAT_KINDS,
     SessionPersistenceSource,
     SessionRepo,
     SessionStore,
 )
+from core.agent_harness.session.persistence.jsonl_repo import JsonlSessionRepo
 from core.agent_harness.session.session_core import SessionCore
 
 # Production singletons. Both backends are stateless, so sharing one instance

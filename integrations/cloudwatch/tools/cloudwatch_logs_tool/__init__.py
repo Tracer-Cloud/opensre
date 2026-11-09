@@ -7,8 +7,8 @@ from typing import Any
 
 import boto3
 
-from core.tool_framework.telemetry import report_run_error
-from core.tool_framework.tool_decorator import tool
+from core.tool import report_run_error
+from core.tool_framework import tool
 
 
 def _cloudwatch_logs_available(sources: dict[str, dict]) -> bool:

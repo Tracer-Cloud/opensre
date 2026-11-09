@@ -178,6 +178,35 @@ def test_stop_stream_retries_without_blocks_when_rejected() -> None:
     assert "blocks" not in web.stop_calls[-1]
 
 
+def test_set_thread_status_sets_loading_without_posting() -> None:
+    class _StatusWebClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        def assistant_threads_setStatus(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(kwargs)
+            return {"ok": True}
+
+    web = _StatusWebClient()
+    client = SlackWebApiClient(web)  # type: ignore[arg-type]
+
+    assert (
+        client.set_thread_status(
+            channel="C1",
+            thread_ts="1.0",
+            status="is working on your request...",
+            loading_messages=["Reading logs"],
+        )
+        is True
+    )
+    assert web.calls[0]["channel_id"] == "C1"
+    assert web.calls[0]["thread_ts"] == "1.0"
+    assert web.calls[0]["loading_messages"] == ["Reading logs"]
+    assert client.set_thread_status(channel="C1", thread_ts="1.0", status="") is True
+    assert web.calls[1]["status"] == ""
+    assert "loading_messages" not in web.calls[1]
+
+
 def test_append_and_stop_stream_round_trip() -> None:
     web = _StreamingWebClient(start={"ts": "5.5"})
     client = SlackWebApiClient(web)  # type: ignore[arg-type]

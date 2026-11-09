@@ -1,0 +1,192 @@
+---
+title: "Dagster"
+description: "Connect Dagster so OpenSRE can investigate pipeline run failures, asset materialization errors, and sensor or schedule misfires"
+---
+
+## Overview
+
+OpenSRE uses the Dagster GraphQL API to investigate data-pipeline failures — fetching recent runs and their status, the full event log and root-cause exception for a failed run, asset materialization history, and sensor or schedule tick history. Works against both Dagster OSS (`dagster dev` and self-hosted dagster-webserver) and Dagster+ (the SaaS).
+
+## Prerequisites
+
+- A reachable dagster-webserver instance:
+  - **Dagster OSS:** run `dagster dev -f jobs.py` locally or deploy `dagster-webserver`. Default port `3000`.
+  - **Dagster+:** an active deployment, e.g. `https://<org>.dagster.cloud/<deployment>` or `https://<org>.<region>.dagster.cloud/<deployment>`.
+- Network access from the OpenSRE environment to the webserver
+- For Dagster+: a **User Token** from **Organization Settings → Tokens → User Tokens** (not an Agent Token — Agent Tokens are rejected by the GraphQL endpoint)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup dagster
+```
+
+You will be prompted for:
+
+- **Dagster webserver URL** — `http://localhost:3000` for OSS local dev, or `https://<deployment>.dagster.cloud/<env>` for Dagster+ (the client appends `/graphql` itself)
+- **Dagster API token** — required for Dagster+; leave blank for unauthenticated OSS
+
+Setup validates with a GraphQL `version` probe, writes `DAGSTER_ENDPOINT` to `.env`, and persists the API token (when provided) to `~/.opensre/credentials.json`.
+
+### Option 2: Environment variables
+
+```bash
+DAGSTER_ENDPOINT=https://your-org.dagster.cloud/prod
+DAGSTER_API_TOKEN=...
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DAGSTER_ENDPOINT` | — | **Required.** Base URL of the dagster-webserver. Trailing `/graphql` is accepted and stripped |
+| `DAGSTER_API_TOKEN` | _(empty)_ | Required for Dagster+. Leave empty for unauthenticated local OSS. Sent as `Dagster-Cloud-Api-Token` |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "dagster-prod",
+      "service": "dagster",
+      "status": "active",
+      "credentials": {
+        "endpoint": "https://your-org.dagster.cloud/prod",
+        "api_token": "..."
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+**Endpoint:** the browser URL through the deployment name, e.g. `https://acme.dagster.cloud/prod` (from `…/prod/runs`). EU accounts use a regional subdomain such as `https://acme.eu.dagster.cloud/prod`.
+
+**API token (Dagster+):**
+
+1. User menu → **Organization Settings**
+2. **Tokens** tab → **+ Create user token**
+3. Copy the token immediately (shown once)
+
+User Tokens inherit the user's per-deployment role. Viewer is enough for the read-only queries OpenSRE issues.
+
+> **Token type matters.** Use a **User Token**, not an **Agent Token**. Agent Tokens authenticate Hybrid agents and return HTTP 401 on GraphQL.
+
+### Quick local test
+
+```bash
+uv pip install dagster dagster-webserver   # or: pip install ...
+cat > jobs.py << 'EOF'
+from dagster import job, op
+
+
+@op
+def deploy_payment_service():
+    raise RuntimeError("payment-service deploy failed: connection refused to billing-api")
+
+
+@job
+def payment_service_deploy():
+    deploy_payment_service()
+EOF
+
+dagster dev -f jobs.py -p 3001
+```
+
+In a second terminal, launch a real run so there is something to investigate:
+
+```bash
+curl -s -X POST http://localhost:3001/graphql -H "Content-Type: application/json" -d '{
+  "query": "mutation { launchRun(executionParams: {selector: {repositoryLocationName: \"jobs.py\", repositoryName: \"__repository__payment_service_deploy\", jobName: \"payment_service_deploy\"}}) { __typename ... on LaunchRunSuccess { run { runId status } } } }"
+}'
+```
+
+```bash
+export DAGSTER_ENDPOINT="http://localhost:3001"
+export OPENSRE_INTEGRATIONS_STORE_PATH="$(mktemp /tmp/opensre-dagster-demo.XXXXXX)"
+```
+
+The empty temporary integration store prevents saved integrations from overriding the demo endpoint.
+
+Verify:
+
+```bash
+opensre integrations verify dagster
+```
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+dagster │ local env │ ✓ passed │ Connected to Dagster version 1.13.18.
+```
+
+The exported endpoint also makes Dagster available in chat; no separate setup step is required.
+
+Now ask the agent about the failed run:
+
+```bash
+opensre
+```
+
+Ask: *Why did the payment_service_deploy Dagster job fail?*
+
+The agent lists failed runs and pulls the run's event log, finding the real cause
+against this exact local job: the `deploy_payment_service` op raised
+`RuntimeError('payment-service deploy failed: connection refused to billing-api')`
+at `jobs.py:6`.
+
+Teardown by pressing `Ctrl-C` in the terminal running `dagster dev`, then remove the temporary store and unset the demo variables in the second terminal:
+
+```bash
+rm -f "$OPENSRE_INTEGRATIONS_STORE_PATH"
+unset DAGSTER_ENDPOINT OPENSRE_INTEGRATIONS_STORE_PATH
+```
+
+The temporary `DAGSTER_HOME` is removed when `dagster dev` exits.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_dagster_runs` | Recent runs with status, job name, timestamps, duration; filterable by status/job |
+| `get_dagster_run_logs` | Event log for a run; surfaces user-code exceptions from `error.cause` |
+| `list_dagster_assets` | Assets with latest materialization timestamp + run id |
+| `list_dagster_sensor_ticks` | Tick history via full `SensorSelector` triplet |
+| `list_dagster_schedule_ticks` | Tick history via full `ScheduleSelector` triplet |
+
+GraphQL queries OpenSRE issues are **read-only** (no mutations).
+
+## Verify
+
+```bash
+opensre integrations verify dagster
+```
+
+Expected output:
+
+```
+SERVICE    SOURCE       STATUS    DETAIL
+dagster    local env    passed    Connected to Dagster version 1.13.6.
+```
+
+The verifier issues `query { version }` and reports the running Dagster version on success.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **HTTP 401 with HTML body** | Usually (1) Agent Token instead of User Token, (2) user lacks role on the deployment, or (3) token revoked — check Organization Settings → Tokens |
+| **Invalid JSON in response** | Wrong URL (UI path instead of GraphQL). Paste only the base through the deployment name; `/graphql` is appended automatically |
+| **Connection refused** | Start `dagster dev -f jobs.py` locally, or check Dagster+ deployment status |
+| **`InvalidPipelineRunsFilterError`** | Use a valid `RunStatus`: `QUEUED`, `NOT_STARTED`, `MANAGED`, `STARTING`, `STARTED`, `SUCCESS`, `FAILURE`, `CANCELING`, `CANCELED` |
+| **`RunNotFoundError`** | Confirm run id and deployment slug match |
+| **`SensorNotFoundError` / `ScheduleNotFoundError`** | Confirm the selector triplet names match the UI exactly |
+
+## Security
+
+- Prefer a dedicated User Token on a service-style user account (Dagster+ has no first-class service accounts).
+- Keep tokens out of source control — use `.env` or `~/.opensre/integrations.json`.
+- Rotate/revoke tokens from Organization Settings → Tokens.
+- For local OSS without auth, restrict the webserver to localhost or a private network.

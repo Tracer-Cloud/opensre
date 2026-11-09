@@ -8,13 +8,12 @@ pipeline text-only while still surfacing attachment content.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 
-import httpx
-
 from config.constants.gateway import ATTACHMENT_MAX_TOTAL_CHARS
+from config.constants.slack import SLACK_FILE_HOST_SUFFIXES
 from core.llm.image_description import describe_image_via_provider, is_supported_image
+from gateway.core.attachments.fetch import download_attachment
 from gateway.core.attachments.inline import (
     budgeted_section,
     is_text_mimetype,
@@ -22,8 +21,6 @@ from gateway.core.attachments.inline import (
     truncate_attachment_text,
 )
 from gateway.transports.slack.processing.events import SlackInboundFile
-
-logger = logging.getLogger(__name__)
 
 _MAX_FILE_BYTES = 256 * 1024  # per-file download ceiling
 _DOWNLOAD_TIMEOUT_SECONDS = 10.0
@@ -54,36 +51,21 @@ def download_file(file: SlackInboundFile, token: str) -> bytes | None:
     """GET a Slack ``url_private`` with the bot token; None on any failure.
 
     Slack redirects file downloads (307/308) and requires the bot token as a
-    bearer header. The response is size-capped so a huge upload cannot exhaust
-    memory (the file is dropped, not truncated, past the cap).
+    bearer header, so the hops are followed manually with the token pinned to
+    Slack's own hosts. An off-Slack ``url_private`` or redirect target is refused
+    before a connection is opened. The response is size-capped so a huge upload
+    cannot exhaust memory (the file is dropped, not truncated, past the cap).
     """
     if not (file.url_private and token):
         return None
-    try:
-        with httpx.stream(
-            "GET",
-            file.url_private,
-            headers={"Authorization": f"Bearer {token}"},
-            follow_redirects=True,
-            timeout=_DOWNLOAD_TIMEOUT_SECONDS,
-        ) as response:
-            if response.status_code != httpx.codes.OK:
-                logger.warning("[slack-files] %s download HTTP %s", file.name, response.status_code)
-                return None
-            chunks: list[bytes] = []
-            total = 0
-            for chunk in response.iter_bytes():
-                total += len(chunk)
-                if total > _MAX_FILE_BYTES:
-                    logger.info(
-                        "[slack-files] %s exceeds %d bytes; skipped", file.name, _MAX_FILE_BYTES
-                    )
-                    return None
-                chunks.append(chunk)
-            return b"".join(chunks)
-    except httpx.HTTPError as exc:
-        logger.warning("[slack-files] %s download failed: %s", file.name, type(exc).__name__)
-        return None
+    return download_attachment(
+        file.url_private,
+        authorization=f"Bearer {token}",
+        host_suffixes=SLACK_FILE_HOST_SUFFIXES,
+        max_bytes=_MAX_FILE_BYTES,
+        timeout=_DOWNLOAD_TIMEOUT_SECONDS,
+        log_prefix=f"[slack-files] {file.name or file.id}",
+    )
 
 
 def _render_file(

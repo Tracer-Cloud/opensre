@@ -86,6 +86,29 @@ def test_railway_is_registered_as_a_configurable_verified_integration() -> None:
     assert "railway" not in SKIP_CLASSIFIED_SERVICES
 
 
+def test_google_docs_has_a_dedicated_setup_command() -> None:
+    google_docs = next(spec for spec in INTEGRATION_SPECS if spec.service == "google_docs")
+
+    assert google_docs.has_verifier is True
+    assert google_docs.setup_order is not None
+    assert "google_docs" in SUPPORTED_SETUP_SERVICES
+
+
+def test_prefect_is_registered_as_a_directly_effective_integration() -> None:
+    # prefect's classify() resolves store credentials into a config object
+    # just like dagster/temporal, but its spec was missing direct_effective=True
+    # — resolve_effective_integrations() only publishes services listed in
+    # DIRECT_CLASSIFIED_EFFECTIVE_SERVICES, so a prefect integration saved in
+    # the local store silently never resolved, breaking both
+    # `opensre integrations verify prefect` and the prefect tools'
+    # is_available() check for any store-configured instance.
+    prefect = next(spec for spec in INTEGRATION_SPECS if spec.service == "prefect")
+
+    assert prefect.has_verifier is True
+    assert prefect.direct_effective is True
+    assert "prefect" not in SKIP_CLASSIFIED_SERVICES
+
+
 def test_resolve_management_service_keeps_posthog_and_posthog_mcp_distinct() -> None:
     # Like sentry / sentry_mcp, bare posthog is the REST integration and
     # posthog_mcp is the separate MCP flow — they must not alias each other.

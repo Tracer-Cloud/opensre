@@ -43,7 +43,7 @@ def test_run_happy_path() -> None:
     mock_apps_v1 = MagicMock()
     mock_apps_v1.read_namespaced_deployment.return_value = mock_dep
     with patch(
-        "integrations.eks.tools.build_k8s_clients",
+        "integrations.eks.tools.eks_deployment_status_tool.build_k8s_clients",
         return_value=(MagicMock(), mock_apps_v1),
     ):
         result = get_eks_deployment_status(
@@ -58,7 +58,10 @@ def test_run_happy_path() -> None:
 
 
 def test_run_handles_exception() -> None:
-    with patch("integrations.eks.tools.build_k8s_clients", side_effect=Exception("forbidden")):
+    with patch(
+        "integrations.eks.tools.eks_deployment_status_tool.build_k8s_clients",
+        side_effect=Exception("forbidden"),
+    ):
         result = get_eks_deployment_status(
             cluster_name="c1",
             namespace="default",

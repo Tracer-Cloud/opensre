@@ -2,11 +2,11 @@
 
 Prefer the ``opensre`` console script in normal use. This module exists so
 ``python main.py`` and ``python -m`` discovery reach the same CLI as
-``surfaces.cli.app:main``.
+``surfaces.entrypoint:main``.
 
 This covers the interactive shell, the landing page, and every one-shot
 subcommand. The gateway daemon is a separate process entry managed via
-``opensre gateway start`` (CLI wires slash ports). Bare ``python -m gateway.main``
+``opensre gateway start`` (CLI wires slash ports). Bare ``python -m gateway``
 fails closed — ``gateway`` and ``surfaces`` are peer packages that must not
 import each other.
 
@@ -28,14 +28,10 @@ Driving the agent from Python instead of the CLI::
         print(result.primary_response_text)
     follow = session.chat("what should we check next?")  # same agent, next turn
 
-    report = session.investigate({"alert_name": "HighLatency"})
-    print(report.report)
-
 ``configure_process`` comes first and is what registers the harness adapters
-tools resolve through (and the investigation payload runner);
-``AgentSession.start()`` only loads the environment, so on its own the agent
-starts but no tool is available. It cannot self-bootstrap — ``core`` sits below
-``bootstrap`` in the layer contract, so the caller wires it.
+tools resolve through; ``AgentSession.start()`` only loads the environment, so
+on its own the agent starts but no tool is available. It cannot self-bootstrap —
+``core`` sits below ``bootstrap`` in the layer contract, so the caller wires it.
 ``EMBEDDED_PROFILE`` deliberately leaves Sentry and LLM preloading to the host
 process.
 
@@ -44,10 +40,10 @@ process.
 provider is unreachable) the error message itself lands in
 ``primary_response_text``. Surfaces that need their own ports — a live gateway
 sink, a REPL console — build a ``HeadlessAgent`` (or
-``build_default_headless_agent``) and call ``attach_agent``, then ``chat``.
+``DefaultHeadlessBuild(...).agent(...)``) and call ``attach_agent``, then ``chat``.
 
 Construct **one** agent per logical session (or scheduled loop), then many
-``chat`` / ``investigate`` turns — do not rebuild every message. Gateway does
+``chat`` turns — do not rebuild every message. Gateway does
 this via ``SessionAgentPool`` + ``bind_turn``. There is no
 ``dispatch_message_to_headless_agent`` free function, and no ``AgentHarness``
 alias — ``AgentSession`` is the only name.
@@ -58,9 +54,9 @@ from __future__ import annotations
 
 def main() -> int:
     """Run the CLI and return its exit status."""
-    from surfaces.cli.app import main as cli_main
+    from surfaces.entrypoint import main as entrypoint_main
 
-    return cli_main()
+    return entrypoint_main()
 
 
 if __name__ == "__main__":

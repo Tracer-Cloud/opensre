@@ -9,8 +9,8 @@ from config.constants.billing import ORGANIZATION_ID_ENV
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from gateway.core.storage import FileBindingStore, open_file_binding_store
-from gateway.core.storage.db import bindings_file_path, gateway_dir
 from gateway.core.storage.session.file_bindings import UnreadableBindingsError
+from gateway.core.storage.session.paths import bindings_file_path, gateway_dir
 
 
 @pytest.fixture

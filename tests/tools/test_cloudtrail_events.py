@@ -18,7 +18,10 @@ from integrations.cloudtrail import (
     cloudtrail_extract_params,
     cloudtrail_is_available,
 )
-from integrations.cloudtrail.tools.cloudtrail_events_tool import lookup_cloudtrail_events
+from integrations.cloudtrail.tools.cloudtrail_events_tool import (
+    _map_lookup_cloudtrail_events,
+    lookup_cloudtrail_events,
+)
 from tests.tools.conftest import BaseToolContract
 
 _RT = lookup_cloudtrail_events.__opensre_registered_tool__
@@ -56,14 +59,14 @@ class TestCloudTrailEventsToolContract(BaseToolContract):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Discovery — the tool is auto-registered on the investigation surface
+# Discovery — the tool is auto-registered on the chat surface
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_tool_discovered_on_investigation_surface() -> None:
+def test_tool_discovered_on_chat_surface() -> None:
     from tools.registry import get_registered_tools
 
-    names = {t.name for t in get_registered_tools("investigation")}
+    names = {t.name for t in get_registered_tools("chat")}
     assert "lookup_cloudtrail_events" in names
 
 
@@ -422,7 +425,7 @@ def test_realistic_page_shapes_every_event(mock_call) -> None:
 def test_success_payload_omits_error_key(mock_call) -> None:
     """The success payload must NOT carry an "error" key.
 
-    The runtime tool loop (core.execution._normalize_result) flags a result as a
+    The runtime tool loop (core.tool.execution._normalize_result) flags a result as a
     failure on the mere presence of an "error" key (is_error = "error" in raw) and
     replaces the whole payload with {"error": ...} before the agent sees it. A
     success dict with "error": None therefore hides every event from the
@@ -497,3 +500,126 @@ def test_weird_page_survives_and_shapes_gracefully(mock_call) -> None:
 
     assert result["truncated"] is True
     assert result["next_token"] == "AAAAweirdPageToken"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Evidence mapper
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestMapLookupCloudtrailEvents:
+    def test_records_entry_with_write_and_error_counts(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence,
+            {
+                "available": True,
+                "total_events": 2,
+                "truncated": False,
+                "events": [
+                    {"read_only": False, "error_code": None},
+                    {"read_only": False, "error_code": "AccessDenied"},
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "lookup_cloudtrail_events"
+        assert entries[0]["summary"] == "2 event(s), 2 write, 1 with error"
+
+    def test_qualifies_count_when_truncated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence,
+            {
+                "available": True,
+                "total_events": 50,
+                "truncated": True,
+                "events": [{"read_only": True, "error_code": None}],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "50+ event(s)"
+
+    def test_qualifies_write_and_error_counts_when_truncated(self) -> None:
+        """Regression: write_count/error_count are tallied over the returned
+        page only -- on a truncated page they must be marked as a floor, not
+        presented as exact totals."""
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence,
+            {
+                "available": True,
+                "total_events": 50,
+                "truncated": True,
+                "events": [
+                    {"read_only": False, "error_code": None},
+                    {"read_only": False, "error_code": "AccessDenied"},
+                ],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "50+ event(s), 2+ write, 1+ with error"
+
+    def test_strips_carriage_returns_from_filter_value(self) -> None:
+        """Regression: a filter value with bare \\r or \\r\\n line endings
+        must not leave a literal carriage return in the report summary."""
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence,
+            {
+                "available": True,
+                "total_events": 1,
+                "truncated": False,
+                "filter": {"AttributeKey": "Username", "AttributeValue": "alice\r\nbob\r"},
+                "events": [{"read_only": True, "error_code": None}],
+            },
+            {},
+        )
+
+        summary = evidence["catalog_entries"][0]["summary"]
+        assert "\r" not in summary
+
+    def test_includes_filter_when_applied(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence,
+            {
+                "available": True,
+                "total_events": 1,
+                "truncated": False,
+                "filter": {"AttributeKey": "ResourceName", "AttributeValue": "sg-1"},
+                "events": [{"read_only": True, "error_code": None}],
+            },
+            {},
+        )
+
+        summary = evidence["catalog_entries"][0]["summary"]
+        assert "filtered by ResourceName='sg-1'" in summary
+
+    def test_records_nothing_when_no_events(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence, {"available": True, "total_events": 0, "events": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_lookup_cloudtrail_events(
+            evidence, {"available": False, "error": "ThrottlingException"}, {}
+        )
+
+        assert "catalog_entries" not in evidence

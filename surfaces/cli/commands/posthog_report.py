@@ -1,6 +1,6 @@
 """``opensre posthog report`` — PostHog per-metric summary reports (#3824).
 
-Uses the headless posthog-summary skill path (not the investigation pipeline or
+Uses the headless summarizing-posthog-analytics skill path (not the
 generic ``opensre cron`` kinds). Tasks are stored in the shared scheduler store
 but are created and listed only through this command group.
 """
@@ -12,8 +12,10 @@ from rich.console import Console
 from rich.table import Table
 
 from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
-from platform.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
-from surfaces.cli.commands.cron import _validate_cron_and_timezone
+from infrastructure.scheduling.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
+from infrastructure.scheduling.scheduler.sources import CLI_POSTHOG_METRIC_REPORT
+from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
+from surfaces.cli.commands.scheduling import add_task_and_echo, validate_cron_and_timezone
 
 _console = Console()
 _PROVIDER_CHOICES = [p.value for p in SUPPORTED_DELIVERY_PROVIDERS]
@@ -47,23 +49,23 @@ def posthog_report_command() -> None:
 )
 def posthog_report_run(stats_period: str, metrics: str) -> None:
     """Run the metric report once and print it to stdout."""
+    from bootstrap.adapters import scheduler_runners
     from integrations.posthog.report_prerequisites import (
         DEFAULT_POSTHOG_PERIOD,
         require_posthog_integration,
     )
-    from platform.scheduler.agent_runner import invoke_agent_runner
 
     require_posthog_integration()
     configure_process(SCHEDULED_COMMAND_PROFILE)
     payload: dict[str, str] = {
-        "source": "cli_posthog_metric_report",
+        "source": CLI_POSTHOG_METRIC_REPORT,
         "stats_period": stats_period.strip() or DEFAULT_POSTHOG_PERIOD,
     }
     if metrics.strip():
         payload["metrics"] = metrics.strip()
 
     try:
-        message = invoke_agent_runner(payload)
+        message = scheduler_runners().agent(payload)
     except Exception as exc:
         _console.print(f"[red]PostHog report failed: {exc}[/red]")
         raise SystemExit(1) from exc
@@ -128,17 +130,16 @@ def posthog_report_schedule_add(
     metrics: str,
 ) -> None:
     """Schedule recurring PostHog metric report delivery."""
+    from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
     from integrations.posthog.report_prerequisites import (
         DEFAULT_POSTHOG_PERIOD,
         require_posthog_integration,
         require_report_delivery_provider,
     )
-    from platform.scheduler.store import add_task
-    from platform.scheduler.types import Provider, ScheduledTask, TaskKind
 
     require_posthog_integration()
     require_report_delivery_provider(provider)
-    _validate_cron_and_timezone(cron_expr, timezone)
+    validate_cron_and_timezone(cron_expr, timezone)
 
     period = stats_period.strip() or DEFAULT_POSTHOG_PERIOD
     params: dict[str, str] = {"stats_period": period}
@@ -157,10 +158,7 @@ def posthog_report_schedule_add(
         window_hours=0,
         params=params,
     )
-    added = add_task(task)
-    _console.print(f"[green]PostHog report task {added.id} created.[/green]")
-    _console.print(f"  Cron: {added.cron}  TZ: {added.timezone}")
-    _console.print(f"  Provider: {added.provider.value}  Chat: {added.chat_id}")
+    add_task_and_echo(task, label="PostHog report")
     _console.print(f"  Period: {params['stats_period']}")
     if "metrics" in params:
         _console.print(f"  Metrics: {params['metrics']}")
@@ -169,8 +167,8 @@ def posthog_report_schedule_add(
 @posthog_report_schedule_command.command(name="list")
 def posthog_report_schedule_list() -> None:
     """List scheduled PostHog metric report tasks."""
-    from platform.scheduler.store import list_tasks
-    from platform.scheduler.types import TaskKind
+    from infrastructure.scheduling.scheduler.storage import list_tasks
+    from infrastructure.scheduling.scheduler.types import TaskKind
 
     tasks = [task for task in list_tasks() if task.kind == TaskKind.POSTHOG_METRIC_REPORT]
     if not tasks:
@@ -196,7 +194,7 @@ def posthog_report_schedule_list() -> None:
             task.provider.value,
             task.chat_id,
             period or "—",
-            "✓" if task.enabled else "✗",
+            GLYPH_SUCCESS if task.enabled else GLYPH_ERROR,
             task.last_run or "—",
         )
 
@@ -207,8 +205,8 @@ def posthog_report_schedule_list() -> None:
 @click.argument("task_id")
 def posthog_report_schedule_remove(task_id: str) -> None:
     """Remove a scheduled PostHog metric report task."""
-    from platform.scheduler.store import get_task, remove_task
-    from platform.scheduler.types import TaskKind
+    from infrastructure.scheduling.scheduler.storage import get_task, remove_task
+    from infrastructure.scheduling.scheduler.types import TaskKind
 
     task = get_task(task_id)
     if task is None or task.kind != TaskKind.POSTHOG_METRIC_REPORT:
@@ -226,13 +224,14 @@ def posthog_report_schedule_remove(task_id: str) -> None:
 @click.argument("task_id")
 def posthog_report_schedule_run(task_id: str) -> None:
     """Run a scheduled PostHog metric report task immediately."""
+    from bootstrap.adapters import scheduler_runners
+    from infrastructure.scheduling.scheduler.runner import run_task_now
+    from infrastructure.scheduling.scheduler.storage import get_task
+    from infrastructure.scheduling.scheduler.types import TaskKind
     from integrations.posthog.report_prerequisites import (
         require_posthog_integration,
         require_report_delivery_provider,
     )
-    from platform.scheduler.runner import run_task_now
-    from platform.scheduler.store import get_task
-    from platform.scheduler.types import TaskKind
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     task = get_task(task_id)
@@ -244,7 +243,7 @@ def posthog_report_schedule_run(task_id: str) -> None:
     require_report_delivery_provider(task.provider.value)
 
     _console.print(f"Running PostHog report task {task_id}...")
-    success = run_task_now(task_id)
+    success = run_task_now(task_id, scheduler_runners())
     if success:
         _console.print("[green]Done.[/green]")
     else:

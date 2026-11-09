@@ -7,7 +7,9 @@ import os
 from rich.console import Console
 from rich.markup import escape
 
-import surfaces.interactive_shell.command_registry.repl_data as repl_data
+from config.constants.llm import HOSTED_MODEL_PROVIDER, LLM_PROVIDER_ENV
+from core.agent_harness.spi.session_state import exclusive_stdin_active
+from surfaces.interactive_shell.command_registry.model.presentation import render_current_models
 from surfaces.interactive_shell.command_registry.model.switching import (
     _provider_allows_custom_models,
     restore_default_model,
@@ -17,40 +19,64 @@ from surfaces.interactive_shell.command_registry.model.switching import (
 )
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING, render_models_table
-from surfaces.interactive_shell.ui.components.choice_menu import (
+from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
+from surfaces.shared.llm_setup.provider_choices import (
+    OTHER_PROVIDER_SELECTION,
+    focused_setup_provider_options,
+    other_setup_provider_options,
+)
+from surfaces.shared.terminal.components.choice_menu import (
     CRUMB_SEP,
+    print_valid_choice_list,
     repl_choose_one,
-    repl_section_break,
     repl_tty_interactive,
 )
 
 _ROOT = "/model"  # breadcrumb root label
 
+_MODEL_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "list models from connected providers"),
+    ("show", "show active provider and models"),
+    ("set", "switch provider  ·  /model set <provider> [model]"),
+    ("restore", "restore the active provider's default reasoning model"),
+    ("toolcall", "manage toolcall model for the active provider"),
+)
+_SET_USAGE = "/model set <provider> [model] [--toolcall-model <model>]"
+
 
 def _provider_menu_choices() -> list[tuple[str, str]]:
-    from surfaces.cli.wizard.config import SUPPORTED_PROVIDERS
-
-    current_provider = (os.getenv("LLM_PROVIDER", "anthropic") or "anthropic").strip().lower()
+    current_provider = (os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
     options: list[tuple[str, str]] = []
-    for provider in SUPPORTED_PROVIDERS:
+    for provider in focused_setup_provider_options():
+        suffix = "*" if provider.value == current_provider else ""
+        options.append((provider.value, f"{provider.value}{suffix}"))
+    suffix = "*" if current_provider not in {value for value, _label in options} else ""
+    options.append((OTHER_PROVIDER_SELECTION, f"other provider{suffix}"))
+    return options
+
+
+def _other_provider_menu_choices() -> list[tuple[str, str]]:
+    current_provider = (os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
+    options: list[tuple[str, str]] = []
+    for provider in other_setup_provider_options():
         suffix = "*" if provider.value == current_provider else ""
         options.append((provider.value, f"{provider.value}{suffix}"))
     return options
 
 
-def _reasoning_model_menu_choices(provider: object) -> list[tuple[str, str]]:
-    model_options = list(getattr(provider, "models", ()))
-    choices: list[tuple[str, str]] = [
-        ("__provider_default__", "provider default (one step)"),
-    ]
-    for option in model_options:
-        value = str(getattr(option, "value", ""))
-        display = value if value else "cli-default"
-        choices.append((value, display))
-    if _provider_allows_custom_models(provider):
-        choices.append(("__custom__", "custom model ID"))
-    return choices
+def _choose_provider_value(*, title: str, breadcrumb: str) -> str | None:
+    provider_value = repl_choose_one(
+        title=title,
+        breadcrumb=breadcrumb,
+        choices=_provider_menu_choices(),
+    )
+    if provider_value != OTHER_PROVIDER_SELECTION:
+        return provider_value
+    return repl_choose_one(
+        title="other provider",
+        breadcrumb=f"{breadcrumb}{CRUMB_SEP}other",
+        choices=_other_provider_menu_choices(),
+    )
 
 
 def _toolcall_model_menu_choices(provider: object) -> list[tuple[str, str]]:
@@ -82,95 +108,13 @@ def _prompt_custom_model_id(console: Console, provider_value: str = "provider") 
     return value if value else None
 
 
-def _interactive_set_provider(console: Console) -> bool | None:
-    from surfaces.cli.wizard.config import PROVIDER_BY_VALUE
-
-    crumb_set = f"{_ROOT}{CRUMB_SEP}set"
-    while True:
-        provider_value = repl_choose_one(
-            title="LLM provider",
-            breadcrumb=crumb_set,
-            choices=_provider_menu_choices(),
-        )
-        if provider_value is None:
-            return None
-        provider = PROVIDER_BY_VALUE.get(provider_value)
-        if provider is None:
-            return False
-
-        crumb_model = f"{crumb_set}{CRUMB_SEP}{provider_value}"
-        while True:
-            reasoning_choice = repl_choose_one(
-                title="reasoning model",
-                breadcrumb=crumb_model,
-                choices=_reasoning_model_menu_choices(provider),
-            )
-            if reasoning_choice is None:
-                break
-
-            if reasoning_choice == "__custom__":
-                custom = _prompt_custom_model_id(console, provider.value)
-                if custom is None:
-                    continue
-                reasoning_choice = custom
-
-            model_choice = (
-                None if reasoning_choice == "__provider_default__" else str(reasoning_choice)
-            )
-            toolcall_model: str | None = None
-            # Default reasoning: switch provider + default reasoning only — do not
-            # prompt for toolcall (matches non-interactive `/model set <provider>`).
-            if provider.toolcall_model_env and reasoning_choice != "__provider_default__":
-                crumb_tc = f"{crumb_model}{CRUMB_SEP}toolcall"
-                while True:
-                    toolcall_value = repl_choose_one(
-                        title="toolcall model",
-                        breadcrumb=crumb_tc,
-                        choices=_toolcall_model_menu_choices(provider),
-                    )
-                    if toolcall_value is None:
-                        return None
-                    if toolcall_value == "__keep__":
-                        break
-                    if toolcall_value == "__match_reasoning__":
-                        toolcall_model = model_choice or provider.default_model
-                        break
-                    if toolcall_value == "__custom__":
-                        custom_tc = _prompt_custom_model_id(console, provider.value)
-                        if custom_tc is None:
-                            continue
-                        toolcall_model = custom_tc
-                        break
-                    toolcall_model = str(toolcall_value)
-                    break
-
-            return switch_llm_provider(
-                provider.value,
-                console,
-                model=model_choice,
-                toolcall_model=toolcall_model,
-            )
-
-
-def _interactive_restore_provider(console: Console) -> bool | None:
-    provider_value = repl_choose_one(
-        title="LLM provider",
-        breadcrumb=f"{_ROOT}{CRUMB_SEP}restore",
-        choices=_provider_menu_choices(),
-    )
-    if provider_value is None:
-        return None
-    return restore_default_model(provider_value, console)
-
-
 def _interactive_set_toolcall(console: Console) -> bool | None:
-    from surfaces.cli.wizard.config import PROVIDER_BY_VALUE
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
     crumb_tc = f"{_ROOT}{CRUMB_SEP}toolcall"
-    provider_value = repl_choose_one(
+    provider_value = _choose_provider_value(
         title="LLM provider",
         breadcrumb=crumb_tc,
-        choices=_provider_menu_choices(),
     )
     if provider_value is None:
         return None
@@ -204,53 +148,12 @@ def _interactive_set_toolcall(console: Console) -> bool | None:
     return switch_toolcall_model(str(model_value), console, provider_name=provider.value)
 
 
-def _interactive_model_menu(session: Session, console: Console) -> bool:
-    while True:
-        action = repl_choose_one(
-            title="Select Model and Effort",
-            breadcrumb=f"{_ROOT}",
-            choices=[
-                ("show", "show"),
-                ("set", "set"),
-                ("restore", "restore"),
-                ("toolcall", "toolcall"),
-                ("done", "done"),
-            ],
-        )
-        if action is None or action == "done":
-            return True
-        if action == "show":
-            repl_section_break(console)
-            render_models_table(console, repl_data.load_llm_settings())
-            repl_section_break(console)
-            continue
-        if action == "set":
-            switched = _interactive_set_provider(console)
-            if switched is None:
-                continue
-            if not switched:
-                session.mark_latest(ok=False, kind="slash")
-                repl_section_break(console)
-                continue
-            return True
-        if action == "restore":
-            restored = _interactive_restore_provider(console)
-            if restored is None:
-                continue
-            if not restored:
-                session.mark_latest(ok=False, kind="slash")
-                repl_section_break(console)
-                continue
-            return True
-        if action == "toolcall":
-            switched = _interactive_set_toolcall(console)
-            if switched is None:
-                continue
-            if not switched:
-                session.mark_latest(ok=False, kind="slash")
-                repl_section_break(console)
-                continue
-            return True
+def _interactive_model_menu(_session: Session, console: Console) -> bool:
+    from surfaces.shared.llm_setup.connection import prompt_connection
+    from surfaces.shared.llm_setup.model_picker import choose_model
+
+    choose_model(console, connect=lambda: prompt_connection(console))
+    return True
 
 
 def parse_model_set_args(args: list[str]) -> tuple[str, str | None, str | None]:
@@ -287,25 +190,54 @@ def parse_model_set_args(args: list[str]) -> tuple[str, str | None, str | None]:
     return provider, reasoning_model, toolcall_model
 
 
+def _set_without_provider(session: Session, console: Console) -> bool:
+    """Use the direct picker only when the turn owns stdin; otherwise print usage."""
+    if repl_tty_interactive() and exclusive_stdin_active(session):
+        return _interactive_model_menu(session, console)
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
+
+    console.print(f"[{DIM}]usage:[/] {escape(_SET_USAGE)}")
+    print_valid_choice_list(console, title="valid providers:", choices=sorted(PROVIDER_BY_VALUE))
+    session.mark_latest(ok=False, kind="slash")
+    return True
+
+
 def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
     if not args and repl_tty_interactive():
-        return _interactive_model_menu(session, console)
+        # User-typed bare ``/model`` reserves exclusive stdin and opens the
+        # picker. Agent ``slash_invoke`` runs without that reservation — opening
+        # the picker against the live prompt races CPR into the composer and
+        # stalls SessionGoal turns (shell-load dogfood H3). Show settings
+        # instead; interactive switch stays on typed ``/model`` or ``/model set``.
+        if exclusive_stdin_active(session):
+            return _interactive_model_menu(session, console)
+        render_current_models(console)
+        return True
 
     sub = (args[0].lower() if args else "show").strip()
 
+    if sub == "list":
+        from surfaces.shared.llm_setup.model_picker import render_models
+
+        render_models(console)
+        return True
+
     if sub == "show":
-        render_models_table(console, repl_data.load_llm_settings())
+        render_current_models(console)
         return True
 
     if sub == "toolcall":
         if len(args) >= 2 and args[1].lower() == "show":
-            render_models_table(console, repl_data.load_llm_settings())
+            render_current_models(console)
             return True
-        if len(args) >= 2 and args[1].lower() in ("set", "use", "switch"):
-            if len(args) < 3:
-                console.print(f"[{DIM}]usage:[/] /model toolcall set <model>")
-                return True
+        if len(args) >= 3 and args[1].lower() in ("set", "use", "switch"):
             switch_toolcall_model(args[2], console)
+            return True
+        # No model named. A turn that owns stdin collects one the way the menu
+        # does, so "/model toolcall" asks instead of printing usage and closing.
+        if repl_tty_interactive() and exclusive_stdin_active(session):
+            if _interactive_set_toolcall(console) is False:
+                session.mark_latest(ok=False, kind="slash")
             return True
         console.print(
             f"[{DIM}]usage:[/] /model toolcall set <model> "
@@ -318,34 +250,34 @@ def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
             console.print(f"[{DIM}]usage:[/] /model restore [provider]")
             session.mark_latest(ok=False, kind="slash")
             return True
-        provider_name = args[1] if len(args) == 2 else os.getenv("LLM_PROVIDER", "anthropic")
+        from surfaces.shared.llm_setup.model_choices import active_model
+
+        provider_name = args[1] if len(args) == 2 else active_model()[0]
         restored = restore_default_model(provider_name, console)
         if not restored:
             session.mark_latest(ok=False, kind="slash")
         return True
 
     if sub in ("set", "use", "switch"):
+        if len(args) == 1:
+            return _set_without_provider(session, console)
         try:
             provider_name, reasoning_model, tc_model = parse_model_set_args(args[1:])
         except ValueError as exc:
             console.print()
             console.print(f"[{ERROR}]{escape(str(exc))}[/]")
             console.print()
-            console.print(
-                f"[{DIM}]usage:[/] /model set <provider> [model] [--toolcall-model <model>]"
-            )
+            console.print(f"[{DIM}]usage:[/] {escape(_SET_USAGE)}")
             session.mark_latest(ok=False, kind="slash")
             return True
-        from surfaces.cli.wizard.config import PROVIDER_BY_VALUE
+        from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
-        if provider_name.strip().lower() not in PROVIDER_BY_VALUE:
+        if provider_name.strip().lower() not in {*PROVIDER_BY_VALUE, HOSTED_MODEL_PROVIDER}:
             if tc_model is not None:
                 console.print()
                 console.print(f"[{ERROR}]--toolcall-model requires an explicit provider[/]")
                 console.print()
-                console.print(
-                    f"[{DIM}]usage:[/] /model set <provider> [model] [--toolcall-model <model>]"
-                )
+                console.print(f"[{DIM}]usage:[/] {escape(_SET_USAGE)}")
                 session.mark_latest(ok=False, kind="slash")
                 return True
             model_value = (
@@ -375,13 +307,6 @@ def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
     return True
 
 
-_MODEL_FIRST_ARGS: tuple[tuple[str, str], ...] = (
-    ("show", "show active provider and models"),
-    ("set", "switch provider  ·  /model set <provider> [model]"),
-    ("restore", "restore the active provider's default reasoning model"),
-    ("toolcall", "manage toolcall model for the active provider"),
-)
-
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
         "/model",
@@ -389,14 +314,16 @@ COMMANDS: list[SlashCommand] = [
         _cmd_model,
         usage=(
             "/model",
+            "/model list",
             "/model show",
             "/model set <provider> [model] [--toolcall-model <model>]",
             "/model restore [provider]",
             "/model toolcall set <model>",
         ),
         notes=(
-            "In a TTY, bare /model opens an interactive menu.",
-            "The menu stays open after show actions and closes after set, restore, or toolcall changes.",
+            "Typed bare /model opens connected model choices; "
+            "agent slash_invoke /model shows current settings.",
+            "Selecting a row activates it. Esc leaves the active provider and model unchanged.",
         ),
         first_arg_completions=_MODEL_FIRST_ARGS,
     ),

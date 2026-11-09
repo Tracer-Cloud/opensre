@@ -97,7 +97,11 @@ def test_query_metrics_uses_query_api_when_configured(monkeypatch) -> None:
             }
         )
 
+    def _fake_get(_url: str, **_kwargs: Any) -> _FakeHTTPResponse:
+        return _FakeHTTPResponse({"status": "success", "data": {"temporality": "cumulative"}})
+
     monkeypatch.setattr("integrations.signoz.client.httpx.post", _fake_post)
+    monkeypatch.setattr("integrations.signoz.client.httpx.get", _fake_get)
 
     config = SigNozConfig(url="http://localhost:8080", api_key="test-key")
     result = SigNozClient(config).query_metrics(metric_name="cpu_usage", service="payments")
@@ -109,6 +113,63 @@ def test_query_metrics_uses_query_api_when_configured(monkeypatch) -> None:
     assert captured["url"].endswith("/api/v5/query_range")
     headers = captured["kwargs"]["headers"]
     assert headers["SigNoz-Api-Key"] == "test-key"
+    assert (
+        captured["kwargs"]["json"]["compositeQuery"]["queries"][0]["spec"]["aggregations"][0][
+            "temporality"
+        ]
+        == "cumulative"
+    )
+
+
+def test_query_metrics_resolves_real_temporality_from_metadata(monkeypatch) -> None:
+    """A metric queried with the wrong temporality returns zero rows from the
+    backend even though the metric has real data -- the query must use
+    whatever temporality the metric was actually ingested with."""
+    captured: dict[str, Any] = {}
+
+    def _fake_get(_url: str, **kwargs: Any) -> _FakeHTTPResponse:
+        assert kwargs["params"]["metricName"] == "payment_errors_total"
+        return _FakeHTTPResponse({"status": "success", "data": {"temporality": "delta"}})
+
+    def _fake_post(_url: str, **kwargs: Any) -> _FakeHTTPResponse:
+        captured["payload"] = kwargs.get("json")
+        return _FakeHTTPResponse(
+            {"status": "success", "data": {"type": "time_series", "data": {"results": []}}}
+        )
+
+    monkeypatch.setattr("integrations.signoz.client.httpx.get", _fake_get)
+    monkeypatch.setattr("integrations.signoz.client.httpx.post", _fake_post)
+
+    config = SigNozConfig(url="http://localhost:8080", api_key="test-key")
+    SigNozClient(config).query_metrics(metric_name="payment_errors_total")
+
+    aggregation = captured["payload"]["compositeQuery"]["queries"][0]["spec"]["aggregations"][0]
+    assert aggregation["temporality"] == "delta"
+
+
+def test_query_metrics_falls_back_to_unspecified_when_metadata_lookup_fails(monkeypatch) -> None:
+    """A metadata lookup failure (network error, metric not found, etc.) must not
+    block the metrics query itself -- fall back to the prior default instead."""
+    captured: dict[str, Any] = {}
+
+    def _fake_get(_url: str, **_kwargs: Any) -> _FakeHTTPResponse:
+        raise httpx.ConnectError("connection refused")
+
+    def _fake_post(_url: str, **kwargs: Any) -> _FakeHTTPResponse:
+        captured["payload"] = kwargs.get("json")
+        return _FakeHTTPResponse(
+            {"status": "success", "data": {"type": "time_series", "data": {"results": []}}}
+        )
+
+    monkeypatch.setattr("integrations.signoz.client.httpx.get", _fake_get)
+    monkeypatch.setattr("integrations.signoz.client.httpx.post", _fake_post)
+
+    config = SigNozConfig(url="http://localhost:8080", api_key="test-key")
+    result = SigNozClient(config).query_metrics(metric_name="cpu_usage")
+
+    assert result["available"] is True
+    aggregation = captured["payload"]["compositeQuery"]["queries"][0]["spec"]["aggregations"][0]
+    assert aggregation["temporality"] == "unspecified"
 
 
 def test_query_metrics_handles_empty_aggregation_series(monkeypatch) -> None:
@@ -147,6 +208,10 @@ def test_query_metrics_handles_not_found_via_metrics_api(monkeypatch) -> None:
         )
 
     monkeypatch.setattr("integrations.signoz.client.httpx.post", _fake_post)
+    monkeypatch.setattr(
+        "integrations.signoz.client.httpx.get",
+        lambda *_a, **_kw: _FakeHTTPResponse({"status": "success", "data": {}}),
+    )
 
     config = SigNozConfig(url="http://localhost:3301", api_key="test-key")
     result = SigNozClient(config).query_metrics(metric_name="cpu_usage")

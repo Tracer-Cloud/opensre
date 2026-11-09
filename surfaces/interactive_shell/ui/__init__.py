@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from platform.terminal.theme import (
+from infrastructure.terminal.theme import (
     ANSI_DIM,
     ANSI_RESET,
     BG,
@@ -13,6 +13,7 @@ from platform.terminal.theme import (
     DIM_COUNTER_ANSI,
     ERROR,
     HIGHLIGHT,
+    INPUT_SURFACE,
     MARKDOWN_THEME,
     PROMPT_ACCENT_ANSI,
     PROMPT_FRAME_ANSI,
@@ -20,32 +21,29 @@ from platform.terminal.theme import (
     TEXT,
     WARNING,
 )
-from surfaces.interactive_shell.ui.banner import render_ready_box
-from surfaces.interactive_shell.ui.components import (
+from surfaces.interactive_shell.ui.poster import refresh_welcome_poster, repl_render_launch_poster
+from surfaces.shared.terminal.banner import render_launch_banner
+from surfaces.shared.terminal.components import (
     print_valid_choice_list,
     repl_choose_one,
     repl_section_break,
     repl_tty_interactive,
 )
-from surfaces.interactive_shell.ui.components.rendering import (
+from surfaces.shared.terminal.components.rendering import (
     print_repl_json,
     print_repl_table,
-    refresh_welcome_poster,
     repl_print,
     repl_table,
 )
 
 if TYPE_CHECKING:
-    from surfaces.interactive_shell.ui.agents.agents_view import (
-        _build_agents_table,
-        render_agents_table,
-    )
     from surfaces.interactive_shell.ui.streaming import (
         STREAM_LABEL_ANSWER,
         STREAM_LABEL_ASSISTANT,
         stream_to_console,
     )
-    from surfaces.interactive_shell.ui.tables import (
+    from surfaces.shared.terminal.tables import (
+        COMMAND_OUTPUT_GUTTER_WIDTH,
         MCP_INTEGRATION_SERVICES,
         ColumnDef,
         print_command_output,
@@ -60,20 +58,19 @@ if TYPE_CHECKING:
 # Heavy re-exports resolved lazily so importing ``ui`` (done on every REPL boot
 # via the prompt/completion path) does not force the table + streaming stack.
 _LAZY_SUBMODULE_EXPORTS: dict[str, str] = {
-    "_build_agents_table": "surfaces.interactive_shell.ui.agents",
-    "render_agents_table": "surfaces.interactive_shell.ui.agents",
     "STREAM_LABEL_ANSWER": "surfaces.interactive_shell.ui.streaming",
     "STREAM_LABEL_ASSISTANT": "surfaces.interactive_shell.ui.streaming",
     "stream_to_console": "surfaces.interactive_shell.ui.streaming",
-    "MCP_INTEGRATION_SERVICES": "surfaces.interactive_shell.ui.tables",
-    "ColumnDef": "surfaces.interactive_shell.ui.tables",
-    "print_command_output": "surfaces.interactive_shell.ui.tables",
-    "render_integrations_table": "surfaces.interactive_shell.ui.tables",
-    "render_mcp_table": "surfaces.interactive_shell.ui.tables",
-    "render_models_table": "surfaces.interactive_shell.ui.tables",
-    "render_table": "surfaces.interactive_shell.ui.tables",
-    "render_tools_table": "surfaces.interactive_shell.ui.tables",
-    "resolve_provider_models": "surfaces.interactive_shell.ui.tables",
+    "COMMAND_OUTPUT_GUTTER_WIDTH": "surfaces.shared.terminal.tables",
+    "MCP_INTEGRATION_SERVICES": "surfaces.shared.terminal.tables",
+    "ColumnDef": "surfaces.shared.terminal.tables",
+    "print_command_output": "surfaces.shared.terminal.tables",
+    "render_integrations_table": "surfaces.shared.terminal.tables",
+    "render_mcp_table": "surfaces.shared.terminal.tables",
+    "render_models_table": "surfaces.shared.terminal.tables",
+    "render_table": "surfaces.shared.terminal.tables",
+    "render_tools_table": "surfaces.shared.terminal.tables",
+    "resolve_provider_models": "surfaces.shared.terminal.tables",
 }
 
 
@@ -91,6 +88,7 @@ __all__ = [
     "ANSI_RESET",
     "BG",
     "BOLD_BRAND",
+    "COMMAND_OUTPUT_GUTTER_WIDTH",
     "ColumnDef",
     "DEVICE_CODE",
     "DEVICE_CODE_ANSI",
@@ -98,6 +96,7 @@ __all__ = [
     "DIM_COUNTER_ANSI",
     "ERROR",
     "HIGHLIGHT",
+    "INPUT_SURFACE",
     "MCP_INTEGRATION_SERVICES",
     "MARKDOWN_THEME",
     "PROMPT_ACCENT_ANSI",
@@ -107,14 +106,13 @@ __all__ = [
     "STREAM_LABEL_ASSISTANT",
     "TEXT",
     "WARNING",
-    "_build_agents_table",
     "print_valid_choice_list",
     "print_command_output",
     "print_repl_json",
     "print_repl_table",
-    "render_agents_table",
     "refresh_welcome_poster",
-    "render_ready_box",
+    "repl_render_launch_poster",
+    "render_launch_banner",
     "render_integrations_table",
     "render_mcp_table",
     "render_models_table",

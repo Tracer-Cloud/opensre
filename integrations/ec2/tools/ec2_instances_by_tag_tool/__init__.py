@@ -10,13 +10,16 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.aws.availability import ec2_available_or_backend
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 from integrations.aws.topology_helper import (
     build_ec2_summary,
     extract_ec2_instances_params,
+)
+from integrations.ec2.tools.ec2_instances_by_tag_tool._evidence import (
+    map_ec2_instances_by_tag,
 )
 
 logger = logging.getLogger(__name__)
@@ -88,6 +91,7 @@ def _summarize_instance(raw: dict[str, Any]) -> dict[str, Any]:
     },
     is_available=_is_available,
     extract_params=extract_ec2_instances_params,
+    evidence_mapper=map_ec2_instances_by_tag,
 )
 def ec2_instances_by_tag(
     tier: str = "",

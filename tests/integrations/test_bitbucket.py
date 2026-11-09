@@ -1,10 +1,11 @@
 """Unit tests for the Bitbucket integration module."""
 
-from integrations.bitbucket import (
+from integrations.bitbucket.client import BitbucketValidationResult
+from integrations.bitbucket.config import (
     BitbucketConfig,
-    BitbucketValidationResult,
     bitbucket_config_from_env,
     build_bitbucket_config,
+    classify,
 )
 
 
@@ -108,3 +109,26 @@ class TestBitbucketValidationResult:
     def test_error_result(self) -> None:
         result = BitbucketValidationResult(ok=False, detail="Auth failed.")
         assert result.ok is False
+
+
+class TestBitbucketCatalogClassification:
+    """Characterize the catalog-facing Bitbucket configuration contract."""
+
+    def test_classify_preserves_normalized_credentials_and_record_id(self) -> None:
+        config, integration_type = classify(
+            {
+                "workspace": "  platform  ",
+                "username": "build-bot",
+                "app_password": "secret",
+                "base_url": "https://bitbucket.example.test/2.0/",
+                "max_results": 12,
+            },
+            "integration-123",
+        )
+
+        assert integration_type == "bitbucket"
+        assert config is not None
+        assert config.workspace == "platform"
+        assert config.base_url == "https://bitbucket.example.test/2.0"
+        assert config.max_results == 12
+        assert config.integration_id == "integration-123"

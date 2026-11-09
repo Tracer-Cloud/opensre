@@ -1,4 +1,4 @@
-"""Runtime-facts section of the assistant environment block.
+"""Runtime facts rendered as quotable prompt text.
 
 Renders the ``capture_runtime_facts()`` dict into verbatim-quotable prompt
 strings plus anti-hallucination guidance. Phrased for quote-verbatim recall:
@@ -8,11 +8,13 @@ when the marker was empty.
 
 Live facts (``now_iso``, uptime, disk, memory) are rendered separately from
 session-static facts so the system/env prefix can stay cache-stable across
-turns.
+turns. Uptime, disk and memory describe this host, so a caller can render the
+clock alone.
 """
 
 from __future__ import annotations
 
+import datetime as _dt
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -23,11 +25,15 @@ _BLOCKED_COMMANDS = ", ".join(f"`{command}`" for command in BLOCKED_INTROSPECTIO
 _STATIC_GUIDANCE = (
     ". When the user asks which OpenSRE version is running, reply with the "
     "full version string above verbatim — including any parenthetical suffix. "
-    "When the user asks for the local timezone name, Python version, process "
+    "When the user asks what environment this process is running in, or for "
+    "the host operating system, local timezone name, Python version, process "
     "id, parent process id, host/pod name, cloud provider or region, "
     "kubeconfig path, or which tools are installed, answer from the strings "
     "above directly, WITHOUT any tool call — these facts are authoritative "
-    "and re-reading them through the sandbox wastes a round-trip. Never run "
+    "and re-reading them through the sandbox wastes a round-trip. Quote the "
+    "host operating system for environment questions; when no cloud provider "
+    "was detected, say so — never invent AWS, GCP, Azure, or a region. Never "
+    "run "
     f"{_BLOCKED_COMMANDS}, and never probe cloud instance metadata over the "
     "network. To list files in the scratchpad or another directory, "
     "use the Python execution sandbox with `pathlib.Path(...).iterdir()` — "
@@ -38,14 +44,29 @@ _STATIC_GUIDANCE = (
     "needs these facts, read `inputs['opensre_runtime']` instead."
 )
 
+# Shared by both live renderings; each names only the facts it renders.
+_LIVE_ANSWER_RULES = (
+    ", answer from the strings above — do NOT guess a date/time from your "
+    "training data. Resolve relative ranges in the request, such as 'the last "
+    "hour', 'today' or 'since yesterday', from the current time above. "
+    f"Never run {_BLOCKED_COMMANDS}. Do NOT invent field names, values, or "
+    "numbers not present above."
+)
+
+_CLOCK_GUIDANCE = (
+    ". When the user asks for the current date, time, day of the week, or "
+    "timezone offset embedded in the timestamp"
+    f"{_LIVE_ANSWER_RULES}"
+)
+
 _LIVE_GUIDANCE = (
     ". When the user asks for the current date, time, day of the week, "
-    "timezone offset embedded in the timestamp, uptime, disk or memory usage, "
-    "answer from the strings above — do NOT guess a date/time from your "
-    "training data. Never run "
-    f"{_BLOCKED_COMMANDS}. Do NOT invent field names, values, or numbers not "
-    "present above."
+    "timezone offset embedded in the timestamp, uptime, disk or memory usage"
+    f"{_LIVE_ANSWER_RULES}"
 )
+
+#: Day names by ``date.weekday()``; ``strftime("%A")`` would follow the locale.
+_WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 FactProducer = Callable[[Mapping[str, Any]], str | None]
 
@@ -81,6 +102,18 @@ def _version_line(runtime: Mapping[str, Any]) -> str | None:
     build = _clean_str(runtime, "opensre_build")
     display = f"{version} ({build})" if build else version
     return f"OpenSRE version is {display}"
+
+
+def _now_line(runtime: Mapping[str, Any]) -> str | None:
+    """The time as of this request, with its UTC offset and weekday; models misjudge the day."""
+    now = _clean_str(runtime, "now_iso")
+    if not now:
+        return None
+    try:
+        stamp = f"{now} ({_WEEKDAYS[_dt.datetime.fromisoformat(now).weekday()]})"
+    except ValueError:
+        stamp = now
+    return f"current time is {stamp}, as of this request"
 
 
 def _uptime_line(runtime: Mapping[str, Any]) -> str | None:
@@ -126,6 +159,14 @@ def _tools_line(runtime: Mapping[str, Any]) -> str | None:
     return f"installed tools on PATH are {', '.join(present)}"
 
 
+def _host_os_line(runtime: Mapping[str, Any]) -> str | None:
+    """Host OS — always stated when the key was probed."""
+    if "os_family" not in runtime:
+        return None
+    family = _clean_str(runtime, "os_family")
+    return f"host operating system is {family}" if family else None
+
+
 def _cloud_line(runtime: Mapping[str, Any]) -> str | None:
     """Cloud identity, or an explicit statement that none was detected.
 
@@ -163,13 +204,17 @@ def _workspace_line(runtime: Mapping[str, Any]) -> str | None:
     repo = _clean_str(runtime, "workspace_repo")
     if repo:
         return (
-            f"this OpenSRE workspace repo is {repo} — treat “our” / “this repo” "
-            f"as {repo} unless the user names a different repository"
+            f"this OpenSRE workspace default repo is {repo} — at session start, "
+            f"treat “our” / “this repo” as {repo} unless the user names a different "
+            "repository; session repository context can select another active repo, "
+            "and this default does not limit how many repositories long-term memory "
+            "can retain"
         )
     return (
-        "no workspace git/GitHub repo was detected for this process — ask which "
-        "repository the user means rather than assuming Tracer-Cloud/opensre or "
-        "any other default"
+        "no workspace git/GitHub repo was detected for this process — use the "
+        "organization's primary repository from REPOSITORY PREFERENCES when one "
+        "matches; otherwise ask which repository the user means rather than "
+        "assuming Tracer-Cloud/opensre or any other default"
     )
 
 
@@ -187,6 +232,7 @@ def _capability_warnings_line(runtime: Mapping[str, Any]) -> str | None:
 _STATIC_FACT_PRODUCERS: tuple[FactProducer, ...] = (
     _version_line,
     _str_fact("runtime_env", "runtime environment is {}"),
+    _host_os_line,
     _str_fact("hostname", "host name is {}"),
     _str_fact("tz_name", "local timezone is {}"),
     _str_fact("python_version", "Python interpreter version is {}"),
@@ -199,8 +245,10 @@ _STATIC_FACT_PRODUCERS: tuple[FactProducer, ...] = (
     _str_fact("scratchpad_dir", "scratchpad directory is {}"),
 )
 
+_CLOCK_FACT_PRODUCERS: tuple[FactProducer, ...] = (_now_line,)
+
 _LIVE_FACT_PRODUCERS: tuple[FactProducer, ...] = (
-    _str_fact("now_iso", "current time is {}"),
+    *_CLOCK_FACT_PRODUCERS,
     _uptime_line,
     _pair_line("disk_used_percent", "disk_free_gb", "root disk is {}% used with {} GB free"),
     _pair_line(
@@ -240,19 +288,16 @@ def render_static_runtime_facts(runtime: Mapping[str, Any]) -> str:
     return _render_facts(_STATIC_FACT_PRODUCERS, runtime, guidance=_STATIC_GUIDANCE)
 
 
-def render_live_runtime_facts(runtime: Mapping[str, Any]) -> str:
-    """Per-turn live facts (time/uptime/disk/memory) for a late prompt block."""
-    return _render_facts(_LIVE_FACT_PRODUCERS, runtime, guidance=_LIVE_GUIDANCE)
+def render_live_runtime_facts(runtime: Mapping[str, Any], *, host_measurements: bool) -> str:
+    """Per-turn live facts for a late prompt block: the clock, and this host's readings if allowed."""
+    if host_measurements:
+        return _render_facts(_LIVE_FACT_PRODUCERS, runtime, guidance=_LIVE_GUIDANCE)
+    return _render_facts(_CLOCK_FACT_PRODUCERS, runtime, guidance=_CLOCK_GUIDANCE)
 
 
-def render_runtime_facts(runtime: Mapping[str, Any]) -> str:
-    """Compatibility: static facts only (live facts use :func:`render_live_runtime_facts`)."""
-    return render_static_runtime_facts(runtime)
-
-
-def build_live_runtime_facts_block(runtime: Mapping[str, Any]) -> str:
+def build_live_runtime_facts_block(runtime: Mapping[str, Any], *, host_measurements: bool) -> str:
     """Late prompt section carrying live facts, or ``""`` when none."""
-    body = render_live_runtime_facts(runtime)
+    body = render_live_runtime_facts(runtime, host_measurements=host_measurements)
     if not body:
         return ""
     return f"--- Live runtime facts ---\n{body}\n\n"
@@ -261,6 +306,5 @@ def build_live_runtime_facts_block(runtime: Mapping[str, Any]) -> str:
 __all__ = [
     "build_live_runtime_facts_block",
     "render_live_runtime_facts",
-    "render_runtime_facts",
     "render_static_runtime_facts",
 ]

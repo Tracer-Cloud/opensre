@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from core.context_budget import (
     _TOKENS_PER_CHAR,
+    EVICTED_TOOL_RESULT_TEXT,
     context_budget_ceiling_for_model,
     enforce_context_budget,
     estimate_message_tokens,
@@ -17,8 +18,8 @@ class TestGpt56ContextWindow:
     """GPT-5.6 ships a 1M-token window, unlike the 128k-pinned gpt-5 family (#3931)."""
 
     def test_sol_reclaims_the_million_token_window(self) -> None:
-        # 1_000_000 window - 16_000 response headroom.
-        assert context_budget_ceiling_for_model("gpt-5.6-sol") == 984_000
+        # 1_000_000 window - 25_000 response headroom.
+        assert context_budget_ceiling_for_model("gpt-5.6-sol") == 975_000
 
     def test_all_tiers_share_the_family_window(self) -> None:
         sol = context_budget_ceiling_for_model("gpt-5.6-sol")
@@ -35,9 +36,48 @@ class TestGpt56ContextWindow:
         )
 
     def test_older_gpt5_models_keep_their_conservative_pin(self) -> None:
-        # 128_000 window - 16_000 response headroom.
-        assert context_budget_ceiling_for_model("gpt-5.5") == 112_000
-        assert context_budget_ceiling_for_model("gpt-5") == 112_000
+        # 128_000 window - 25_000 response headroom.
+        assert context_budget_ceiling_for_model("gpt-5.5") == 103_000
+        assert context_budget_ceiling_for_model("gpt-5") == 103_000
+
+
+class TestGpt61ContextWindow:
+    """GPT-6.1 Sol's input cap is 922k inside a 1.05M window."""
+
+    def test_sol_stops_at_the_published_input_cap(self) -> None:
+        # Stored window 947_000 reserves the 25_000 output budget, leaving
+        # the 922_000 maximum input.
+        assert context_budget_ceiling_for_model("gpt-6.1-sol") == 922_000
+        assert context_budget_ceiling_for_model("openai/gpt-6.1-sol") == 922_000
+
+    def test_gpt61_is_not_shadowed_by_the_gpt5_catch_all(self) -> None:
+        assert context_budget_ceiling_for_model("gpt-6.1-sol") > context_budget_ceiling_for_model(
+            "gpt-5.5"
+        )
+
+
+class TestGpt54ContextWindow:
+    """GPT-5.4 is the hosted OpenAI default and must not inherit the 128k gpt-5 pin."""
+
+    def test_default_mini_reclaims_the_million_token_window(self) -> None:
+        assert context_budget_ceiling_for_model("gpt-5.4-mini") == 975_000
+        assert context_budget_ceiling_for_model("gpt-5.4") == 975_000
+
+    def test_gpt54_is_not_shadowed_by_the_gpt5_catch_all(self) -> None:
+        assert context_budget_ceiling_for_model("gpt-5.4-mini") > context_budget_ceiling_for_model(
+            "gpt-5.5"
+        )
+
+
+class TestGeminiContextWindow:
+    """Gemini 1.5+ ships a 1M-token window; unknown models used to pin 128k."""
+
+    def test_hosted_and_vertex_gemini_reclaim_the_million_token_window(self) -> None:
+        # 1_000_000 window - 25_000 response headroom.
+        ceiling = context_budget_ceiling_for_model("gemini-3.1-pro-preview")
+        assert ceiling == 975_000
+        assert context_budget_ceiling_for_model("gemini-2.5-pro") == ceiling
+        assert context_budget_ceiling_for_model("gemini-3-flash-preview") == ceiling
 
 
 def test_strip_internal_message_markers_removes_opensre_keys() -> None:
@@ -220,4 +260,12 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
     enforce_context_budget(messages, tools=tools, ceiling=ceiling)
 
     assert estimate_message_tokens(messages, tools=tools) <= ceiling
-    assert len(messages) < 5
+    # The calls stay and their outputs become stubs, so the model still sees
+    # that it ran them and can run them again.
+    assert len(messages) == 5
+    results = [block for message in messages[2::2] for block in message["content"]]
+    assert all(block["content"] == EVICTED_TOOL_RESULT_TEXT for block in results)
+    assert [block["id"] for message in messages[1::2] for block in message["content"]] == [
+        "t1",
+        "t2",
+    ]

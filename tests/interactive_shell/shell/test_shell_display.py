@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
-from tools.interactive_shell.shell.display import format_shell_command_for_display
+from tools.interactive_shell.shell.display import (
+    format_shell_command_for_display,
+    summarize_shell_command,
+)
 
 
 def test_single_line_command_is_unchanged() -> None:
     assert format_shell_command_for_display("ls -la") == "ls -la"
+
+
+def test_quiet_row_keeps_a_long_path() -> None:
+    """Copying the ``$`` row must include the whole command, not an ellipsis."""
+    command = (
+        "cat /Users/janvincentfranciszek/.opensre/ci-repair/987221fb5e15/result.md "
+        "/Users/janvincentfranciszek/.opensre/ci-repair/987221fb5e15/worker.log"
+    )
+    shown = summarize_shell_command(command)
+    assert shown == command
+    assert "…" not in shown
 
 
 def test_quoted_heredoc_body_is_collapsed() -> None:

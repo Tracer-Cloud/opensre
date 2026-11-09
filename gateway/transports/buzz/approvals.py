@@ -19,13 +19,13 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from gateway.core.runtime.approvals import (
+from gateway.core.middleware.approvals import (
     MAX_APPROVAL_WAIT_SECONDS,
     ApprovalBroker,
     arguments_preview,
 )
 from gateway.transports.buzz.pending_approvals import PendingApprovals
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
 
 logger = logging.getLogger("gateway")
 

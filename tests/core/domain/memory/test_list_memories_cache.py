@@ -24,7 +24,7 @@ def memory_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Isolate the store per test, and start from a cold cache."""
     directory = tmp_path / "memory"
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(directory))
-    store._parsed_memories.cache_clear()
+    store.parsed_memories.cache_clear()
     return directory
 
 
@@ -125,7 +125,7 @@ def test_one_principals_memories_never_reach_another(
     # Arrange: two stores, same filename, same byte length, same mtime.
     alice = tmp_path / "users" / "U_ALICE" / "memory"
     bob = tmp_path / "users" / "U_BOB" / "memory"
-    store._parsed_memories.cache_clear()
+    store.parsed_memories.cache_clear()
 
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(alice))
     _save("shared-slug", "alice prod cluster is eks-alice")

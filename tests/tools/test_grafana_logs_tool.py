@@ -105,13 +105,15 @@ def test_run_with_backend_returns_logs() -> None:
     assert result["available"] is True
     assert result["total_logs"] == 2
     assert len(result["error_logs"]) == 1
+    assert result["summary"] == "2 log(s) for svc, 1 look like errors"
 
 
 def test_run_returns_unavailable_when_no_client() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = False
     with patch(
-        "integrations.grafana.tools.get_grafana_client_from_credentials", return_value=mock_client
+        "integrations.grafana.tools._helpers.get_grafana_client_from_credentials",
+        return_value=mock_client,
     ):
         result = query_grafana_logs(
             service_name="svc", grafana_endpoint="https://grafana.example.com"
@@ -124,7 +126,8 @@ def test_run_no_loki_datasource() -> None:
     mock_client.is_configured = True
     mock_client.loki_datasource_uid = None
     with patch(
-        "integrations.grafana.tools.get_grafana_client_from_credentials", return_value=mock_client
+        "integrations.grafana.tools._helpers.get_grafana_client_from_credentials",
+        return_value=mock_client,
     ):
         result = query_grafana_logs(
             service_name="svc", grafana_endpoint="https://grafana.example.com"
@@ -144,7 +147,8 @@ def test_run_happy_path() -> None:
         "total_logs": 2,
     }
     with patch(
-        "integrations.grafana.tools.get_grafana_client_from_credentials", return_value=mock_client
+        "integrations.grafana.tools._helpers.get_grafana_client_from_credentials",
+        return_value=mock_client,
     ):
         result = query_grafana_logs(
             service_name="svc", grafana_endpoint="https://grafana.example.com"
@@ -152,6 +156,7 @@ def test_run_happy_path() -> None:
     assert result["available"] is True
     assert result["total_logs"] == 2
     assert len(result["error_logs"]) == 1
+    assert result["summary"] == "2 log(s) for svc, 1 look like errors"
 
 
 def test_run_fallback_to_pipeline_name() -> None:
@@ -165,7 +170,8 @@ def test_run_fallback_to_pipeline_name() -> None:
         {"success": True, "logs": [{"message": "pipeline log"}], "total_logs": 1},
     ]
     with patch(
-        "integrations.grafana.tools.get_grafana_client_from_credentials", return_value=mock_client
+        "integrations.grafana.tools._helpers.get_grafana_client_from_credentials",
+        return_value=mock_client,
     ):
         result = query_grafana_logs(
             service_name="svc",

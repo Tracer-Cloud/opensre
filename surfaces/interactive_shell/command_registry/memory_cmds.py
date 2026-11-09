@@ -15,6 +15,7 @@ from core.domain.memory import (
     memory_path,
     slugify,
 )
+from surfaces.interactive_shell.command_registry.input_collection import can_browse_records
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -22,9 +23,8 @@ from surfaces.interactive_shell.ui import (
     DIM,
     ERROR,
     HIGHLIGHT,
-    print_repl_table,
-    repl_table,
 )
+from surfaces.interactive_shell.ui.memory import render_memories
 
 
 def _disabled_notice(console: Console) -> bool:
@@ -32,7 +32,7 @@ def _disabled_notice(console: Console) -> bool:
     return True
 
 
-def _show_list(console: Console) -> bool:
+def _show_list(session: Session, console: Console) -> bool:
     from core.domain.memory import ensure_memory_store
 
     ensure_memory_store()
@@ -44,23 +44,10 @@ def _show_list(console: Console) -> bool:
         )
         return True
 
-    table = repl_table(title="Long-term memory\n", title_style=BOLD_BRAND)
-    table.add_column("name", style="bold")
-    table.add_column("type", style=DIM)
-    table.add_column("description", overflow="fold")
-    table.add_column("updated", style=DIM)
-    for record in records:
-        table.add_row(
-            escape(record.slug),
-            record.memory_type,
-            escape(record.description),
-            record.updated_at[:10],
-        )
-    print_repl_table(console, table)
+    render_memories(console, records, browse=can_browse_records(session, console))
     console.print(
-        f"[{DIM}]stored unencrypted in {memory_dir()} — edit or delete the files "
-        f"directly, or use[/] [{HIGHLIGHT}]/memory forget <name>[/][{DIM}]. "
-        f"Disable with {OPENSRE_MEMORY_DISABLED_ENV}=1.[/]"
+        f"[{DIM}]stored unencrypted ·[/] [{HIGHLIGHT}]/memory path[/] "
+        f"[{DIM}]·[/] [{HIGHLIGHT}]/memory forget <name>[/]"
     )
     return True
 
@@ -105,9 +92,11 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
     if not memory_enabled():
         return _disabled_notice(console)
     if not args:
-        return _show_list(console)
+        return _show_list(session, console)
 
     sub = args[0].lower()
+    if sub == "list":
+        return _show_list(session, console)
     if sub == "show":
         return _show_one(console, args[1:])
     if sub == "forget":
@@ -115,11 +104,12 @@ def _cmd_memory(session: Session, console: Console, args: list[str]) -> bool:  #
     if sub == "path":
         return _show_path(console)
 
-    console.print(f"[{ERROR}]usage:[/] /memory [show <name>|forget <name>|path]")
+    console.print(f"[{ERROR}]usage:[/] /memory [list|show <name>|forget <name>|path]")
     return True
 
 
 _MEMORY_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("list", "list stored memories"),
     ("show", "print one memory in full (/memory show <name>)"),
     ("forget", "delete one memory (/memory forget <name>)"),
     ("path", "print the memory directory path"),
@@ -132,6 +122,7 @@ COMMANDS: list[SlashCommand] = [
         _cmd_memory,
         usage=(
             "/memory",
+            "/memory list",
             "/memory show <name>",
             "/memory forget <name>",
             "/memory path",
@@ -139,6 +130,7 @@ COMMANDS: list[SlashCommand] = [
         notes=(
             "Memories are plain markdown files under ~/.opensre/memory; "
             "edit or delete them directly at any time.",
+            f"Disable memory with {OPENSRE_MEMORY_DISABLED_ENV}=1.",
         ),
         first_arg_completions=_MEMORY_FIRST_ARGS,
     ),

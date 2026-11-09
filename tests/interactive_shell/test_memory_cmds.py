@@ -34,14 +34,17 @@ def _seed(slug: str = "prod-cluster") -> None:
     )
 
 
-def test_memory_lists_stored_memories() -> None:
+@pytest.mark.parametrize("command", ["/memory", "/memory list"])
+def test_memory_lists_stored_memories(command: str) -> None:
     _seed()
     console, buf = _capture()
-    assert dispatch_slash("/memory", Session(), console) is True
+    assert dispatch_slash(command, Session(), console) is True
     output = buf.getvalue()
     assert "prod-cluster" in output
     assert "Prod cluster is eks-prod-1" in output
     assert "/memory forget" in output
+    assert "/memory path" in output
+    assert "stored unencrypted in" not in output
 
 
 def test_memory_empty_state_message() -> None:
@@ -95,3 +98,94 @@ def test_memory_disabled_notice(monkeypatch: pytest.MonkeyPatch) -> None:
     console, buf = _capture()
     assert dispatch_slash("/memory", Session(), console) is True
     assert "memory is disabled" in buf.getvalue()
+
+
+@pytest.mark.parametrize("width", [40, 80, 160])
+def test_memory_list_preserves_literal_description_and_name_when_narrow(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from rich.cells import cell_len
+
+    monkeypatch.setenv("COLUMNS", str(width))
+    monkeypatch.setenv("TERM", "xterm")
+    slug = "production-checkout-regional-deployment-policy"
+    save_memory(
+        slug=slug,
+        memory_type="investigation_learning",
+        description="[literal] 日本 checkout requires verified rollback evidence.",
+        body="PRIVATE BODY NOT IN LIST",
+    )
+    buf = io.StringIO()
+    dispatch_slash("/memory", Session(), Console(file=buf, width=width))
+    text = buf.getvalue()
+    name_lines = text.splitlines()
+    if "Type:" not in text:
+        header = next(line for line in name_lines if "Name" in line and "Type" in line)
+        name_lines = [line[: header.index("Type")] for line in name_lines]
+    assert slug in "".join("".join(name_lines).split())
+    assert "[literal] 日本 checkout requires verified rollback evidence." in " ".join(text.split())
+    assert "PRIVATE BODY NOT IN LIST" not in text
+    assert "/memory show <name>" in text
+    assert "stored unencrypted" in text
+    assert max(cell_len(line) for line in text.splitlines()) <= width
+    if width == 40:
+        assert "Type:" in text and "Updated:" in text
+
+
+@pytest.mark.parametrize("width", [40, 160])
+def test_memory_list_bounds_description_but_show_preserves_it(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLUMNS", str(width))
+    description = "[literal] " + "日本 evidence " * 10 + "FULL DESCRIPTION END"
+    save_memory(
+        slug="long-description", memory_type="preference", description=description, body="Body"
+    )
+    output = io.StringIO()
+    console = Console(file=output, width=width)
+    dispatch_slash("/memory list", Session(), console)
+    listing = output.getvalue()
+    assert "[literal]" in listing and "…" in listing
+    assert "FULL DESCRIPTION END" not in listing
+    preview = listing[listing.index("[literal]") : listing.index("…") + 1]
+    from rich.cells import cell_len
+
+    assert cell_len(" ".join(preview.split())) <= 80
+    output.seek(0)
+    output.truncate()
+    dispatch_slash("/memory show long-description", Session(), console)
+    assert description in " ".join(output.getvalue().split())
+
+
+@pytest.mark.parametrize("width", [40, 160])
+def test_memory_description_spacing_and_muted_style(
+    monkeypatch: pytest.MonkeyPatch, width: int
+) -> None:
+    from dataclasses import replace
+
+    from infrastructure.terminal.theme import SECONDARY
+    from surfaces.interactive_shell.ui import memory
+    from surfaces.shared.terminal.tables.descriptions import description_details
+
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("COLUMNS", str(width))
+    _seed()
+    record = list_memories()[0]
+    output = io.StringIO()
+    console = Console(file=output, width=width)
+    memory.render_memories(console, [record])
+    lines = output.getvalue().splitlines()
+    description_index = next(i for i, line in enumerate(lines) if "Prod cluster" in line)
+    assert not lines[description_index - 1].strip()
+    assert str(description_details(record.description)[1].style) == str(SECONDARY)
+
+    output.seek(0)
+    output.truncate()
+    memory.render_memories(console, [replace(record, description="  "), record])
+    lines = output.getvalue().splitlines()
+    rows = [i for i, line in enumerate(lines) if line.startswith("  " + record.slug)]
+    previous_metadata_end = rows[0]
+    if any("Updated:" in line for line in lines):
+        previous_metadata_end = next(i for i, line in enumerate(lines) if "Updated:" in line)
+    assert rows[1] - previous_metadata_end == 2

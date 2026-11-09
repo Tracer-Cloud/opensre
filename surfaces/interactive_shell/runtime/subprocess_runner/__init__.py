@@ -1,24 +1,20 @@
 """Execute planned opensre CLI actions.
 
-Pure subprocess execution, planning, and orchestration for shell / synthetic /
+Pure subprocess execution, planning, and orchestration for shell /
 Claude Code / opensre CLI action tools live under ``tools.interactive_shell``
-(``subprocess/``, ``shell/``, ``synthetic/``, ``implementation/``, ``cli/``).
+(``subprocess/``, ``shell/``, ``implementation/``, ``cli/``).
 This package keeps Rich relay helpers in ``task_streaming``, the REPL presenter
-in ``repl_presenter``, and backward-compatible surface adapters such as
-``opensre_cli_runner`` for slash parity and legacy test monkeypatch paths.
+in ``repl_presenter``, and the surface adapter ``opensre_cli_runner`` for slash
+parity. Tests and callers import canonical names from
+``tools.interactive_shell.cli`` rather than underscore aliases here.
 
 Shell command execution lives in ``tools.interactive_shell.shell`` (parsing,
 policy, ``execute_shell_command``, and the ``run_shell_command`` / ``run_cd`` /
-``run_pwd`` runner); it is intentionally not re-exported here. Synthetic test
-execution lives in ``tools.interactive_shell.synthetic`` (the
-``run_synthetic_test`` / ``watch_synthetic_subprocess`` runner), Claude Code
+``run_pwd`` runner); it is intentionally not re-exported here. Claude Code
 implementation execution lives in ``tools.interactive_shell.implementation.claude_code_executor``
-(``run_claude_code_implementation``), and sample-alert / free-text investigation
-execution lives in ``tools.interactive_shell.actions.sample_alert`` /
-``tools.interactive_shell.actions.investigation`` (``run_sample_alert`` /
-``run_text_investigation``); none are re-exported here. Shared stdlib subprocess
-primitives live in ``tools.interactive_shell.subprocess``; Rich stream relay
-remains in ``task_streaming``.
+(``run_claude_code_implementation``); it is not re-exported here. Shared stdlib
+subprocess primitives live in ``tools.interactive_shell.subprocess``; Rich
+stream relay remains in ``task_streaming``.
 
 Public API is stable: all names exported below are importable directly from
 ``subprocess_runner`` and will remain so regardless of internal submodule changes.
@@ -44,19 +40,11 @@ from pathlib import Path
 
 from .background_task_executor import start_background_cli_task
 from .opensre_cli_runner import (
-    _INTERACTIVE_OPENSRE_COMMAND_PATHS,
-    _OPENSRE_BLOCKED_SUBCOMMANDS,
     OpensreCommandClass,
     OpensreExecutionMode,
     OpensreExecutionPlan,
     OpensreRunOutcome,
     OpensreRunResult,
-    _build_opensre_execution_plan,
-    _classify_opensre_command,
-    _is_interactive_wizard,
-    _opensre_confirmation_reason,
-    _run_opensre_foreground,
-    _run_opensre_foreground_streaming,
     build_opensre_cli_argv,
     print_interactive_wizard_handoff,
     run_opensre_cli_command,
@@ -65,13 +53,12 @@ from .opensre_cli_runner import (
 from .task_streaming import (
     _MAX_COMMAND_OUTPUT_CHARS,
     _MIN_SUBPROCESS_TERMINAL_WIDTH,
-    _SYNTHETIC_DIAG_CHARS,
-    _SYNTHETIC_POLL_SECONDS,
+    _TASK_DIAG_CHARS,
     _TASK_OUTPUT_JOIN_TIMEOUT_SECONDS,
     _TASK_OUTPUT_PREFIX_WIDTH,
+    _TASK_POLL_SECONDS,
     CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS,
     SHELL_COMMAND_TIMEOUT_SECONDS,
-    SYNTHETIC_TEST_TIMEOUT_SECONDS,
     _console_file_is_tty,
     _join_task_output_streams,
     _print_task_output_line,
@@ -88,32 +75,23 @@ from .task_streaming import (
 __all__ = [
     "CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS",
     "SHELL_COMMAND_TIMEOUT_SECONDS",
-    "SYNTHETIC_TEST_TIMEOUT_SECONDS",
     "OpensreCommandClass",
     "OpensreExecutionMode",
     "OpensreExecutionPlan",
     "OpensreRunOutcome",
     "OpensreRunResult",
     "Path",
-    "_INTERACTIVE_OPENSRE_COMMAND_PATHS",
     "_MAX_COMMAND_OUTPUT_CHARS",
     "_MIN_SUBPROCESS_TERMINAL_WIDTH",
-    "_OPENSRE_BLOCKED_SUBCOMMANDS",
-    "_SYNTHETIC_DIAG_CHARS",
-    "_SYNTHETIC_POLL_SECONDS",
+    "_TASK_DIAG_CHARS",
+    "_TASK_POLL_SECONDS",
     "_TASK_OUTPUT_JOIN_TIMEOUT_SECONDS",
     "_TASK_OUTPUT_PREFIX_WIDTH",
-    "_classify_opensre_command",
-    "_build_opensre_execution_plan",
     "_console_file_is_tty",
-    "_is_interactive_wizard",
     "_join_task_output_streams",
-    "_opensre_confirmation_reason",
     "_print_task_output_line",
     "_pump_task_pty",
     "_pump_task_stream",
-    "_run_opensre_foreground",
-    "_run_opensre_foreground_streaming",
     "_should_use_pty",
     "_start_task_output_streams",
     "_subprocess_env_with_aligned_width",

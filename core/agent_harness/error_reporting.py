@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from platform.observability.errors.sentry import capture_exception
+from infrastructure.observability.errors.sentry import capture_exception
 
 log = logging.getLogger(__name__)
 

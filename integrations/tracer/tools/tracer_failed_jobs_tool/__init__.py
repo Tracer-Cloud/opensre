@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.evidence import record_evidence_entry
+from core.domain.types.tools import ToolSurface
+from core.tool_framework import tool
 from integrations.tracer import (
     AWSBatchJobResult,
     get_tracer_client,
@@ -18,6 +20,20 @@ def _tracer_available(sources: dict[str, dict]) -> bool:
 
 def _tracer_trace_id(sources: dict[str, dict]) -> str:
     return str(sources.get("tracer_web", {}).get("trace_id", ""))
+
+
+def _map_failed_jobs(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    failed_jobs = output.get("failed_jobs", [])
+    if failed_jobs:
+        count = len(failed_jobs)
+        record_evidence_entry(
+            evidence,
+            source="get_failed_jobs",
+            label="Failed AWS Batch Jobs",
+            summary=f"{count} failed {'job' if count == 1 else 'jobs'}",
+        )
 
 
 @tool(
@@ -40,7 +56,8 @@ def _tracer_trace_id(sources: dict[str, dict]) -> str:
     },
     is_available=_tracer_available,
     extract_params=lambda sources: {"trace_id": _tracer_trace_id(sources)},
-    surfaces=("investigation", "chat"),
+    evidence_mapper=_map_failed_jobs,
+    surfaces=(ToolSurface.CHAT,),
 )
 def get_failed_jobs(trace_id: str) -> dict[str, Any]:
     """Get AWS Batch jobs that failed during a pipeline run."""

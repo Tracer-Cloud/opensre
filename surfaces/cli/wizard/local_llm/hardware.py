@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
+import platform
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-
-import platform
 
 # Conservative fallback when RAM detection fails — leads recommend_model to pick the lightweight 3B model
 _FALLBACK_RAM_GB = 8.0

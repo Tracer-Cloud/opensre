@@ -7,6 +7,7 @@ import re
 # Patterns ordered by specificity — first match wins in classify_cli_failure_category_hint.
 _QUOTA_RE = re.compile(
     r"quota|rate.?limit|429|too many request|insufficient_quota|"
+    r"credit_balance_exhausted|no credits remaining|"
     r"out of credit|billing|usage limit|spending limit|plan limit|"
     r"exceeded.*limit|limit.*exceeded|maximum.*usage",
     re.IGNORECASE,
@@ -21,7 +22,8 @@ _AUTH_RE = re.compile(
 _CONTEXT_OVERFLOW_RE = re.compile(
     r"context.?length|context.?window|max(?:imum)?\s+context\s+length|"
     r"max.?token|token.?limit|prompt.*too\s+long|prompt.*too.?large|"
-    r"input.*exceed|reduce.*context|string too long",
+    r"input.*exceed|reduce.*context|string too long|"
+    r"request.*too\s+large|request_too_large",
     re.IGNORECASE,
 )
 _NETWORK_RE = re.compile(

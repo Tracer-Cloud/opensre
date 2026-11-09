@@ -19,12 +19,12 @@ from config.constants.filestorage import (
     REMOTE_SYNC_REGION_ENV,
 )
 from config.local_settings import LocalSettingsError
-from platform.filestorage import setup as setup_mod
-from platform.filestorage.config import RemoteSyncConfig, load_remote_sync_config
-from platform.filestorage.errors import RemoteSyncConfigError
-from platform.filestorage.messages import format_setup_lines
-from platform.filestorage.providers import credential_hint_for_provider
-from platform.filestorage.setup import (
+from infrastructure.filestorage import setup as setup_mod
+from infrastructure.filestorage.config import RemoteSyncConfig, load_remote_sync_config
+from infrastructure.filestorage.errors import RemoteSyncConfigError
+from infrastructure.filestorage.messages import format_setup_lines
+from infrastructure.filestorage.providers import credential_hint_for_provider
+from infrastructure.filestorage.setup import (
     RemoteSyncSetupRequest,
     disable_remote_sync,
     save_remote_sync_settings,
@@ -230,3 +230,17 @@ def test_format_setup_lines_disabled_says_off_without_a_sync_suggestion() -> Non
     assert lines[0].startswith("Remote sync settings saved")
     assert "Remote sync is off" in lines[-1]
     assert "remote-sync sync" not in lines[-1]
+
+
+def test_setup_validation_normalizes_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from infrastructure.filestorage.setup import validate_remote_sync_settings
+
+    monkeypatch.setattr(paths_mod, "OPENSRE_HOME_DIR", tmp_path)
+    draft = RemoteSyncSetupRequest(bucket=" demo ", provider=" GCS ", prefix=" ")
+    assert validate_remote_sync_settings(draft) == RemoteSyncSetupRequest(
+        bucket="demo", provider="gcs"
+    )
+    assert draft.bucket == " demo "
+    assert not (tmp_path / "config.yml").exists()

@@ -9,7 +9,7 @@ from typing import Any
 import discord
 
 from config.constants import OPENSRE_HOME_DIR
-from gateway.core.feedback import append_feedback_entry
+from gateway.core.storage.feedback import append_feedback_entry
 
 logger = logging.getLogger("gateway")
 

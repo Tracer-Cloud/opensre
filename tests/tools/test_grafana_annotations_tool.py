@@ -58,7 +58,9 @@ def test_run_with_backend_maps_wire_shape() -> None:
 def test_run_no_client() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = False
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_annotations(grafana_endpoint="http://grafana")
     assert result["available"] is False
     assert result["annotations"] == []
@@ -70,7 +72,9 @@ def test_run_happy_path_defaults_now_window() -> None:
     mock_client.query_annotations.return_value = [
         {"time": "2026-05-30T14:41:09Z", "text": "deploy", "tags": ["deployment"]}
     ]
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_annotations(grafana_endpoint="http://grafana", time_range_minutes=60)
     assert result["available"] is True
     assert result["total"] == 1
@@ -84,7 +88,9 @@ def test_run_with_explicit_from_to_override() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
     mock_client.query_annotations.return_value = []
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_annotations(
             grafana_endpoint="http://grafana",
             **{"from": "2026-05-30T14:00:00Z", "to": "2026-05-30T15:00:00Z"},
@@ -104,7 +110,9 @@ def test_run_forwards_tags_filter() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
     mock_client.query_annotations.return_value = []
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_annotations(grafana_endpoint="http://grafana", tags=["deployment"])
     assert result["tags_filter"] == ["deployment"]
     assert mock_client.query_annotations.call_args.kwargs["tags"] == ["deployment"]
@@ -113,7 +121,9 @@ def test_run_forwards_tags_filter() -> None:
 def test_run_invalid_timestamp_returns_error() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_annotations(
             grafana_endpoint="http://grafana", **{"from": "not-a-date"}
         )
@@ -125,19 +135,6 @@ def test_iso_to_epoch_ms_treats_naive_as_utc() -> None:
     # A timezone-naive ISO string must be interpreted as UTC, matching the "Z" form —
     # never as host-local time (which would silently shift the query window).
     assert _iso_to_epoch_ms("2026-05-30T14:00:00") == _iso_to_epoch_ms("2026-05-30T14:00:00Z")
-
-
-def test_fixture_backend_implements_query_annotations() -> None:
-    # Regression guard: the synthetic FixtureGrafanaBackend must expose query_annotations
-    # so the backend path returns data instead of an AttributeError. spec= ties this test
-    # to the real class — removing the method makes the attribute access fail here.
-    from tests.synthetic.mock_grafana_backend.backend import FixtureGrafanaBackend
-
-    backend = MagicMock(spec=FixtureGrafanaBackend)
-    backend.query_annotations.return_value = []
-    result = query_grafana_annotations(grafana_backend=backend)
-    assert result["available"] is True
-    assert result["total"] == 0
 
 
 def test_run_backend_forwards_tags_and_limit() -> None:
@@ -162,7 +159,7 @@ def test_run_forwards_basic_auth_to_client() -> None:
     mock_client.is_configured = True
     mock_client.query_annotations.return_value = []
     with patch(
-        "integrations.grafana.tools._resolve_grafana_client", return_value=mock_client
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
     ) as resolve:
         query_grafana_annotations(
             grafana_endpoint="http://grafana",
@@ -177,7 +174,9 @@ def test_run_to_only_anchors_window_before_to() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
     mock_client.query_annotations.return_value = []
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         query_grafana_annotations(
             grafana_endpoint="http://grafana",
             time_range_minutes=30,

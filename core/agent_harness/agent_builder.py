@@ -12,10 +12,12 @@ from typing import Any, Generic, TypeVar
 
 from core.agent import Agent
 from core.agent.goals import Goal
+from core.agent.run_io import ReplyStreamPolicy
 from core.events import RuntimeEventCallback
-from core.execution import ToolExecutionHooks
 from core.llm.types import AgentLLMClient, ResolvedIntegrations
-from core.types import RuntimeTool
+from core.provider import ProviderHooks
+from core.tool.contracts import RuntimeTool
+from core.tool.execution import ToolExecutionHooks
 
 RuntimeToolT = TypeVar("RuntimeToolT", bound=RuntimeTool)
 
@@ -32,10 +34,13 @@ class AgentConfig(Generic[RuntimeToolT]):  # noqa: UP046
     tools: tuple[RuntimeToolT, ...]
     resolved_integrations: ResolvedIntegrations
     max_iterations: int
+    max_stagnant_iterations: int | None = None
     tool_resources: dict[str, Any] = field(default_factory=dict)
     tool_hooks: ToolExecutionHooks | None = None
+    provider_hooks: ProviderHooks | None = None
     on_runtime_event: RuntimeEventCallback | None = None
     goal: Goal | None = None
+    reply_stream_policy: ReplyStreamPolicy | None = None
 
 
 def build_agent(  # noqa: UP047
@@ -52,10 +57,13 @@ def build_agent(  # noqa: UP047
         tools=config.tools,
         resolved_integrations=config.resolved_integrations,
         max_iterations=config.max_iterations,
+        max_stagnant_iterations=config.max_stagnant_iterations,
         tool_resources=config.tool_resources,
         tool_hooks=config.tool_hooks,
+        provider_hooks=config.provider_hooks,
         on_runtime_event=config.on_runtime_event,
         goal=config.goal,
+        reply_stream_policy=config.reply_stream_policy,
     )
 
 

@@ -11,10 +11,10 @@ from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from config.strict_config import StrictConfigModel
-from gateway.core.runtime.errors import GatewayConfigurationError
+from gateway.core.lifecycle.errors import GatewayConfigurationError
+from infrastructure.scheduling.scheduler.credentials import resolve_buzz_credentials
 from integrations.messaging_security import MessagingIdentityPolicy, MessagingPlatform
 from integrations.store import get_integration
-from platform.scheduler.credentials import resolve_buzz_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ class GatewaySettings(StrictConfigModel):
     # so turns return promptly, and anything slower is re-delivered next start
     # rather than waited on.
     shutdown_drain_seconds: float = Field(default=5.0, gt=0)
+    turn_timeout_seconds: float = Field(default=240.0, gt=0)
     auto_start_enabled: bool = True
 
 
@@ -42,9 +43,9 @@ class BuzzGatewayEnv(BaseSettings):
     """Environment-backed Buzz gateway settings.
 
     ``private_key``/``relay_url``/``auth_tag``/``buzz_path`` are resolved via
-    :func:`platform.scheduler.credentials.resolve_buzz_credentials` instead of
+    :func:`infrastructure.scheduling.scheduler.credentials.resolve_buzz_credentials` instead of
     duplicated here, so the store > env > keyring precedence stays identical
-    to the delivery-tier (watchdog/cron) code path.
+    to the shared delivery configuration path.
     """
 
     model_config = SettingsConfigDict(env_prefix="BUZZ_", extra="ignore")
@@ -55,6 +56,7 @@ class BuzzGatewayEnv(BaseSettings):
     gateway_poll_interval_seconds: float = Field(default=15.0, gt=0)
     gateway_max_concurrent: int = Field(default=4, ge=1)
     gateway_stream_edit_interval_seconds: float = Field(default=1.5, gt=0)
+    gateway_turn_timeout_seconds: float = Field(default=240.0, gt=0)
     gateway_auto_start: bool = True
 
     @field_validator("allowed_pubkeys", mode="before")
@@ -155,6 +157,7 @@ def load_gateway_settings() -> GatewaySettings:
             allowed_pubkeys=choose_allowed_pubkeys(env, credentials),
             poll_interval_seconds=env.gateway_poll_interval_seconds,
             stream_edit_interval_seconds=env.gateway_stream_edit_interval_seconds,
+            turn_timeout_seconds=env.gateway_turn_timeout_seconds,
             max_concurrent_turns=env.gateway_max_concurrent,
             auto_start_enabled=env.gateway_auto_start,
         )

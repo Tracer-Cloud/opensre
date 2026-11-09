@@ -2,7 +2,7 @@
 
 Mirrors the contract from ``tests/cli/test_main.py`` for the standalone
 integrations CLI: Sentry must be initialised, accepted commands must emit a
-single ``cli_invoked`` event with command metadata, ``--help`` and unknown
+single command-specific invocation event with command metadata, ``--help`` and unknown
 commands must skip analytics.
 """
 
@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from infrastructure.analytics.events import cli_command_event_name
 from integrations import app as integrations_main
 
 
@@ -31,7 +32,9 @@ def _captures(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object] | None]
     monkeypatch.setattr(
         integrations_main,
         "capture_cli_invoked",
-        lambda properties=None: captured.append(properties),
+        lambda properties=None, command_parts=(): captured.append(
+            {**(properties or {}), "event_name": cli_command_event_name(command_parts)}
+        ),
     )
     return captured
 
@@ -73,10 +76,11 @@ def test_list_emits_cli_invoked_with_metadata(monkeypatch) -> None:
     assert properties["command_path"] == "python -m integrations list"
     assert properties["command_family"] == "list"
     assert properties["command_leaf"] == "list"
+    assert properties["event_name"] == "cli_command_opensre_integrations_list"
     assert "subcommand" not in properties
 
 
-def test_verify_emits_cli_invoked_with_service_subcommand(monkeypatch) -> None:
+def test_verify_excludes_service_operands_from_command_metadata(monkeypatch) -> None:
     captured = _captures(monkeypatch)
     monkeypatch.setattr("sys.argv", ["python -m integrations", "verify", "slack"])
 
@@ -91,10 +95,11 @@ def test_verify_emits_cli_invoked_with_service_subcommand(monkeypatch) -> None:
     install_marker, properties = captured
     assert install_marker == {"_marker": "install"}
     assert properties is not None
-    assert properties["command_path"] == "python -m integrations verify slack"
+    assert properties["command_path"] == "python -m integrations verify"
     assert properties["command_family"] == "verify"
-    assert properties["subcommand"] == "slack"
-    assert properties["command_leaf"] == "slack"
+    assert "subcommand" not in properties
+    assert properties["command_leaf"] == "verify"
+    assert properties["event_name"] == "cli_command_opensre_integrations_verify"
 
 
 def test_main_initialises_sentry(monkeypatch) -> None:
@@ -119,23 +124,14 @@ def test_command_dispatch_table_is_the_known_set() -> None:
     )
 
 
-def test_setup_dispatches_through_table_and_may_verify(monkeypatch) -> None:
+def test_setup_does_not_repeat_verification(monkeypatch) -> None:
     captured = _captures(monkeypatch)
     monkeypatch.setattr("sys.argv", ["python -m integrations", "setup", "slack"])
-
     with (
         patch.object(integrations_main, "cmd_setup", return_value="slack") as cmd_setup,
-        patch.object(integrations_main, "cmd_verify", return_value=0) as cmd_verify,
-        patch.object(
-            integrations_main,
-            "SUPPORTED_VERIFY_SERVICES",
-            frozenset({"slack"}),
-        ),
-        pytest.raises(SystemExit) as excinfo,
+        patch.object(integrations_main, "cmd_verify") as cmd_verify,
     ):
         integrations_main.main()
-
-    assert excinfo.value.code == 0
     cmd_setup.assert_called_once_with("slack")
-    cmd_verify.assert_called_once_with("slack")
-    assert captured  # analytics still fired before the handler ran
+    cmd_verify.assert_not_called()
+    assert captured

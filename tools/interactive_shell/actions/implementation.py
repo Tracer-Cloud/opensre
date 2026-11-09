@@ -2,28 +2,45 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
-from core.agent_harness.tools.tool_context import (
-    ActionToolContext,
+from core.agent_harness.tools import (
+    ActionToolScope,
     capability_available_from_sources,
     execute_with_action_context,
-    object_schema,
-    string_property,
 )
-from core.tool_framework.registered_tool import RegisteredTool
+from core.domain.types.tools import ToolSurface
+from core.tool import RegisteredTool, SideEffectLevel
+from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.implementation.claude_code_executor import (
     run_claude_code_implementation,
 )
 from tools.interactive_shell.subprocess import require_subprocess_presenter
 
+_STARTED_NOTE = (
+    "Claude Code is editing in a background task; its result is printed when the task "
+    "finishes. The change is not done yet: do not mark a plan step complete for it and "
+    "do not report it as finished until that result appears (/tasks shows progress)."
+)
 
-def execute_implementation_tool(args: dict[str, Any], ctx: ActionToolContext) -> bool:
+
+def _turn_cancelled(ctx: ActionToolScope) -> Callable[[], bool]:
+    """The running turn's cancel flag, so a wait for a heavy-work slot ends with the turn."""
+    console = ctx.console
+    return lambda: bool(getattr(console, "cancel_requested", False))
+
+
+def execute_implementation_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
     task = str(args.get("task", "")).strip()
     if not task:
-        return False
-    run_claude_code_implementation(task, require_subprocess_presenter(ctx))
-    return True
+        return {"ok": False, "error": "No implementation task was given."}
+    launch = run_claude_code_implementation(
+        task, require_subprocess_presenter(ctx), stop=_turn_cancelled(ctx)
+    )
+    if not launch.started:
+        return {"ok": False, "error": launch.detail}
+    return {"ok": True, "task_id": launch.task_id, "status": "started", "note": _STARTED_NOTE}
 
 
 def run_implementation(*, task: str, context: Any) -> dict[str, Any]:
@@ -32,7 +49,10 @@ def run_implementation(*, task: str, context: Any) -> dict[str, Any]:
 
 code_implement_tool = RegisteredTool(
     name="code_implement",
-    description="Run code implementation workflow using Claude Code.",
+    description=(
+        "Run code implementation workflow using Claude Code in a background task. "
+        "Not for git merge conflicts: use resolve_merge_conflicts for those."
+    ),
     input_schema=object_schema(
         properties={
             "task": string_property(
@@ -43,8 +63,8 @@ code_implement_tool = RegisteredTool(
         required=("task",),
     ),
     source="interactive_shell",
-    surfaces=("action",),
-    parallel_safe=False,
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.MUTATING,
     accepts_runtime_context=True,
     run=run_implementation,
     is_available=lambda sources: capability_available_from_sources(sources, "implementation"),

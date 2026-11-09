@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from config.constants.gateway import NEW_SESSION_MESSAGE
-from core.agent_harness.session import SessionCore
+from config.principal import StorageScope
+from core.agent_harness import SessionCore
+from gateway.core.middleware.inbound_decision import apply_inbound_decision
 from gateway.core.storage import SessionResolver
-from gateway.transports.buzz.inbound_security import InboundDecision, persist_policy_if_needed
+from gateway.transports.buzz.inbound_security import InboundDecision
 from gateway.transports.buzz.settings import BuzzInboundMessage
-from integrations.buzz.client import BuzzClient
+from integrations.buzz import BuzzClient
+from integrations.messaging_security import MessagingPlatform
 
 
 def conversation_key(event: BuzzInboundMessage) -> str:
@@ -26,27 +28,23 @@ def resolve_or_rotate_session(
     *,
     session_resolver: SessionResolver,
     client: BuzzClient,
+    scope: StorageScope,
 ) -> SessionCore | None:
     """Apply inbound decision side effects, then resolve or rotate the REPL session."""
-    persist_policy_if_needed(decision)
 
-    if decision.reply_text and decision.reply_text != "__ROTATE_SESSION__":
-        client.send_message(channel=event.channel_id, content=decision.reply_text)
-        if not decision.allowed:
-            return None
+    def _send(text: str) -> None:
+        client.send_message(channel=event.channel_id, content=text)
 
-    if not decision.allowed and decision.reply_text != "__ROTATE_SESSION__":
-        return None
-
-    key = conversation_key(event)
-    if decision.reply_text == "__ROTATE_SESSION__":
-        session = session_resolver.rotate(user_id=key, chat_id=event.channel_id)
-        client.send_message(channel=event.channel_id, content=NEW_SESSION_MESSAGE)
-        if event.content.strip().lower() == "/new":
-            return None
-        return session
-
-    return session_resolver.resolve(user_id=key, chat_id=event.channel_id)
+    return apply_inbound_decision(
+        decision,
+        platform=MessagingPlatform.BUZZ.value,
+        resolver=session_resolver,
+        scope=scope,
+        conversation_key=conversation_key(event),
+        chat_id=event.channel_id,
+        text=event.content,
+        send=_send,
+    )
 
 
 __all__ = ["conversation_key", "resolve_or_rotate_session"]

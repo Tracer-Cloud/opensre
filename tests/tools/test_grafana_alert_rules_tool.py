@@ -57,7 +57,9 @@ def test_run_with_backend() -> None:
 def test_run_no_client() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = False
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_alert_rules(grafana_endpoint="http://grafana")
     assert result["available"] is False
 
@@ -68,7 +70,9 @@ def test_run_happy_path() -> None:
     mock_client.query_alert_rules.return_value = [
         {"uid": "r1", "title": "High CPU", "state": "Firing"}
     ]
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_alert_rules(grafana_endpoint="http://grafana")
     assert result["available"] is True
     assert result["total_rules"] == 1
@@ -78,7 +82,9 @@ def test_run_with_folder_filter() -> None:
     mock_client = MagicMock()
     mock_client.is_configured = True
     mock_client.query_alert_rules.return_value = []
-    with patch("integrations.grafana.tools._resolve_grafana_client", return_value=mock_client):
+    with patch(
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
+    ):
         result = query_grafana_alert_rules(folder="my-folder", grafana_endpoint="http://grafana")
     assert result["folder_filter"] == "my-folder"
     mock_client.query_alert_rules.assert_called_once_with(folder="my-folder")
@@ -101,7 +107,7 @@ def test_run_forwards_auth_to_client(
     mock_client = MagicMock()
     mock_client.is_configured = False
     with patch(
-        "integrations.grafana.tools._resolve_grafana_client", return_value=mock_client
+        "integrations.grafana.tools._helpers._resolve_grafana_client", return_value=mock_client
     ) as resolve:
         query_grafana_alert_rules(
             grafana_endpoint="http://grafana",

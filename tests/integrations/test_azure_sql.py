@@ -1,7 +1,12 @@
 """Unit tests for the Azure SQL integration module."""
 
-from integrations.azure_sql import (
+from config.constants.azure_sql import (
+    DEFAULT_AZURE_SQL_DRIVER,
+    DEFAULT_AZURE_SQL_MAX_RESULTS,
     DEFAULT_AZURE_SQL_PORT,
+    DEFAULT_AZURE_SQL_TIMEOUT_SECONDS,
+)
+from integrations.azure_sql import (
     AzureSQLConfig,
     AzureSQLValidationResult,
     azure_sql_config_from_env,
@@ -17,14 +22,14 @@ class TestAzureSQLConfig:
     def test_defaults(self) -> None:
         config = AzureSQLConfig(server="myserver.database.windows.net", database="testdb")
         assert config.server == "myserver.database.windows.net"
-        assert config.port == 1433
+        assert config.port == DEFAULT_AZURE_SQL_PORT
         assert config.database == "testdb"
         assert config.username == ""
         assert config.password == ""
-        assert config.driver == "ODBC Driver 18 for SQL Server"
+        assert config.driver == DEFAULT_AZURE_SQL_DRIVER
         assert config.encrypt is True
-        assert config.timeout_seconds == 15.0
-        assert config.max_results == 50
+        assert config.timeout_seconds == DEFAULT_AZURE_SQL_TIMEOUT_SECONDS
+        assert config.max_results == DEFAULT_AZURE_SQL_MAX_RESULTS
 
     def test_is_configured_with_server_and_database(self) -> None:
         config = AzureSQLConfig(server="myserver.database.windows.net", database="mydb")
@@ -62,7 +67,7 @@ class TestAzureSQLConfig:
 
     def test_normalize_driver_default(self) -> None:
         config = AzureSQLConfig(server="s", database="d", driver="")
-        assert config.driver == "ODBC Driver 18 for SQL Server"
+        assert config.driver == DEFAULT_AZURE_SQL_DRIVER
 
     def test_normalize_driver_custom(self) -> None:
         config = AzureSQLConfig(server="s", database="d", driver="ODBC Driver 17 for SQL Server")

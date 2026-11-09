@@ -1,0 +1,110 @@
+---
+title: "Bitbucket"
+description: "Connect Bitbucket so OpenSRE can correlate recent commits and code changes with incidents"
+---
+
+## Overview
+
+OpenSRE queries Bitbucket to retrieve recent commits, file contents, and code search results — helping trace which change in a Bitbucket-hosted repository triggered an incident. All operations are read-only.
+
+## Prerequisites
+
+- Bitbucket Cloud account
+- App password with repository read access
+- Workspace slug (the identifier in `https://bitbucket.org/<workspace>/`)
+
+## Setup
+
+Bitbucket is configured through environment variables or the persistent integration store. There is no dedicated `opensre integrations setup bitbucket` wizard today.
+
+### Option 1: Environment variables
+
+Add to your `.env`:
+
+```bash
+BITBUCKET_WORKSPACE=your-workspace-slug
+BITBUCKET_USERNAME=your-username
+BITBUCKET_APP_PASSWORD=your-app-password
+# optional:
+# BITBUCKET_BASE_URL=https://api.bitbucket.org/2.0
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BITBUCKET_WORKSPACE` | — | **Required.** Bitbucket workspace slug |
+| `BITBUCKET_USERNAME` | — | **Required.** Bitbucket username |
+| `BITBUCKET_APP_PASSWORD` | — | **Required.** Bitbucket app password |
+| `BITBUCKET_BASE_URL` | `https://api.bitbucket.org/2.0` | Bitbucket API base URL |
+
+### Option 2: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "bitbucket-prod",
+      "service": "bitbucket",
+      "status": "active",
+      "credentials": {
+        "workspace": "your-workspace-slug",
+        "username": "your-username",
+        "app_password": "your-app-password"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### Creating an app password
+
+1. In Bitbucket, go to **Personal settings** → **App passwords**
+2. Click **Create app password**
+3. Give it a label (for example `opensre`)
+4. Enable the following permissions: **Repositories: Read**
+5. Copy the generated password
+
+<Info>
+The workspace slug is the identifier in your Bitbucket URL: `https://bitbucket.org/<workspace>/`
+</Info>
+
+Auth uses HTTP Basic with username + app password.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_bitbucket_commits` | Recent commits for a repository, optionally filtered by file path |
+| `get_bitbucket_file_contents` | Contents of a file at a specific revision |
+| `search_bitbucket_code` | Search code across the workspace or a specific repository |
+
+## Verify
+
+```bash
+opensre integrations verify bitbucket
+```
+
+Expected output:
+
+```
+Service: bitbucket
+Status: passed
+Detail: Authenticated as Your Name; workspace: your-workspace
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Check username and app password combination |
+| **Workspace not found** | Verify the workspace slug — it is case-sensitive |
+| **403 Forbidden** | Ensure the app password has **Repositories: Read** permission |
+| **Code search unavailable** | Code search requires a Bitbucket Cloud Standard or Premium plan |
+
+## Security
+
+- Use an **app password** rather than your account password — app passwords can be revoked individually.
+- Scope permissions to **Repositories: Read** only.
+- Store credentials in `.env`, not in source code.

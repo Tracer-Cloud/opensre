@@ -27,11 +27,15 @@ class AssistantRuntimeMessage:
 
     ``provider_payload`` is optional provider continuity data. It is kept out of
     general app/session metadata and replayed only by provider adapters.
+    ``provider_binding`` names the client that produced it (provider endpoint
+    and model); a client with another binding rebuilds the message from
+    ``content`` and ``tool_calls`` instead. ``None`` resends it to any client.
     """
 
     content: RuntimeContent
     tool_calls: tuple[ToolCall, ...] = ()
     provider_payload: ProviderMessage | None = None
+    provider_binding: str | None = None
     metadata: MessageMetadata = field(default_factory=dict)
     role: Literal["assistant"] = "assistant"
 

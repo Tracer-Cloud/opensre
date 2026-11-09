@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import httpx
 
-from platform.auth.jwt_auth import extract_org_slug_from_jwt
+from infrastructure.safety.auth.jwt_auth import extract_org_slug_from_jwt
 
 JSONDict = dict[str, Any]
 

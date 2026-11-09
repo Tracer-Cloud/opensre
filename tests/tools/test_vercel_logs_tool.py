@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from integrations.vercel.tools import VercelLogsTool
+from integrations.vercel.tools._evidence import (
+    map_vercel_deployment_logs as _map_vercel_deployment_logs,
+)
+from integrations.vercel.tools.deployment_logs import VercelLogsTool
 
 
 @pytest.fixture()
@@ -57,7 +61,9 @@ def test_run_returns_events_and_filters_error_events(tool: VercelLogsTool) -> No
     mock_client.get_deployment_events.return_value = {"success": True, "events": events}
     mock_client.get_runtime_logs.return_value = {"success": True, "logs": []}
 
-    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
         result = tool.run(api_token="tok_test", deployment_id="dpl_xyz")
 
     assert result["available"] is True
@@ -73,7 +79,9 @@ def test_run_skips_runtime_logs_when_disabled(tool: VercelLogsTool) -> None:
     mock_client.get_deployment.return_value = {"success": True, "deployment": {}}
     mock_client.get_deployment_events.return_value = {"success": True, "events": []}
 
-    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
         tool.run(api_token="tok_test", deployment_id="dpl_xyz", include_runtime_logs=False)
 
     mock_client.get_runtime_logs.assert_not_called()
@@ -88,13 +96,48 @@ def test_run_includes_runtime_logs_by_default(tool: VercelLogsTool) -> None:
         "logs": [{"id": "l1"}, {"id": "l2"}],
     }
 
-    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
         result = tool.run(api_token="tok_test", deployment_id="dpl_xyz", project_id="prj_9")
 
     mock_client.get_runtime_logs.assert_called_once()
     assert mock_client.get_runtime_logs.call_args.kwargs.get("project_id") == "prj_9"
     assert result["total_runtime_logs"] == 2
     assert len(result["runtime_logs"]) == 2
+    assert result["runtime_logs_error"] == ""
+
+
+def test_run_scopes_runtime_logs_to_the_deployment_project(tool: VercelLogsTool) -> None:
+    mock_client = MagicMock()
+    mock_client.get_deployment.return_value = {
+        "success": True,
+        "deployment": {"id": "dpl_xyz", "project_id": "prj_from_deployment"},
+    }
+    mock_client.get_deployment_events.return_value = {"success": True, "events": []}
+    mock_client.get_runtime_logs.return_value = {"success": True, "logs": []}
+
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
+        tool.run(api_token="tok_test", deployment_id="dpl_xyz")
+
+    assert mock_client.get_runtime_logs.call_args.kwargs["project_id"] == "prj_from_deployment"
+
+
+def test_run_reports_runtime_log_failure_instead_of_empty_logs(tool: VercelLogsTool) -> None:
+    mock_client = MagicMock()
+    mock_client.get_deployment.return_value = {"success": True, "deployment": {}}
+    mock_client.get_deployment_events.return_value = {"success": True, "events": []}
+    mock_client.get_runtime_logs.return_value = {"success": False, "error": "HTTP 403: forbidden"}
+
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
+        result = tool.run(api_token="tok_test", deployment_id="dpl_xyz", project_id="prj_9")
+
+    assert result["runtime_logs"] == []
+    assert result["runtime_logs_error"] == "HTTP 403: forbidden"
 
 
 def test_run_gracefully_handles_deployment_fetch_failure(tool: VercelLogsTool) -> None:
@@ -103,7 +146,9 @@ def test_run_gracefully_handles_deployment_fetch_failure(tool: VercelLogsTool) -
     mock_client.get_deployment_events.return_value = {"success": True, "events": []}
     mock_client.get_runtime_logs.return_value = {"success": True, "logs": []}
 
-    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
         result = tool.run(api_token="tok_test", deployment_id="dpl_xyz")
 
     assert result["available"] is True
@@ -116,7 +161,9 @@ def test_run_gracefully_handles_events_fetch_failure(tool: VercelLogsTool) -> No
     mock_client.get_deployment_events.return_value = {"success": False, "error": "rate limited"}
     mock_client.get_runtime_logs.return_value = {"success": True, "logs": []}
 
-    with patch("integrations.vercel.tools.make_vercel_client", return_value=mock_client):
+    with patch(
+        "integrations.vercel.tools.deployment_logs.make_vercel_client", return_value=mock_client
+    ):
         result = tool.run(api_token="tok_test", deployment_id="dpl_xyz")
 
     assert result["available"] is True
@@ -150,3 +197,80 @@ def test_metadata_requires_deployment_id(tool: VercelLogsTool) -> None:
     assert meta.source == "vercel"
     assert "deployment_id" in meta.input_schema["required"]
     assert "api_token" in meta.input_schema["required"]
+
+
+class TestMapVercelDeploymentLogs:
+    def test_records_entry_with_events_and_runtime_logs(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {
+                "available": True,
+                "total_events": 4,
+                "error_events": [{"text": "Error: x"}, {"text": "exception"}],
+                "total_runtime_logs": 2,
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "vercel_deployment_logs"
+        assert entries[0]["summary"] == (
+            "4 event(s), 2 matching an error keyword, 2 runtime log(s)"
+        )
+
+    def test_records_entry_without_runtime_logs_clause(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {"available": True, "total_events": 1, "error_events": [], "total_runtime_logs": 0},
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"] == "1 event(s), 0 matching an error keyword"
+        )
+
+    def test_qualifies_counts_when_saturated_including_zero_errors(self) -> None:
+        """Regression: a saturated events page with zero keyword matches must
+        not claim '0 matching an error keyword' as an exact total, and a
+        saturated runtime-log page must qualify its count too."""
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {
+                "available": True,
+                "total_events": 100,
+                "error_events": [],
+                "total_runtime_logs": 100,
+            },
+            {"limit": 100},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == (
+            "100+ event(s), 0+ matching an error keyword, 100+ runtime log(s)"
+        )
+
+    def test_records_nothing_when_no_events_or_logs(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence,
+            {"available": True, "total_events": 0, "total_runtime_logs": 0},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_vercel_deployment_logs(
+            evidence, {"available": False, "error": "deployment_id is required."}, {}
+        )
+
+        assert "catalog_entries" not in evidence

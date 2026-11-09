@@ -13,14 +13,14 @@ import pytest
 import requests
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 
-from platform.filestorage.config import RemoteSyncConfig
-from platform.filestorage.engine import content_tag, push
-from platform.filestorage.enums import SyncRootName
-from platform.filestorage.errors import RemoteSyncUnavailableError
-from platform.filestorage.providers import gcs
-from platform.filestorage.providers.gcs import GCSObjectStore, _content_etag
-from platform.filestorage.providers.registry import build_object_store, registered_providers
-from platform.filestorage.syncable import SyncRoot
+from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.engine import content_tag, push
+from infrastructure.filestorage.enums import SyncRootName
+from infrastructure.filestorage.errors import RemoteSyncUnavailableError
+from infrastructure.filestorage.providers import gcs
+from infrastructure.filestorage.providers.gcs import GCSObjectStore, _content_etag
+from infrastructure.filestorage.providers.registry import build_object_store, registered_providers
+from infrastructure.filestorage.syncable import SyncRoot
 
 _UPDATED = "2026-01-01T00:00:00.000Z"
 _UPDATED_DT = datetime(2026, 1, 1, tzinfo=UTC)

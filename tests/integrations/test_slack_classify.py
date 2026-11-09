@@ -17,6 +17,33 @@ def test_classify_accepts_bot_token_without_webhook() -> None:
     assert config["app_token"] == "xapp-test"
 
 
+def test_classify_keeps_default_chat_id_on_bot_config() -> None:
+    config, key = classify(
+        {
+            "bot_token": "xoxb-test",
+            "app_token": "xapp-test",
+            "default_chat_id": "C0123ABCD",
+        },
+        record_id="r1",
+    )
+    assert key == "slack"
+    assert config is not None
+    assert config["default_chat_id"] == "C0123ABCD"
+
+
+def test_classify_keeps_default_chat_id_on_webhook_only() -> None:
+    config, key = classify(
+        {
+            "webhook_url": "https://hooks.slack.com/services/T00/B00/xxx",
+            "default_chat_id": "C0123ABCD",
+        },
+        record_id="r1",
+    )
+    assert key == "slack"
+    assert config is not None
+    assert config["default_chat_id"] == "C0123ABCD"
+
+
 def test_classify_accepts_webhook_without_bot() -> None:
     config, key = classify(
         {"webhook_url": "https://hooks.slack.com/services/T00/B00/xxx"},

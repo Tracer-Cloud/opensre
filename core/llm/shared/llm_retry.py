@@ -1,4 +1,4 @@
-"""Provider-agnostic rate-limit retries and billing/quota error detection."""
+"""Provider-agnostic rate-limit retries and fatal billing/access error detection."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import random
 import re
 import time
 from collections.abc import Callable
+
+from config.constants.analytics import LLMCreditErrorReason
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +32,19 @@ _CREDIT_EXHAUSTED_CODES: frozenset[str] = frozenset(
     {
         "insufficient_quota",
         "billing_hard_limit_reached",
+        "credit_balance_exhausted",
+        "opensre_credits_exhausted",
     }
 )
 
 _CREDIT_EXHAUSTED_HINTS: tuple[str, ...] = (
     "insufficient_quota",
     "billing_hard_limit_reached",
+    "credit_balance_exhausted",
     "exceeded your current quota",
     "credit balance is too low",
     "credit balance too low",
+    "no credits remaining",
 )
 
 
@@ -57,13 +63,46 @@ def _structured_error_code(exc: BaseException) -> str | None:
     return None
 
 
-class LLMCreditExhaustedError(Exception):
+class LLMCreditExhaustedError(RuntimeError):
     """Fatal provider billing/quota exhaustion; retries will not help."""
+
+
+class OpenSRECreditsExhaustedError(LLMCreditExhaustedError):
+    """OpenSRE hosted credits are exhausted; Stripe billing can restore service."""
+
+    def __init__(self, message: str, *, upgrade_url: str | None = None) -> None:
+        super().__init__(message)
+        self.upgrade_url = upgrade_url
 
 
 # Stable substring every credit-exhausted message carries. Surfaces match on it
 # to attach their own recovery hint (e.g. the shell's ``/model`` command).
 CREDIT_EXHAUSTED_MARKER = "credit exhausted (provider billing/quota)"
+
+
+class OpenSREGithubRequiredError(RuntimeError):
+    """The OpenSRE hosted route serves no model call until GitHub is connected.
+
+    Fatal like a credit wall: retries cannot help, connecting GitHub can.
+    """
+
+    def __init__(self, message: str, *, connect_url: str | None = None) -> None:
+        super().__init__(message)
+        self.connect_url = connect_url
+
+
+#: Stable substring every GitHub-required message carries; chat surfaces match on it.
+GITHUB_REQUIRED_MARKER = "needs a connected GitHub account"
+
+
+def credit_exhaustion_reason(exc: BaseException) -> LLMCreditErrorReason | None:
+    """Identify hosted or provider credit exhaustion from exception types and codes."""
+    code = _structured_error_code(exc)
+    if isinstance(exc, OpenSRECreditsExhaustedError) or code == "opensre_credits_exhausted":
+        return LLMCreditErrorReason.OPENSRE
+    if isinstance(exc, LLMCreditExhaustedError) or code in _CREDIT_EXHAUSTED_CODES:
+        return LLMCreditErrorReason.PROVIDER
+    return None
 
 
 def is_rate_limit_error(exc: BaseException) -> bool:
@@ -130,15 +169,51 @@ def extract_retry_after_seconds(exc: BaseException) -> float | None:
     return None
 
 
+def _hosted_error_url(err: BaseException, field: str) -> str | None:
+    """An http(s) URL the hosted proxy named in its error body, else None."""
+    body = getattr(err, "body", None)
+    error_obj = body.get("error") if isinstance(body, dict) else None
+    details = error_obj if isinstance(error_obj, dict) else body
+    raw = details.get(field) if isinstance(details, dict) else None
+    return raw if isinstance(raw, str) and re.fullmatch(r"https?://\S+", raw) else None
+
+
+def maybe_raise_github_required(err: BaseException) -> None:
+    """Raise OpenSREGithubRequiredError when the hosted route refused for missing GitHub."""
+    if _structured_error_code(err) != "opensre_github_required":
+        return
+    connect_url = _hosted_error_url(err, "connect_url")
+    destination = f"at {connect_url}" if connect_url else "in the OpenSRE app"
+    raise OpenSREGithubRequiredError(
+        f"OpenSRE {GITHUB_REQUIRED_MARKER}. Connect GitHub {destination}: your own "
+        "account, or ask a workspace admin to connect one for everyone.",
+        connect_url=connect_url,
+    ) from err
+
+
 def maybe_raise_credit_exhausted(provider_name: str, err: BaseException) -> None:
     """Raise LLMCreditExhaustedError when billing/quota exhaustion is detected."""
-    if is_credit_exhausted_error(err):
-        raise LLMCreditExhaustedError(
-            f"{provider_name} {CREDIT_EXHAUSTED_MARKER}. "
-            f"To keep going, switch to another configured LLM provider — or top up "
-            f"your balance / raise the spending cap at the {provider_name} console. "
-            f"Original error: {err}"
+    if not is_credit_exhausted_error(err):
+        return
+
+    if _structured_error_code(err) == "opensre_credits_exhausted":
+        # The proxy is the authority: a cached funded balance is now wrong.
+        from config.account_credits import reset_hosted_credits_cache
+
+        reset_hosted_credits_cache()
+        upgrade_url = _hosted_error_url(err, "upgrade_url")
+        destination = f" Upgrade or top up at {upgrade_url}." if upgrade_url else ""
+        raise OpenSRECreditsExhaustedError(
+            f"OpenSRE {CREDIT_EXHAUSTED_MARKER}. Your hosted credits are exhausted.{destination}",
+            upgrade_url=upgrade_url,
         ) from err
+
+    raise LLMCreditExhaustedError(
+        f"{provider_name} {CREDIT_EXHAUSTED_MARKER}. "
+        f"To keep going, switch to another configured LLM provider — or top up "
+        f"your balance / raise the spending cap at the {provider_name} console. "
+        f"Original error: {err}"
+    ) from err
 
 
 def rate_limit_sleep_seconds(err: BaseException, fallback_backoff: float) -> float:

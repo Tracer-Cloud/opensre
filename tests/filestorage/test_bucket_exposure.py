@@ -16,20 +16,24 @@ import requests
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 from config.constants.vercel import VERCEL_API_TOKEN_ENV
-from platform.filestorage.config import RemoteSyncConfig
-from platform.filestorage.enums import BucketExposure, SyncRootName
-from platform.filestorage.exposure import PublicAccessStatus
-from platform.filestorage.messages import format_exposure_line, format_status_lines
-from platform.filestorage.operations import SyncRootStatus, SyncStatus, get_sync_status
-from platform.filestorage.providers.aws import check_public_access as aws_check_public_access
-from platform.filestorage.providers.azure import check_public_access as azure_check_public_access
-from platform.filestorage.providers.gcs import check_public_access as gcs_check_public_access
-from platform.filestorage.providers.registry import (
+from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.enums import BucketExposure, SyncRootName
+from infrastructure.filestorage.exposure import PublicAccessStatus
+from infrastructure.filestorage.messages import format_exposure_line, format_status_lines
+from infrastructure.filestorage.operations import SyncRootStatus, SyncStatus, get_sync_status
+from infrastructure.filestorage.providers.aws import check_public_access as aws_check_public_access
+from infrastructure.filestorage.providers.azure import (
+    check_public_access as azure_check_public_access,
+)
+from infrastructure.filestorage.providers.gcs import check_public_access as gcs_check_public_access
+from infrastructure.filestorage.providers.registry import (
     check_bucket_exposure,
     register_object_store,
     unregister_object_store,
 )
-from platform.filestorage.providers.vercel import check_public_access as vercel_check_public_access
+from infrastructure.filestorage.providers.vercel import (
+    check_public_access as vercel_check_public_access,
+)
 
 
 class _S3Client:
@@ -95,12 +99,12 @@ def test_transport_failure_degrades_to_unknown() -> None:
 
 def test_client_build_failure_degrades_to_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
     """Even a totally unreachable AWS session must not raise out of the checker."""
-    from platform.filestorage.providers.aws import RemoteSyncUnavailableError
+    from infrastructure.filestorage.providers.aws import RemoteSyncUnavailableError
 
     def _raise_client(_config: RemoteSyncConfig) -> object:
         raise RemoteSyncUnavailableError("cannot build an S3 client — boom")
 
-    monkeypatch.setattr("platform.filestorage.providers.aws._build_client", _raise_client)
+    monkeypatch.setattr("infrastructure.filestorage.providers.aws._build_client", _raise_client)
     result = aws_check_public_access(RemoteSyncConfig(bucket="b"))
     assert result.exposure is BucketExposure.UNKNOWN
 
@@ -159,7 +163,7 @@ def test_azure_missing_account_name_degrades_to_a_note(monkeypatch: pytest.Monke
 def test_azure_public_blob_access_is_reported_public(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "testaccount")
     monkeypatch.setattr(
-        "platform.filestorage.providers.azure._get_azure_access_token", lambda: "token"
+        "infrastructure.filestorage.providers.azure._get_azure_access_token", lambda: "token"
     )
     client = _AzureClient(_AzureResponse(headers={"x-ms-blob-public-access": "blob"}))
     result = azure_check_public_access(
@@ -171,7 +175,7 @@ def test_azure_public_blob_access_is_reported_public(monkeypatch: pytest.MonkeyP
 def test_azure_public_container_access_is_reported_public(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "testaccount")
     monkeypatch.setattr(
-        "platform.filestorage.providers.azure._get_azure_access_token", lambda: "token"
+        "infrastructure.filestorage.providers.azure._get_azure_access_token", lambda: "token"
     )
     client = _AzureClient(_AzureResponse(headers={"x-ms-blob-public-access": "container"}))
     result = azure_check_public_access(
@@ -184,7 +188,7 @@ def test_azure_private_access_is_reported_private(monkeypatch: pytest.MonkeyPatc
     """Absence of the x-ms-blob-public-access header dictates a private container."""
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "testaccount")
     monkeypatch.setattr(
-        "platform.filestorage.providers.azure._get_azure_access_token", lambda: "token"
+        "infrastructure.filestorage.providers.azure._get_azure_access_token", lambda: "token"
     )
     client = _AzureClient(_AzureResponse(headers={}))
     result = azure_check_public_access(
@@ -197,7 +201,7 @@ def test_azure_forbidden_degrades_to_a_note_not_an_error(monkeypatch: pytest.Mon
     """Missing RBAC permissions must fail closed to UNKNOWN without crashing."""
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "testaccount")
     monkeypatch.setattr(
-        "platform.filestorage.providers.azure._get_azure_access_token", lambda: "token"
+        "infrastructure.filestorage.providers.azure._get_azure_access_token", lambda: "token"
     )
     client = _AzureClient(_AzureResponse(status_code=403))
     result = azure_check_public_access(
@@ -212,7 +216,7 @@ def test_azure_other_http_error_degrades_without_leaking_body(
 ) -> None:
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "testaccount")
     monkeypatch.setattr(
-        "platform.filestorage.providers.azure._get_azure_access_token", lambda: "token"
+        "infrastructure.filestorage.providers.azure._get_azure_access_token", lambda: "token"
     )
     client = _AzureClient(_AzureResponse(status_code=500))
     result = azure_check_public_access(
@@ -225,7 +229,7 @@ def test_azure_other_http_error_degrades_without_leaking_body(
 def test_azure_transport_failure_degrades_to_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AZURE_STORAGE_ACCOUNT_NAME", "testaccount")
     monkeypatch.setattr(
-        "platform.filestorage.providers.azure._get_azure_access_token", lambda: "token"
+        "infrastructure.filestorage.providers.azure._get_azure_access_token", lambda: "token"
     )
     client = _AzureClient(error=httpx.ConnectError("boom"))
     result = azure_check_public_access(
@@ -339,12 +343,12 @@ def test_gcs_malformed_response_degrades_to_unknown() -> None:
 
 
 def test_gcs_session_build_failure_degrades_to_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    from platform.filestorage.providers.gcs import RemoteSyncUnavailableError
+    from infrastructure.filestorage.providers.gcs import RemoteSyncUnavailableError
 
     def _raise_session() -> object:
         raise RemoteSyncUnavailableError("cannot build GCS credentials — boom")
 
-    monkeypatch.setattr("platform.filestorage.providers.gcs._build_session", _raise_session)
+    monkeypatch.setattr("infrastructure.filestorage.providers.gcs._build_session", _raise_session)
     result = gcs_check_public_access(RemoteSyncConfig(bucket="b"))
     assert result.exposure is BucketExposure.UNKNOWN
 
@@ -580,7 +584,7 @@ def test_status_calls_the_registered_checker(
 ) -> None:
     from config.constants import paths
     from config.constants.filestorage import REMOTE_SYNC_BUCKET_ENV, REMOTE_SYNC_ENV
-    from platform.filestorage import operations as sync_service
+    from infrastructure.filestorage import operations as sync_service
 
     def _public(_config: RemoteSyncConfig) -> PublicAccessStatus:
         return PublicAccessStatus(BucketExposure.PUBLIC)

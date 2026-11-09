@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from integrations.prefect.tools import PrefectWorkerHealthTool
+from integrations.prefect.tools import PrefectWorkerHealthTool, _map_prefect_worker_health
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 
@@ -182,3 +183,62 @@ def test_metadata_is_valid(tool: PrefectWorkerHealthTool) -> None:
     assert meta.source == "prefect"
     assert "required" in meta.input_schema
     assert "api_url" in meta.input_schema["required"]
+
+
+class TestMapPrefectWorkerHealth:
+    def test_records_entry_with_pool_and_worker_counts(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_worker_health(
+            evidence,
+            {
+                "available": True,
+                "work_pools": [{"id": "pool_1"}],
+                "total_pools": 3,
+                "total_unhealthy_pools": 2,
+                "work_pool_name": "default",
+                "total_workers": 3,
+                "total_unhealthy_workers": 2,
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "prefect_worker_health"
+        assert (
+            entries[0]["summary"]
+            == "3 work pool(s), 2 unhealthy, 3 worker(s) in 'default', 2 unhealthy"
+        )
+
+    def test_records_entry_without_worker_clause_when_no_pool_name(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_worker_health(
+            evidence,
+            {
+                "available": True,
+                "work_pools": [{"id": "pool_1"}],
+                "total_pools": 1,
+                "total_unhealthy_pools": 0,
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1 work pool(s), 0 unhealthy"
+
+    def test_records_nothing_when_no_work_pools(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_worker_health(
+            evidence, {"available": True, "work_pools": [], "total_pools": 0}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_prefect_worker_health(evidence, {"available": False, "error": "HTTP 403"}, {})
+
+        assert "catalog_entries" not in evidence

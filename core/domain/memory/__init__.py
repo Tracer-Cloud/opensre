@@ -1,21 +1,55 @@
 """Long-term memory store: local, file-based semantic memory for the agent.
 
 One markdown file per memory under ``~/.opensre/memory/`` (with an environment
-override), plus a generated ``MEMORY.md`` index. See
-``docs/memory.mdx`` for the user-facing behavior.
+override), plus a generated ``MEMORY.md`` index. The prompt carries a stable
+index of every memory and, per turn, the full text of the memories relevant to
+the request. See ``docs/platform/memory.mdx`` for the user-facing behavior.
 """
 
 from __future__ import annotations
 
+from core.domain.memory.audit import AuditFinding, MemoryAudit, audit_memories
+from core.domain.memory.changes import knowledge_generation
+from core.domain.memory.consolidation import (
+    ConsolidationInput,
+    ConsolidationResult,
+    consolidate_memories,
+)
+from core.domain.memory.fence import is_fenced
+from core.domain.memory.files import memory_root
 from core.domain.memory.index import (
     DEFAULT_PROMPT_INDEX_CHARS,
+    DEFAULT_RELEVANT_MEMORY_CHARS,
+    DEFAULT_RELEVANT_MEMORY_ITEMS,
+)
+from core.domain.memory.members import (
+    LOCAL_ACTOR,
+    MemberStore,
+    iter_member_stores,
+    member_memory_dir,
+    member_memory_dirs,
+    read_member_store,
 )
 from core.domain.memory.models import (
     MAX_BODY_CHARS,
     MAX_DESCRIPTION_CHARS,
+    MAX_EVIDENCE_CHARS,
+    MEMORY_SOURCES,
     MEMORY_TYPES,
     MemoryRecord,
+    MemorySource,
     MemoryType,
+)
+from core.domain.memory.policy import MEMORY_WRITE_POLICY
+from core.domain.memory.provenance import EvidenceCorpus, Provenance, checked_provenance
+from core.domain.memory.recall import (
+    live_memories,
+    load_live_memory,
+    render_prompt_index,
+    render_relevant_memories,
+    search_memories,
+    search_memories_scored,
+    select_relevant_memories,
 )
 from core.domain.memory.safety import (
     MemorySafetyIssue,
@@ -37,35 +71,70 @@ from core.domain.memory.store import (
     memory_dir,
     memory_path,
     rebuild_index,
-    render_prompt_index,
     save_memory,
-    search_memories,
+    save_memory_merging_duplicates,
 )
+from core.domain.memory.summaries import SessionSummary, append_session_summary
+from core.domain.memory.usage import MemoryUsage, record_memory_usage
 
 __all__ = [
+    "LOCAL_ACTOR",
+    "MemberStore",
+    "AuditFinding",
+    "MemoryAudit",
     "DEFAULT_PROMPT_INDEX_CHARS",
+    "DEFAULT_RELEVANT_MEMORY_CHARS",
+    "DEFAULT_RELEVANT_MEMORY_ITEMS",
     "MAX_BODY_CHARS",
     "MAX_DESCRIPTION_CHARS",
+    "MAX_EVIDENCE_CHARS",
+    "MEMORY_SOURCES",
     "MEMORY_TYPES",
-    "MemorySafetyIssue",
+    "MEMORY_WRITE_POLICY",
+    "ConsolidationInput",
+    "ConsolidationResult",
+    "EvidenceCorpus",
     "MemoryRecord",
+    "MemorySafetyIssue",
+    "MemorySource",
     "MemoryType",
+    "MemoryUsage",
+    "Provenance",
+    "SessionSummary",
+    "append_session_summary",
+    "audit_memories",
     "auto_extract_enabled",
+    "checked_provenance",
+    "consolidate_memories",
     "delete_memory",
     "ensure_memory_store",
+    "find_memory_safety_issues",
     "gateway_memory_enabled",
+    "is_fenced",
     "is_valid_slug",
+    "iter_member_stores",
+    "knowledge_generation",
     "list_memories",
+    "live_memories",
+    "load_live_memory",
     "load_memory",
     "memory_available_here",
+    "member_memory_dir",
+    "member_memory_dirs",
     "memory_dir",
     "memory_enabled",
     "memory_path",
+    "memory_root",
+    "read_member_store",
     "rebuild_index",
+    "record_memory_usage",
     "redact_memory_unsafe_text",
     "render_prompt_index",
+    "render_relevant_memories",
     "save_memory",
+    "save_memory_merging_duplicates",
     "search_memories",
-    "find_memory_safety_issues",
+    "search_memories_scored",
+    "select_relevant_memories",
     "slugify",
 ]

@@ -30,3 +30,6 @@ def classify(
         report_classify_failure(exc, logger=logger, integration="smtp", record_id=record_id)
         return None, None
     return cfg, "smtp"
+
+
+__all__ = ["classify"]

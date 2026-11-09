@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-import sys
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import MagicMock
 
@@ -11,6 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gateway.web import webapp
+from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
+from infrastructure.scheduling.scheduler.storage import ExecutionClaim
 
 
 def test_webapp_module_calls_init_sentry_on_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -20,7 +22,7 @@ def test_webapp_module_calls_init_sentry_on_import(monkeypatch: pytest.MonkeyPat
     from bootstrap.process import reset_process_runtime_for_tests
 
     init_mock = MagicMock()
-    monkeypatch.setattr("platform.observability.errors.sentry.init_sentry", init_mock)
+    monkeypatch.setattr("infrastructure.observability.errors.sentry.init_sentry", init_mock)
     reset_process_runtime_for_tests()
 
     # Act
@@ -31,18 +33,6 @@ def test_webapp_module_calls_init_sentry_on_import(monkeypatch: pytest.MonkeyPat
     init_mock.assert_called_once()
 
 
-def test_webapp_imports_after_stdlib_platform_cached(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Docker/uvicorn can cache stdlib ``platform`` before loading the ASGI app."""
-    import platform as stdlib_platform
-
-    monkeypatch.setitem(sys.modules, "platform", stdlib_platform)
-
-    reloaded = importlib.reload(webapp)
-
-    assert hasattr(reloaded, "app")
-    assert hasattr(sys.modules["platform"], "__path__")
-
-
 def test_health_response_returns_known_fields() -> None:
     response = webapp.get_health_response()
 
@@ -50,6 +40,8 @@ def test_health_response_returns_known_fields() -> None:
     assert hasattr(response, "version")
     assert hasattr(response, "llm_configured")
     assert hasattr(response, "env")
+    assert response.sessions >= 0 and response.scheduled_tasks >= 0
+    assert isinstance(response.previous_shutdown, str)
 
 
 def test_ok_route_is_registered() -> None:
@@ -62,3 +54,27 @@ def test_ok_route_is_registered() -> None:
     data = resp.json()
     assert "ok" in data
     assert "version" in data
+
+
+def test_health_reports_the_scheduled_runs_this_process_is_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the hosted refresh reads this before it replaces the gateway
+    renewer = ClaimLeaseRenewer(renew=lambda _claims: {}, renewal_interval_seconds=60)
+    monkeypatch.setattr(webapp, "default_claim_lease_renewer", renewer)
+    claim = ExecutionClaim(
+        task_id="pilot-loop",
+        fire_time="2026-10-04T09:29:00Z",
+        attempt=1,
+        owner_token="owner",
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=2),
+    )
+    client = TestClient(webapp.app)
+
+    # Act
+    with renewer.hold(claim):
+        during = client.get("/health").json()["scheduled_runs_in_flight"]
+    after = client.get("/health").json()["scheduled_runs_in_flight"]
+
+    # Assert
+    assert (during, after) == (1, 0)

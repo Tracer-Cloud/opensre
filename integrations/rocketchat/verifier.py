@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from infrastructure.delivery.notifications.redaction import redact_token
 from integrations.verification import register_verifier, result
 
 
@@ -19,7 +20,10 @@ def _verify_webhook(source: str, webhook_url: str) -> dict[str, str]:
     try:
         response = httpx.get(webhook_url, timeout=10, follow_redirects=False)
     except Exception as exc:
-        return result("rocketchat", source, "failed", f"Rocket.Chat webhook unreachable: {exc}")
+        safe_error = redact_token(str(exc), webhook_url)
+        return result(
+            "rocketchat", source, "failed", f"Rocket.Chat webhook unreachable: {safe_error}"
+        )
 
     if response.status_code == HTTPStatus.NOT_FOUND:
         return result(
@@ -70,7 +74,8 @@ def verify_rocketchat(source: str, config: dict[str, Any]) -> dict[str, str]:
             timeout=10,
         )
     except Exception as exc:
-        return result("rocketchat", source, "failed", f"Rocket.Chat API check failed: {exc}")
+        safe_error = redact_token(str(exc), auth_token)
+        return result("rocketchat", source, "failed", f"Rocket.Chat API check failed: {safe_error}")
 
     if response.status_code == HTTPStatus.UNAUTHORIZED:
         return result(

@@ -2,14 +2,64 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from core.types import RuntimeTool
+from pydantic import BaseModel
 
 ResolvedIntegrations: TypeAlias = dict[str, Any]  # noqa: UP040
+#: Receives each piece of assistant text as the provider streams it.
+TextDeltaCallback: TypeAlias = Callable[[str], None]  # noqa: UP040
+#: Asked while a request streams whether the caller has cancelled it.
+CancelProbe: TypeAlias = Callable[[], bool]  # noqa: UP040
+
+
+class LLMRequestCancelled(Exception):
+    """A streamed request stopped because the caller's ``should_stop`` said so.
+
+    Never retried. Text already passed to ``on_text_delta`` belongs to a reply
+    that did not finish.
+    """
+
+
+class LLMStreamInterrupted(Exception):
+    """A streamed reply broke off after some of its text reached the caller.
+
+    Never retried as is: a second attempt would deliver that text again.
+    ``partial_text`` is everything already passed to ``on_text_delta``, so the
+    caller can keep it and ask the model to continue from where it stopped.
+    """
+
+    def __init__(self, message: str, *, partial_text: str) -> None:
+        super().__init__(message)
+        self.partial_text = partial_text
+
+
+@runtime_checkable
+class SchemaDescribedTool(Protocol):
+    """The three attributes a provider reads to build a tool-schema payload.
+
+    Stated here rather than imported from the tool tier. Naming the tool union
+    put ``core.llm`` on a path back into ``core.tool``, which closed a package
+    cycle the moment ``core/tool/__init__`` grew imports — and it bought nothing:
+    every provider client widened the parameter to ``list[Any]`` anyway. This is
+    what ``_anthropic_tool_schema`` and ``build_converse_tool_specs`` actually
+    read.
+    """
+
+    @property
+    def name(self) -> str:
+        """Identifier the provider and the model see."""
+
+    @property
+    def description(self) -> str:
+        """One-line description sent to the model."""
+
+    @property
+    def public_input_schema(self) -> dict[str, Any]:
+        """JSON Schema for the arguments, with internal parameters removed."""
 
 
 class ModelType(StrEnum):
@@ -68,6 +118,15 @@ class AgentLLMResponse:
     #: ``None`` means the provider sent no cache fields — distinct from 0.
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
+    #: Provider-reported usage for this call; ``None`` when the provider sent none.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    #: The part of ``output_tokens`` spent on hidden reasoning, when reported.
+    reasoning_tokens: int | None = None
+    #: Internal ``_opensre_*`` keys the client keeps on the assistant message
+    #: built from this response; the client reads them on later requests and
+    #: they never reach the provider.
+    message_markers: dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_tool_calls(self) -> bool:
@@ -93,9 +152,7 @@ class AgentLLMClient(Protocol):
     def model_id(self) -> str | None:
         """The provider model identifier, used for context-budget sizing (may be None)."""
 
-    def tool_schemas[RuntimeToolT: RuntimeTool](
-        self, tools: list[RuntimeToolT]
-    ) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         """Translate runtime tools into the provider's tool-schema payloads."""
 
     def invoke(
@@ -104,8 +161,21 @@ class AgentLLMClient(Protocol):
         *,
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
+        on_text_delta: TextDeltaCallback | None = None,
+        should_stop: CancelProbe | None = None,
     ) -> AgentLLMResponse:
-        """Run one provider request and return the assistant response."""
+        """Run one provider request and return the assistant response.
+
+        ``on_text_delta`` receives the response text as it is generated, on the
+        calling thread; it must not raise. A request is retried only until the
+        first delta is delivered. Clients that cannot stream ignore it and
+        return the same response.
+
+        ``should_stop`` is asked before a streamed request is sent and between
+        its events, not only text deltas. Once it returns true the response is
+        closed and :class:`LLMRequestCancelled` raised, with no retry. It must
+        be cheap and must not raise. Unstreamed requests ignore it.
+        """
 
 
 @runtime_checkable
@@ -116,13 +186,35 @@ class StreamingReasoningClient(Protocol):
         """Stream the assistant reply as text chunks."""
 
 
+@runtime_checkable
+class CliLLMClient(Protocol):
+    """The prompt-in/response-out contract a CLI-backed subprocess client exposes."""
+
+    def with_config(self, **kwargs: Any) -> CliLLMClient:
+        """Return a client bound to the given per-call overrides."""
+
+    def with_structured_output(self, model: type[BaseModel]) -> Any:
+        """Return a client that parses replies into instances of ``model``."""
+
+    def invoke(self, prompt_or_messages: Any) -> LLMResponse:
+        """Run one subprocess CLI invocation and return its response."""
+
+    def invoke_stream(self, prompt_or_messages: Any) -> Iterator[str]:
+        """Stream the assistant reply as text chunks."""
+
+
 __all__ = [
     "AgentLLMClient",
     "AgentLLMResponse",
+    "CancelProbe",
+    "CliLLMClient",
+    "LLMRequestCancelled",
+    "LLMStreamInterrupted",
     "LLMResponse",
     "LLMRoute",
     "ModelType",
     "ResolvedIntegrations",
     "StreamingReasoningClient",
+    "TextDeltaCallback",
     "ToolCall",
 ]

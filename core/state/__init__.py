@@ -1,7 +1,8 @@
-"""Shared agent state: investigation pipeline state and the per-session store.
+"""Shared agent state: the mutable per-session conversation store.
 
-Holds the immutable investigation state (``AgentState`` and its slices) and the
-mutable per-session agent store reached through ``session.agent``.
+Holds the mutable per-session agent store reached through ``session.agent``,
+the structured record of each completed turn, and the transcript-window
+compaction helpers.
 """
 
 from __future__ import annotations
@@ -11,61 +12,18 @@ from core.state.agent_state import (
     MAX_CONVERSATION_TURNS,
     AgentMessageRole,
     MutableAgentState,
+    history_window_messages,
 )
-from core.state.channel_context import (
-    CHANNEL_CONTEXTS_KEY,
-    get_channel_context,
-    set_channel_context,
-)
-from core.state.evidence import EvidenceEntry
-from core.state.models import (
-    AgentState,
-    AgentStateModel,
-    InvestigationState,
-    make_chat_state,
-    model_default_payload,
-)
-from core.state.runtime_slices import (
-    AlertInputSlice,
-    CallerMetadataSlice,
-    DeliveryContextSlice,
-    DeliveryOutputSlice,
-    DiagnosisSlice,
-    EvalHarnessSlice,
-    InvestigationPlanSlice,
-    InvestigationRuntimeSlice,
-    MaskingSlice,
-)
-from core.state.slices import ChatStateSlice
-from core.state.types import AgentMode, ChatMessage, ChatMessageModel
-from core.state.updates import apply_state_updates
+from core.state.shown_tools import ShownTools
+from core.state.turn_evidence import TurnEvidence, match_turn_evidence
 
 __all__ = [
-    "AgentMessageRole",
-    "CHANNEL_CONTEXTS_KEY",
     "MAX_CONVERSATION_MESSAGES",
     "MAX_CONVERSATION_TURNS",
+    "AgentMessageRole",
     "MutableAgentState",
-    "AgentMode",
-    "AgentState",
-    "AgentStateModel",
-    "AlertInputSlice",
-    "ChatMessage",
-    "ChatMessageModel",
-    "ChatStateSlice",
-    "DeliveryContextSlice",
-    "DeliveryOutputSlice",
-    "DiagnosisSlice",
-    "EvalHarnessSlice",
-    "EvidenceEntry",
-    "InvestigationPlanSlice",
-    "InvestigationRuntimeSlice",
-    "InvestigationState",
-    "MaskingSlice",
-    "CallerMetadataSlice",
-    "apply_state_updates",
-    "get_channel_context",
-    "make_chat_state",
-    "model_default_payload",
-    "set_channel_context",
+    "ShownTools",
+    "TurnEvidence",
+    "history_window_messages",
+    "match_turn_evidence",
 ]

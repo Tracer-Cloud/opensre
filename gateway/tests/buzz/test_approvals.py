@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from gateway.core.runtime.approvals import ApprovalBroker
+from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.transports.buzz.approvals import BuzzApprovalPrompter
 from gateway.transports.buzz.pending_approvals import PendingApprovals
 from integrations.buzz.client import BuzzClient

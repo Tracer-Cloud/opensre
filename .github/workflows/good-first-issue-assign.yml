@@ -20,7 +20,7 @@ permissions:
 jobs:
   assign:
     name: Assign new contributor on good first issue
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: >-
       github.event.issue.state == 'open' &&
       github.event.comment.user.type != 'Bot' &&

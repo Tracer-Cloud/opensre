@@ -1,7 +1,0 @@
-scenario_id: "003-state-db-wal-unbounded-growth"
-title: "state.db WAL grows unbounded → SQLite database-is-full (#24034)"
-source: "https://github.com/NousResearch/hermes-agent/issues/24034"
-log_file: "errors.log"
-classifier:
-  warning_burst_threshold: 3
-  warning_burst_window_s: 1200

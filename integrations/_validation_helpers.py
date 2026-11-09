@@ -11,9 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import ValidationError
-
-from platform.observability.errors.boundary import report_exception
+from infrastructure.observability.errors.boundary import report_exception
 
 
 def report_validation_failure(
@@ -72,22 +70,10 @@ def report_classify_failure(
 ) -> None:
     """Log + Sentry-capture a classify failure for an integration record.
 
-    ``pydantic.ValidationError`` renders the raw invalid field value (often a
-    secret, e.g. a token or password) inline in its message via
-    ``input_value=...``. Sentry's ``before_send`` hook scrubs that pattern from
-    captured events, but this function also logs locally with ``exc_info``,
-    which bypasses the Sentry scrubber entirely. Swap in a message-only
-    ``ValueError`` so no call site has to do this itself.
-
-    The wrapper reuses the original exception's ``__traceback__`` (but not
-    ``__cause__`` — chaining would print the raw ``ValidationError`` text as
-    part of the chain in local logs, defeating the swap above) so logs and
-    Sentry still point at the vendor model/field that actually failed.
+    ``report_exception`` scrubs ``pydantic.ValidationError`` detail (e.g. a
+    secret rendered via ``input_value=...``) out of local logs before this
+    call reaches it, so no sanitization is needed here.
     """
-    if isinstance(exc, ValidationError):
-        safe_exc = ValueError(f"{integration} config validation failed")
-        safe_exc.__traceback__ = exc.__traceback__
-        exc = safe_exc
     report_exception(
         exc,
         logger=logger,

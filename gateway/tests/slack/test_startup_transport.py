@@ -91,7 +91,7 @@ def test_listener_bind_failure_is_a_transport_failure_not_a_crash() -> None:
     # Arrange — a listener thread that dies before ever binding.
     from concurrent.futures import ThreadPoolExecutor
 
-    from gateway.core.runtime.errors import GatewayTransportFailedError
+    from gateway.core.lifecycle.errors import GatewayTransportFailedError
     from gateway.transports.slack.transport.events_api import server as events_server
 
     workers = ThreadPoolExecutor(max_workers=1)
@@ -135,14 +135,14 @@ def test_http_without_a_shared_store_refuses_to_start(monkeypatch: pytest.Monkey
     the turn twice — a warning log does not prevent that, a boot failure does.
     """
     # Arrange.
-    from gateway.core.runtime.errors import GatewayConfigurationError
+    from gateway.core.lifecycle.errors import GatewayConfigurationError
 
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv(startup_module.LOCAL_DEDUP_ENV, raising=False)
 
     # Act / Assert.
     with pytest.raises(GatewayConfigurationError, match="DATABASE_URL"):
-        startup_module._build_deduplicator(logging.getLogger("test"))
+        startup_module._build_handled_event_repository(logging.getLogger("test"))
 
 
 def test_local_dedup_is_allowed_when_explicitly_waived(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,7 +151,7 @@ def test_local_dedup_is_allowed_when_explicitly_waived(monkeypatch: pytest.Monke
     monkeypatch.setenv(startup_module.LOCAL_DEDUP_ENV, "1")
 
     # Act.
-    dedup = startup_module._build_deduplicator(logging.getLogger("test"))
+    dedup = startup_module._build_handled_event_repository(logging.getLogger("test"))
 
     # Assert — a claim only refuses the retry once the turn was confirmed.
     assert dedup.claim("Ev1") is True

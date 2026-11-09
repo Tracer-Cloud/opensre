@@ -1,7 +1,7 @@
 """Inline-keyboard approval prompt for write tools on Telegram.
 
 The transport-neutral half — broker, button identifiers, harness hooks — lives
-in :mod:`gateway.core.runtime.approvals`. This module renders the Telegram side:
+in :mod:`gateway.core.middleware.approvals`. This module renders the Telegram side:
 an Approve / Deny inline keyboard, and callback_query routing back to the broker.
 """
 
@@ -11,7 +11,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from gateway.core.runtime.approvals import (
+from gateway.core.middleware.approvals import (
     APPROVE_ACTION_ID,
     DENY_ACTION_ID,
     MAX_APPROVAL_WAIT_SECONDS,

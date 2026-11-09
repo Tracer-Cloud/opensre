@@ -1,0 +1,301 @@
+---
+title: "Argo CD"
+description: "Connect Argo CD so OpenSRE can inspect GitOps application health, sync state, revisions, and drift"
+---
+
+## Overview
+
+OpenSRE queries the Argo CD REST API as a read-only evidence source when you ask about GitOps deployments. It can list visible applications, inspect one application's sync and health status, and fetch sanitized server-side diff output to show deployment drift.
+
+## Prerequisites
+
+- Argo CD API server reachable from the machine running OpenSRE
+- A dedicated Argo CD account or API token with read access to the applications you want OpenSRE to inspect
+- The Argo CD base URL, for example `https://argocd.example.com`
+
+## Setup
+
+Argo CD is configured through environment variables or the persistent integration store. There is no dedicated `opensre integrations setup argocd` wizard today.
+
+### Option 1: Environment variables
+
+Add one authentication method to your `.env`:
+
+```bash
+ARGOCD_BASE_URL=https://argocd.example.com
+
+# Option A: API token auth. The token may be set with or without a "Bearer " prefix.
+ARGOCD_AUTH_TOKEN=***
+# ARGOCD_TOKEN=***   # alias also supported
+
+# Option B: username/password auth. Use instead of ARGOCD_AUTH_TOKEN.
+# ARGOCD_USERNAME=opensre-readonly
+# ARGOCD_PASSWORD=***
+
+# Optional scoping and TLS settings
+ARGOCD_PROJECT=default
+ARGOCD_APP_NAMESPACE=argocd
+ARGOCD_VERIFY_SSL=true
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ARGOCD_BASE_URL` | — | **Required.** Argo CD API base URL. Remote URLs must use `https://`; plain `http://` is accepted only for loopback or localhost development URLs. |
+| `ARGOCD_AUTH_TOKEN` | — | Argo CD bearer/API token. Use this or username/password, not both. |
+| `ARGOCD_TOKEN` | — | Alias for `ARGOCD_AUTH_TOKEN`. |
+| `ARGOCD_USERNAME` | — | Username for Argo CD session login. Use together with `ARGOCD_PASSWORD`. |
+| `ARGOCD_PASSWORD` | — | Password for Argo CD session login. Use together with `ARGOCD_USERNAME`. |
+| `ARGOCD_PROJECT` | — | Optional Argo CD project filter for listing and application-specific requests. |
+| `ARGOCD_APP_NAMESPACE` | — | Optional application namespace passed as `appNamespace` for application-specific requests. |
+| `ARGOCD_VERIFY_SSL` | `true` | Whether to verify TLS certificates. Set to `false` only for trusted local or lab environments. |
+
+OpenSRE rejects ambiguous auth configuration. Do not set a bearer token and username/password at the same time.
+
+### Option 2: Persistent store
+
+You can also add Argo CD to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "argocd-prod",
+      "service": "argocd",
+      "status": "active",
+      "credentials": {
+        "base_url": "https://argocd.example.com",
+        "bearer_token": "***",
+        "project": "default",
+        "app_namespace": "argocd",
+        "verify_ssl": true
+      }
+    }
+  ]
+}
+```
+
+The store also accepts `auth_token` or `token` as aliases for `bearer_token`. For username/password auth, omit `bearer_token` and set `username` and `password` instead.
+
+### Option 3: Multiple Argo CD instances
+
+For multiple Argo CD instances, set `ARGOCD_INSTANCES` to a JSON array. The first valid instance is used as the default integration.
+
+```bash
+export ARGOCD_INSTANCES='[
+  {
+    "name": "prod",
+    "tags": {"env": "prod"},
+    "credentials": {
+      "base_url": "https://argocd.prod.example.com",
+      "bearer_token": "***",
+      "project": "default"
+    }
+  },
+  {
+    "name": "staging",
+    "tags": {"env": "staging"},
+    "base_url": "https://argocd.staging.example.com",
+    "username": "opensre-readonly",
+    "password": "***"
+  }
+]'
+```
+
+When `ARGOCD_INSTANCES` is set, the single-instance `ARGOCD_BASE_URL` and auth variables are ignored for this service. `opensre integrations verify argocd` validates the resolved default instance.
+
+## Credentials
+
+1. In Argo CD, create a dedicated **read-only** account or API token for OpenSRE.
+2. Grant that identity list/get access to the applications (and projects) you want investigated.
+3. Set either:
+   - `ARGOCD_AUTH_TOKEN` / `ARGOCD_TOKEN` (or store `bearer_token`), **or**
+   - `ARGOCD_USERNAME` + `ARGOCD_PASSWORD` (or store `username` / `password`)
+4. Set `ARGOCD_BASE_URL` to your API base (HTTPS for remote hosts).
+
+## Tools
+
+| Tool / evidence | What it does |
+| --- | --- |
+| `argocd_application_status` | With `application_name`, returns a compact summary: sync status, health status, current revision, operation phase/message, destination, images, and recent deployment history. Without `application_name`, lists visible applications (optionally scoped by `ARGOCD_PROJECT`). |
+| `argocd_application_diff` | Server-side diff for one application (requires `application_name`). Returns `drift_detected`, `diff_count`, and sanitized diff records for Kubernetes objects whose live state differs from GitOps. |
+
+Once Argo CD is configured, start `opensre` and name the application in your question, e.g. *"Is checkout-api out of sync? What drifted?"*
+
+### Local verification recipe
+
+Verified both registered tools live against a real local Argo CD install with a real
+GitOps application synced from a public repo.
+
+```bash
+if kind get clusters 2>/dev/null | grep -qx opensre-argocd-demo; then
+  read -r -p "A kind cluster named opensre-argocd-demo already exists. Delete it and continue? [y/N] " confirm
+  [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "Aborted -- rename the recipe's cluster or clean up the existing one first." >&2; exit 1; }
+  kind delete cluster --name opensre-argocd-demo
+fi
+kind create cluster --name opensre-argocd-demo
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml \
+  --server-side --force-conflicts
+kubectl -n argocd wait --for=condition=Available deployment/argocd-server --timeout=180s
+kubectl -n argocd wait --for=condition=Available deployment/argocd-repo-server --timeout=180s
+```
+
+<Warning>
+The stock `install.yaml` fails under a plain `kubectl apply` with `metadata.annotations:
+Too long: may not be more than 262144 bytes` -- the ApplicationSet CRD is large enough
+that client-side apply's `kubectl.kubernetes.io/last-applied-configuration` annotation
+exceeds Kubernetes' own annotation size limit. `--server-side --force-conflicts` avoids
+storing that annotation entirely.
+</Warning>
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8080:443 &
+ARGOCD_PORT_FORWARD_PID=$!
+trap 'kill "$ARGOCD_PORT_FORWARD_PID" 2>/dev/null' EXIT
+
+i=0
+until curl -sk -o /dev/null https://localhost:8080/api/v1/session; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: port-forward never became ready" >&2; exit 1; }
+  sleep 1
+done
+
+ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+
+ARGOCD_AUTH_TOKEN=$(curl -sk -X POST https://localhost:8080/api/v1/session \
+  -H "Content-Type: application/json" \
+  -d "{\"username\":\"admin\",\"password\":\"${ARGOCD_PWD}\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+export ARGOCD_BASE_URL="https://localhost:8080"
+export ARGOCD_AUTH_TOKEN
+export ARGOCD_VERIFY_SSL=false
+```
+
+Create a real Application synced from Argo CD's own public example repo:
+
+```bash
+cat > /tmp/argocd-app.yaml << 'YAML'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+YAML
+kubectl apply -f /tmp/argocd-app.yaml
+
+i=0
+until kubectl -n argocd get application guestbook -o jsonpath='{.status.health.status}' 2>/dev/null | grep -q "Healthy"; do
+  i=$((i + 1))
+  [ "$i" -ge 60 ] && { echo "ERROR: guestbook never became healthy" >&2; exit 1; }
+  sleep 5
+done
+```
+
+Verify:
+
+```bash
+opensre integrations verify argocd
+```
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+argocd  │ local env │ ✓ passed │ Connected to Argo CD and listed 1 application.
+```
+
+Chat sessions (unlike `opensre integrations verify`) only fall through to env
+vars when the store has no records at all -- any existing record, for any service, blocks
+env-var resolution entirely. Point `OPENSRE_INTEGRATIONS_STORE_PATH` at a path inside a
+fresh empty directory instead, so your real config is never read or written and the
+`ARGOCD_*` vars above are the only source of connection info:
+
+```bash
+export OPENSRE_DEMO_STORE_DIR="$(mktemp -d /tmp/opensre-argocd-demo.XXXXXX)"
+export OPENSRE_INTEGRATIONS_STORE_PATH="$OPENSRE_DEMO_STORE_DIR/integrations.json"
+```
+
+`argocd_application_diff` needs real drift to return anything interesting -- with
+`selfHeal: true` set above, Argo CD reverts live-cluster drift within seconds, so
+disable automated sync first to introduce a drift that actually sticks:
+
+```bash
+kubectl -n argocd patch application guestbook --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
+kubectl -n demo-app patch deployment guestbook-ui -p '{"spec":{"replicas":3}}'
+```
+
+Now ask the agent about the drift:
+
+```bash
+opensre
+```
+
+Ask: *Is the guestbook Argo CD application out of sync? What drifted?*
+
+The agent decides which tools to call on a given turn, so `argocd_application_diff`
+isn't guaranteed to run every time -- on a turn where it did, it correctly reported the
+drift introduced above: `guestbook-ui`'s replica count changed from the desired `1` to
+the live `3`. Both registered tools return real data through this same chat flow --
+`argocd_application_status` for sync/health status, revision, and operation phase, and
+`argocd_application_diff` for per-resource drift when the agent calls it.
+
+Teardown:
+
+```bash
+kill "$ARGOCD_PORT_FORWARD_PID" 2>/dev/null
+kind delete cluster --name opensre-argocd-demo
+rm -rf "$OPENSRE_DEMO_STORE_DIR"
+unset OPENSRE_DEMO_STORE_DIR OPENSRE_INTEGRATIONS_STORE_PATH ARGOCD_BASE_URL ARGOCD_AUTH_TOKEN ARGOCD_VERIFY_SSL ARGOCD_PORT_FORWARD_PID
+```
+
+## Verify
+
+```bash
+opensre integrations verify argocd
+```
+
+Expected output:
+
+```text
+Service: argocd
+Status:  passed
+Detail:  Connected to Argo CD and listed 3 applications.
+```
+
+Verification performs a read-only application list call. It proves OpenSRE can reach Argo CD and list visible applications with the configured credentials; it does not write to Argo CD or sync applications.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Status: missing** | Set `ARGOCD_BASE_URL` and exactly one auth method, or add an active `argocd` store entry. |
+| **Remote `http://` URL rejected** | Use `https://` for remote Argo CD. Use plain HTTP only for `localhost`, `127.0.0.1`, or `::1` development endpoints. |
+| **401 Unauthorized** | Check the token, or verify that username/password login can create an Argo CD session. |
+| **403 Forbidden** | Ensure the account can list applications and read the target application. |
+| **SSL error** | Fix the certificate chain or, for a trusted lab only, set `ARGOCD_VERIFY_SSL=false`. |
+| **No diff evidence** | The diff tool requires an application name — name the application in your question. |
+| **Application list succeeds but a named app fails** | Check `ARGOCD_PROJECT` and `ARGOCD_APP_NAMESPACE`, and confirm the account has access to that application. |
+
+## Security
+
+- Use a dedicated read-only Argo CD account or token for OpenSRE.
+- Store credentials in `.env` or `~/.opensre/integrations.json`, not in source code.
+- Use `https://` for remote Argo CD URLs. Plain `http://` is accepted only for loopback or localhost development URLs.
+- Do not disable `ARGOCD_VERIFY_SSL` for production instances.
+- OpenSRE redacts bearer tokens, passwords, token-like strings, and Kubernetes `Secret` diffs before surfacing Argo CD errors or diff evidence.
+- The integration is read-only: it lists applications, reads application summaries, and reads server-side diff data. It does not sync, modify, or delete Argo CD resources.

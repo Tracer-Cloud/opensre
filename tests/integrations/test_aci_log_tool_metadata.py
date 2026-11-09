@@ -1,4 +1,4 @@
-"""Characterization: top investigation log tools expose ACI-shaped metadata."""
+"""Characterization: top chat log tools expose ACI-shaped metadata."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from tools.registry import get_registered_tools
 
 
 @pytest.fixture(scope="module")
-def investigation_tools() -> dict[str, object]:
-    return {t.name: t for t in get_registered_tools("investigation")}
+def chat_tools() -> dict[str, object]:
+    return {t.name: t for t in get_registered_tools("chat")}
 
 
 @pytest.mark.parametrize(
@@ -27,12 +27,12 @@ def investigation_tools() -> dict[str, object]:
     ],
 )
 def test_log_tool_aci_contract(
-    investigation_tools: dict[str, object],
+    chat_tools: dict[str, object],
     name: str,
     must_mention: str,
     required_contains: list[str],
 ) -> None:
-    tool = investigation_tools[name]
+    tool = chat_tools[name]
     description = str(getattr(tool, "description", "") or "")
     anti = list(getattr(tool, "anti_examples", None) or [])
     required = list((getattr(tool, "input_schema", None) or {}).get("required") or [])

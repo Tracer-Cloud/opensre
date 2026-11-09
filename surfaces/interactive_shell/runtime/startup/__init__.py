@@ -1,1 +1,1 @@
-"""Interactive shell startup and first-launch gates."""
+"""Interactive shell startup hooks."""

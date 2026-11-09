@@ -1,9 +1,0 @@
-{
-  "session_id": "hermes-acp-023",
-  "pid": 6122,
-  "started_at": "2026-05-18T13:00:00Z",
-  "frozen_now_ts": "2026-05-18T13:09:41Z",
-  "interrupt_queue_depth": 0,
-  "last_progress_ts": "2026-05-18T13:08:58Z",
-  "is_blocked": false
-}

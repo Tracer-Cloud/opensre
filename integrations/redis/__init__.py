@@ -25,10 +25,10 @@ from config.constants.redis import (
 )
 from config.llm_credentials import resolve_env_credential
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.coercion import safe_int
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
 from integrations.config_models import RedisIntegrationConfig
-from platform.common.coercion import safe_int
 
 logger = logging.getLogger(__name__)
 

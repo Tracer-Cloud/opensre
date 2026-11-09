@@ -1,4 +1,0 @@
-2026-05-11 22:00:00,000 INFO agent.auxiliary_client: Auxiliary title_generation: connection error on auto
-2026-05-11 22:00:00,500 INFO agent.auxiliary_client: Auxiliary title_generation: nvidia primary failed; falling back to openrouter (google/gemini-3-flash-preview)
-2026-05-11 22:00:01,000 WARNING agent.title_generator: Title generation failed: Error code: 403 - {'error': {'message': 'Key limit exceeded (monthly limit)'}}
-2026-05-11 22:00:01,100 ERROR agent.auxiliary_client: auxiliary fallback chose paid model 'google/gemini-3-flash-preview' on openrouter while user fallback_providers only declares :free variants — billed request bypassed free-only intent

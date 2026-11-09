@@ -9,7 +9,7 @@ from typing import Any
 from rich.console import Console
 from rich.markup import escape as _rich_escape
 
-from platform.terminal.theme import ERROR
+from infrastructure.terminal.theme import ERROR
 from surfaces.interactive_shell.runtime import Session
 
 
@@ -35,6 +35,10 @@ class SlashCommand:
     anti_examples: tuple[str, ...] = ()
     #: JSON Schema for positional args after the command name (optional override).
     args_schema: dict[str, Any] | None = None
+    #: Whether running this command can change state. Control commands (exit,
+    #: quit) set this False so the execution gate — including the plan-only
+    #: gate — never asks the user to confirm them.
+    mutating: bool = True
 
 
 def make_list_root_handler(

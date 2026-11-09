@@ -8,6 +8,7 @@ intent selection is a live concern exercised via ReplDriver, not here.
 from __future__ import annotations
 
 import io
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,18 +17,46 @@ from rich.console import Console
 import tools.interactive_shell.actions.sentry_fix as sentry_fix
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
-    ActionToolContext,
+    ActionToolScope,
 )
-from core.types import AgentToolContext
+from core.tool.contracts import AgentToolContext
+from tools.interactive_shell.shared import ExecutionPolicyResult
+from tools.interactive_shell.subprocess_presenter import HeadlessSubprocessPresenter
 
 _TOOL_RUN = "tools.interactive_shell.actions.sentry_fix.fix_sentry_issue.run"
 _URL = "https://acme.sentry.io/issues/12345/"
 
 
-def _ctx() -> tuple[ActionToolContext, io.StringIO]:
+class _GatePresenter(HeadlessSubprocessPresenter):
+    """Headless presenter that records the execution-policy gate."""
+
+    def __init__(self, session: Any, console: Any, *, allowed: bool = True) -> None:
+        super().__init__(session, console)
+        self.allowed = allowed
+        self.gate_calls: list[tuple[ExecutionPolicyResult, str]] = []
+
+    def execution_allowed(
+        self,
+        policy: ExecutionPolicyResult,
+        *,
+        action_summary: str,
+    ) -> bool:
+        self.gate_calls.append((policy, action_summary))
+        return self.allowed
+
+
+def _ctx(*, allowed: bool = True) -> tuple[ActionToolScope, io.StringIO]:
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False, highlight=False, width=200)
-    return ActionToolContext(session=MagicMock(), console=console), buf
+    session = MagicMock()
+    return (
+        ActionToolScope(
+            session=session,
+            console=console,
+            subprocess_presenter=_GatePresenter(session, console, allowed=allowed),
+        ),
+        buf,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -147,6 +176,21 @@ def test_renders_pr_failed_recovery_says_already_pushed(mock_run: MagicMock) -> 
     assert "pushed to branch" in out
     assert "open the PR manually" in out
     assert "push and open" not in out
+
+
+@patch(_TOOL_RUN)
+def test_refused_approval_does_not_run_the_fix(mock_run: MagicMock) -> None:
+    ctx, _ = _ctx(allowed=False)
+    handled = sentry_fix.execute_sentry_fix_tool({"sentry_url": _URL, "open_pr": True}, ctx)
+
+    assert handled is True
+    mock_run.assert_not_called()
+    presenter = ctx.subprocess_presenter
+    assert isinstance(presenter, _GatePresenter)
+    assert len(presenter.gate_calls) == 1
+    policy, summary = presenter.gate_calls[0]
+    assert policy.tool_type == "sentry_issue_fix"
+    assert "open a pull request" in summary
 
 
 # --------------------------------------------------------------------------- #

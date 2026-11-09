@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 
-from gateway.core.runtime.active_turns import (
+from gateway.core.middleware.active_turns import (
     ActiveTurnRegistry,
     is_stop_command,
 )
@@ -44,11 +44,50 @@ def test_track_unregisters_even_when_turn_raises() -> None:
     assert registry.request_stop("chat-1") is False
 
 
-def test_newer_track_replaces_key() -> None:
+def test_request_stop_cancels_running_and_queued_turns_for_the_key() -> None:
+    # Arrange — one running turn and one queued behind the conversation lock
     registry = ActiveTurnRegistry()
-    first = threading.Event()
-    second = threading.Event()
-    with registry.track("chat-1", first), registry.track("chat-1", second):
-        assert registry.request_stop("chat-1") is True
-        assert second.is_set()
-        assert not first.is_set()
+    running = threading.Event()
+    queued = threading.Event()
+
+    with registry.track("chat-1", running), registry.track("chat-1", queued):
+        # Act
+        stopped = registry.request_stop("chat-1")
+
+        # Assert — /stop means stop the conversation, not just one turn
+        assert stopped is True
+        assert running.is_set()
+        assert queued.is_set()
+
+
+def test_stop_finds_a_turn_registered_at_dispatch_before_it_starts() -> None:
+    # Arrange — dispatch registered the accepted turn; its task has not run yet
+    registry = ActiveTurnRegistry()
+    accepted = threading.Event()
+    registry.register("chat-1", accepted)
+
+    # Act
+    stopped = registry.request_stop("chat-1")
+
+    # Assert
+    assert stopped is True
+    assert accepted.is_set()
+    registry.unregister("chat-1", accepted)
+    assert registry.request_stop("chat-1") is False
+
+
+def test_bind_user_stop_attaches_finalizer_to_a_registered_event() -> None:
+    # Arrange
+    registry = ActiveTurnRegistry()
+    event = threading.Event()
+    seen: list[str] = []
+    registry.register("chat-1", event)
+
+    # Act
+    registry.bind_user_stop("chat-1", event, lambda: seen.append("stop"))
+    registry.request_stop("chat-1")
+
+    # Assert
+    assert event.is_set()
+    assert seen == ["stop"]
+    registry.unregister("chat-1", event)

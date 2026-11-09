@@ -1,27 +1,38 @@
-"""Interactive-shell output adapter implementing :mod:`core.agent_harness.ports`.
+"""Interactive-shell adapters for :mod:`core.agent_harness.ports`: the console sink and error reporter.
 
-This module owns terminal rendering only. Shared action-tool, reasoning-client,
-run-record, and error-reporting providers live in :mod:`core.agent_harness`.
+Shared action-tool, reasoning-client and run-record providers live in
+:mod:`core.agent_harness`.
 """
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markup import escape
+from rich.text import Text
 
-from core.agent_harness.ports import OutputSink
-from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
+from core.agent_harness import OutputSink
+from core.agent_harness.spi.defaults import DefaultErrorReporter
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
+from infrastructure.safety.terminal_output import strip_terminal_controls
+from infrastructure.text.plan_snapshots import strip_plan_snapshots
+from surfaces.interactive_shell.ui import DIM, ERROR, TEXT
+from surfaces.interactive_shell.ui.transcript import TranscriptRole, transcript_prefix
+
+if TYPE_CHECKING:
+    from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.streaming import (
-    StreamPaintResult,
+    ReplyStream,
+    StreamRenderResult,
     finish_deferred_closer,
     publish_full_response,
-    render_response_header,
     stream_to_console,
     stream_to_console_state,
 )
+from surfaces.shared.error_handling.exception_reporting import report_exception
 
 
 class ShellOutputSink:
@@ -32,14 +43,29 @@ class ShellOutputSink:
     can keep the same sink object.
     """
 
-    def __init__(self, console: Console) -> None:
-        self._console = console
-        self._paint: StreamPaintResult | None = None
+    def __init__(self, console: Console, session: Session | None = None) -> None:
+        self.bind_console(console)
+        self._session = session
+        self._stream_result: StreamRenderResult | None = None
         self._defer_want_me_to_closer = False
 
     def bind_console(self, console: Console) -> None:
         """Point subsequent output at ``console`` for the current turn."""
         self._console = console
+        cancel = getattr(console, "cancel_event", None)
+        self.turn_cancel = cancel if isinstance(cancel, threading.Event) else None
+
+    def _flush_pending_action_log(self) -> None:
+        """Render the turn's buffered tool actions once, just before the reply.
+
+        Flushing here (not per ReAct iteration) keeps same-kind calls that span
+        iterations in one group, and keeps the log above the reply.
+        """
+        if self._session is None:
+            return
+        from surfaces.interactive_shell.ui.action_log import flush_action_log
+
+        flush_action_log(self._console, self._session)
 
     def print(self, message: str = "") -> None:
         """Render harness text literally.
@@ -48,29 +74,49 @@ class ShellOutputSink:
         replies, skill bodies. A ``sed 's/\\]\\]>//'`` in a shell command
         reads to Rich as an unbalanced markup tag and raised ``MarkupError``,
         which took the whole turn down. Styled output goes through the
-        ``render_*`` methods instead. Session-goal progress tags are scrubbed
-        so a non-stream paint path cannot leak ``session_goal:done=`` /
-        ``achieved`` into the TTY.
+        ``render_*`` methods instead.
         """
-        if message and "session_goal:" in message:
-            visible = strip_session_goal_progress_tags(message)
-            if not visible.strip():
-                return
-            message = visible
         self._console.print(message, markup=False)
 
     def render_response_header(self, label: str) -> None:
-        render_response_header(self._console, label)
+        """Leave terminal headers to the following reply or error renderer."""
+        _ = label
+
+    def render_plan_breakdown(self, breakdown: str) -> None:
+        """Theme the post-execution checklist: primary steps, dim work notes."""
+        from surfaces.interactive_shell.ui.task_plan import render_plan_breakdown
+
+        render_plan_breakdown(self._console, breakdown)
 
     def render_error(self, message: str) -> None:
-        self._console.print(f"[yellow]{escape(message)}[/]")
+        safe_message = strip_terminal_controls(message, keep_whitespace=True)
+        line = Text()
+        line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
+        line.append(" ".join(safe_message.split()), style=str(TEXT))
+        self._console.print(line)
         # On a credit/billing wall, add the in-tool recovery hint.
         if CREDIT_EXHAUSTED_MARKER in message:
             self._console.print("[dim]Run /model to switch to another provider.[/]")
             self._console.print(
-                "[dim]Or run /auth login <provider> to re-authenticate "
-                "or add a different provider.[/]"
+                "[dim]Or run /login <provider> to re-authenticate or add a different provider.[/]"
             )
+
+    def set_tool_status(self, status: str) -> None:
+        """Show live progress for the running turn.
+
+        A chat placeholder holds one status line and rewrites it. A terminal has
+        no placeholder to rewrite, so each status is its own dim line.
+        """
+        if status:
+            self._console.print(f"[{DIM}]{escape(status)}[/]")
+
+    def finalize(self, answer: str) -> None:
+        """Do nothing: chat fills a placeholder here, and the terminal has none.
+
+        Terminal output lands as it happens, so by the time the host finalizes
+        an unstreamed turn there is nothing left to show.
+        """
+        _ = answer
 
     def stream(
         self,
@@ -80,18 +126,39 @@ class ShellOutputSink:
         suppress_if_starts_with: str | None = None,
         defer_want_me_to_closer: bool = False,
     ) -> str:
+        # All tool iterations are done by the time the reply streams: flush the
+        # buffered action log now so it sits above the reply, grouped as one.
+        self._flush_pending_action_log()
+        live = self._take_live_reply()
+        if live is not None:
+            parts = list(chunks)
+            if (
+                parts
+                and suppress_if_starts_with is None
+                and not defer_want_me_to_closer
+                and _shows_live_text(live, parts[0])
+            ):
+                # The closing is already on screen: the rest prints beneath it.
+                for part in parts[1:]:
+                    live.feed(part)
+                live.finish()
+                self._defer_want_me_to_closer = False
+                self._stream_result = None
+                return "".join(parts)
+            live.finish()
+            chunks = parts
         self._defer_want_me_to_closer = defer_want_me_to_closer
         if defer_want_me_to_closer:
-            paint = stream_to_console_state(
+            stream_result = stream_to_console_state(
                 self._console,
                 label=label,
                 chunks=iter(chunks),
                 suppress_if_starts_with=suppress_if_starts_with,
                 defer_want_me_to_closer=True,
             )
-            self._paint = paint
-            return paint.text
-        self._paint = None
+            self._stream_result = stream_result
+            return stream_result.text
+        self._stream_result = None
         return stream_to_console(
             self._console,
             label=label,
@@ -99,33 +166,65 @@ class ShellOutputSink:
             suppress_if_starts_with=suppress_if_starts_with,
         )
 
-    def finish_streamed_response(self, text: str) -> None:
+    def _take_live_reply(self) -> ReplyStream | None:
+        """The reply the transcript is printing while it streams, handed over once."""
+        terminal = getattr(self._session, "terminal", None)
+        live = getattr(terminal, "live_reply", None)
+        if terminal is None or not isinstance(live, ReplyStream):
+            return None
+        terminal.live_reply = None
+        return live
+
+    def finish_streamed_response(self, answer: str) -> None:
         """Flush a deferred / rewritten Want-me-to closer after gather normalize."""
-        paint = self._paint
+        stream_result = self._stream_result
         defer = self._defer_want_me_to_closer
-        self._paint = None
+        self._stream_result = None
         self._defer_want_me_to_closer = False
-        if not defer or paint is None:
+        if not defer or stream_result is None:
             return
-        if not paint.deferred_closer and text == paint.text:
+        if not stream_result.deferred_closer and answer == stream_result.text:
             return
         # Non-TTY deferred holds the entire answer until normalize.
-        if not self._console.is_terminal and paint.deferred_closer:
-            publish_full_response(self._console, text)
+        if not self._console.is_terminal and stream_result.deferred_closer:
+            publish_full_response(self._console, answer)
             return
         finish_deferred_closer(
             self._console,
-            text,
-            footer_elapsed_s=paint.footer_elapsed_s,
-            footer_total_bytes=paint.footer_total_bytes,
+            answer,
+            footer_elapsed_s=stream_result.footer_elapsed_s,
+            footer_total_bytes=stream_result.footer_total_bytes,
         )
 
 
-def resolve_output_sink(console: Console, output: OutputSink | None) -> OutputSink:
-    """Return the caller's sink, or a shell sink bound to ``console``."""
+def _shows_live_text(live: ReplyStream, closing: str) -> bool:
+    """Whether the live reply already shows ``closing``, the composed reply's first part."""
+    return strip_plan_snapshots(live.text).strip() == closing.strip()
+
+
+def resolve_output_sink(
+    console: Console, output: OutputSink | None, session: Session | None = None
+) -> OutputSink:
+    """Return the caller's sink, or a shell sink bound to ``console`` and ``session``."""
     if output is not None:
         return output
-    return ShellOutputSink(console)
+    return ShellOutputSink(console, session)
 
 
-__all__ = ["ShellOutputSink", "resolve_output_sink"]
+class ShellErrorReporter:
+    """:class:`~core.agent_harness.ports.ErrorReporter` for the REPL: debug log plus Sentry.
+
+    Swallowed boundary exceptions (gather, answer, tool errors) are logged like
+    the default reporter and forwarded to :func:`report_exception`, which
+    filters expected failures before capturing.
+    """
+
+    def __init__(self) -> None:
+        self._log = DefaultErrorReporter()
+
+    def report(self, exc: BaseException, *, context: str, expected: bool = False) -> None:
+        self._log.report(exc, context=context, expected=expected)
+        report_exception(exc, context=context, expected=expected)
+
+
+__all__ = ["ShellErrorReporter", "ShellOutputSink", "resolve_output_sink"]

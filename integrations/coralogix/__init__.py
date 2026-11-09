@@ -7,8 +7,12 @@ from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
 from integrations.config_models import CoralogixIntegrationConfig
+from integrations.coralogix.setup import CORALOGIX_SETUP
 
 logger = logging.getLogger(__name__)
+
+
+__all__ = ["CORALOGIX_SETUP", "classify"]
 
 
 def classify(

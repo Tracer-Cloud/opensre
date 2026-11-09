@@ -3,7 +3,7 @@
 Borders under test
 ------------------
 * ``gateway.transports.discord`` and ``gateway.transports.slack`` never import each other — the
-  shared approval broker and attention gate live in ``gateway.core.runtime``.
+  shared approval broker and attention gate live in ``gateway.core.middleware``.
 * Importing the Discord transport pulls in no Slack SDK.
 * Discord is org-scoped like Slack: two members of one org get private
   sessions, and a Discord row never answers a lookup from another transport.
@@ -70,7 +70,7 @@ def test_slack_package_never_imports_discord() -> None:
 def test_shared_approval_module_imports_no_transport() -> None:
     """The extracted broker must not depend on the transports that use it."""
     # Arrange
-    shared = REPO_ROOT / "gateway" / "core" / "runtime" / "approvals.py"
+    shared = REPO_ROOT / "gateway" / "core" / "middleware" / "approvals.py"
 
     # Act
     imported = _imported_modules(shared)

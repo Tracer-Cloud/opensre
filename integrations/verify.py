@@ -14,6 +14,18 @@ from typing import Any
 
 from rich.markup import escape
 
+from infrastructure.terminal.theme import (
+    DIM,
+    ERROR,
+    GLYPH_BULLET,
+    GLYPH_ERROR,
+    GLYPH_SUCCESS,
+    GLYPH_WARNING,
+    HIGHLIGHT,
+    SECONDARY,
+    TEXT,
+    WARNING,
+)
 from integrations._table_render import new_table, render_table, wrap_clauses
 from integrations._verifiers_loader import register_all_verifiers
 from integrations.catalog import (
@@ -28,18 +40,6 @@ from integrations.registry import (
 from integrations.slack.verifier import RUNTIME_SEND_TEST_KEY as _SLACK_RUNTIME_SEND_TEST_KEY
 from integrations.store import get_integration
 from integrations.verification import VerifierFn, get_verifier, result
-from platform.terminal.theme import (
-    DIM,
-    ERROR,
-    GLYPH_BULLET,
-    GLYPH_ERROR,
-    GLYPH_SUCCESS,
-    GLYPH_WARNING,
-    HIGHLIGHT,
-    SECONDARY,
-    TEXT,
-    WARNING,
-)
 
 register_all_verifiers()
 
@@ -70,6 +70,10 @@ def _missing_integration_detail(current_service: str) -> str:
                 if store_record is not None:
                     break
     if store_record is None:
+        from config.account import load_account_record, resolve_account_token
+
+        if load_account_record() is not None and resolve_account_token():
+            return "Not configured in the OpenSRE app, local store, or environment variables."
         return "Not configured in local store or environment variables."
 
     endpoint = ""
@@ -169,7 +173,7 @@ def verify_integrations(
 def format_verification_results(results: list[dict[str, str]]) -> str:
     """Render verification results as a theme-consistent Rich table.
 
-    Long ``detail`` text (e.g. the multi-clause OpenClaw bridge hint) is
+    Long ``detail`` text (e.g. a multi-clause bridge hint) is
     folded within its own column instead of overflowing the terminal, which
     is what broke row alignment in the old fixed-width string formatting.
     Each ``"; "``/``" | "`` clause is put on its own line first (see

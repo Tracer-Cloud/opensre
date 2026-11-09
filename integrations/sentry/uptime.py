@@ -17,10 +17,10 @@ from typing import Any, Literal
 
 import httpx
 
+import integrations.sentry.client as _sentry_client
 from config.constants import OPENSRE_HOME_DIR
 from integrations.sentry import (
     SentryConfig,
-    _request_json,
     build_sentry_config,
     describe_sentry_api_error,
     sentry_config_from_env,
@@ -194,7 +194,7 @@ def list_sentry_uptime_monitors(*, config: SentryConfig) -> list[UptimeMonitor]:
         params.append(("project", config.project_slug))
 
     try:
-        payload = _request_json(config, "GET", path, params=params or None)
+        payload = _sentry_client._request_json(config, "GET", path, params=params or None)
     except httpx.HTTPStatusError as err:
         detail = describe_sentry_api_error(
             err,

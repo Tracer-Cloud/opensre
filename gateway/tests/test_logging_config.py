@@ -8,7 +8,7 @@ from gateway.core.config.logging_config import (
     _GatewayLogFormatter,
     _GatewayProcessLogFilter,
 )
-from platform.logging import quiet_noisy_third_party_loggers
+from infrastructure.logging import quiet_noisy_third_party_loggers
 
 
 @pytest.fixture(autouse=True)

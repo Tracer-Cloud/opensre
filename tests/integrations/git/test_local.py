@@ -17,7 +17,13 @@ import pytest
 
 from config.constants.git import OPENSRE_COMMIT_COAUTHOR_TRAILER
 from integrations.git import local as gitlocal
-from integrations.git.errors import BRANCH_FAILED, NOT_A_GIT_REPO, PROTECTED_BRANCH, GitCommandError
+from integrations.git.errors import (
+    BRANCH_FAILED,
+    HEAVY_WORK_BUSY,
+    NOT_A_GIT_REPO,
+    PROTECTED_BRANCH,
+    GitCommandError,
+)
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -310,14 +316,17 @@ def test_push_branch_scopes_token_header_to_https_origin_host(tmp_path: Path) ->
         "/srv/repos/app.git",  # local/file
     ],
 )
-def test_push_branch_skips_token_header_for_non_https_origin(
+def test_push_branch_rejects_token_auth_for_non_https_origin(
     tmp_path: Path, origin_url: str
 ) -> None:
     work = _init_repo(tmp_path)
     captured: dict[str, Any] = {}
-    with patch.object(gitlocal, "_run_git", _fake_run_git_factory(captured, origin_url)):
+    with (
+        patch.object(gitlocal, "_run_git", _fake_run_git_factory(captured, origin_url)),
+        pytest.raises(GitCommandError, match="HTTPS"),
+    ):
         gitlocal.push_branch(str(work), "opensre/sentry-fix-1-x", base_default="main", token="tok")
-    assert captured["env"] is None
+    assert "args" not in captured
 
 
 def test_push_branch_no_env_without_token(tmp_path: Path) -> None:
@@ -331,3 +340,146 @@ def test_push_branch_no_env_without_token(tmp_path: Path) -> None:
     with patch.object(gitlocal, "_run_git", _fake_run_git):
         gitlocal.push_branch(str(work), "opensre/sentry-fix-1-x", base_default="main")
     assert captured["env"] is None
+
+
+def test_a_missing_workspace_is_reported_as_such_not_as_missing_git(tmp_path: Path) -> None:
+    # Arrange
+    missing = str(tmp_path / "nowhere")
+
+    # Act
+    with pytest.raises(GitCommandError) as excinfo:
+        gitlocal.current_branch(missing)
+
+    # Assert
+    assert excinfo.value.kind == NOT_A_GIT_REPO
+    assert "is not a directory" in excinfo.value.message
+
+
+def test_push_head_follows_the_push_remote_gh_sets_for_a_fork_checkout(tmp_path: Path) -> None:
+    # Arrange: the branch tracks origin but, as after `gh pr checkout` of a fork PR,
+    # pushes to the contributor's fork.
+    work = _init_repo(tmp_path)
+    fork = tmp_path / "fork.git"
+    _git(tmp_path, "init", "--bare", str(fork))
+    _git(work, "checkout", "-q", "-b", "feature")
+    (work / "README.md").write_text("from the fork\n")
+    _git(work, "commit", "-qam", "fork work")
+    _git(work, "config", "branch.feature.remote", "origin")
+    _git(work, "config", "branch.feature.merge", "refs/heads/feature")
+    _git(work, "config", "branch.feature.pushRemote", str(fork))
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True
+    ).stdout.strip()
+
+    # Act
+    label = gitlocal.push_head_to_upstream(str(work))
+
+    # Assert: the fork received the commit, origin gained no branch, and the
+    # label names the fork's owner the way GitHub does.
+    fork_heads = subprocess.run(
+        ["git", "ls-remote", str(fork), "refs/heads/feature"], capture_output=True, text=True
+    ).stdout
+    origin_heads = subprocess.run(
+        ["git", "ls-remote", str(tmp_path / "remote.git"), "refs/heads/feature"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert head in fork_heads
+    assert origin_heads == ""
+    assert label == f"{tmp_path.name}:feature"
+    assert gitlocal.push_destination(str(work)) == label
+
+
+@pytest.mark.parametrize(
+    "push_remote",
+    [
+        "git@github.com:contributor/opensre.git",
+        "https://github.com/contributor/opensre.git",
+        "ssh://git@github.com/contributor/opensre.git",
+    ],
+)
+def test_push_destination_names_the_fork_owner_for_every_remote_url_form(
+    tmp_path: Path, push_remote: str
+) -> None:
+    # Arrange
+    work = _init_repo(tmp_path)
+    _git(work, "checkout", "-q", "-b", "feature")
+    _git(work, "config", "branch.feature.remote", "origin")
+    _git(work, "config", "branch.feature.merge", "refs/heads/feature")
+    _git(work, "config", "branch.feature.pushRemote", push_remote)
+
+    # Act
+    label = gitlocal.push_destination(str(work))
+
+    # Assert
+    assert label == "contributor:feature"
+
+
+def test_a_clone_waits_for_a_heavy_work_slot_and_refuses_with_a_git_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Concurrent full clones can OOM a shared gateway task; a full gate must not start one."""
+    # Arrange: both heavy-work slots are held and the wait is short.
+    from config.constants.turn_concurrency import OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV
+    from infrastructure.process.turn_capacity import (
+        HEAVY_WORK_BUSY_MESSAGE,
+        process_heavy_work_gate,
+        reset_process_heavy_work_gate_for_tests,
+    )
+    from infrastructure.process.turn_capacity import heavy_work as heavy_work_module
+
+    monkeypatch.setenv(OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV, "2")
+    monkeypatch.setattr(heavy_work_module, "HEAVY_WORK_WAIT_SECONDS", 0.01)
+    reset_process_heavy_work_gate_for_tests()
+    gate = process_heavy_work_gate()
+    assert gate.try_acquire() and gate.try_acquire()
+    git_calls: list[tuple[str, ...]] = []
+
+    def _record_git(_workspace: str, *args: str, **_kwargs: Any) -> None:
+        git_calls.append(args)
+
+    monkeypatch.setattr(gitlocal, "_run_git", _record_git)
+
+    try:
+        # Act
+        with pytest.raises(GitCommandError) as excinfo:
+            gitlocal.clone_repository(
+                "https://github.com/acme/repo.git", str(tmp_path / "checkout")
+            )
+    finally:
+        reset_process_heavy_work_gate_for_tests()
+
+    # Assert: the typed error every caller maps to its tool result; git never ran.
+    assert excinfo.value.kind == HEAVY_WORK_BUSY
+    assert excinfo.value.message == HEAVY_WORK_BUSY_MESSAGE
+    assert git_calls == []
+
+
+def test_authenticated_clone_never_invokes_ssh_after_a_url_rewrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marker = tmp_path / "ssh-invoked"
+    ssh = tmp_path / "ssh.sh"
+    ssh.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
+    ssh.chmod(0o700)
+    monkeypatch.setenv("GIT_SSH_COMMAND", str(ssh))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "url.git@github.com:.insteadOf")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "https://github.com/")
+    with pytest.raises(GitCommandError):
+        gitlocal.clone_repository(
+            "https://github.com/acme/app.git", str(tmp_path / "clone"), token="app-token"
+        )
+    assert not marker.exists()
+
+
+def test_selected_token_rejects_ssh_pushurl_on_https_fetch_remote(tmp_path: Path) -> None:
+    work = _init_repo(tmp_path)
+    _git(work, "remote", "set-url", "origin", "https://github.com/acme/app.git")
+    _git(work, "config", "remote.origin.pushurl", "git@github.com:acme/app.git")
+    with (
+        patch.object(gitlocal.subprocess, "run", wraps=subprocess.run) as run,
+        pytest.raises(GitCommandError, match="HTTPS"),
+    ):
+        gitlocal.push_branch(str(work), "feature", token="app-token")
+    assert not any("push" in call.args[0] for call in run.call_args_list)

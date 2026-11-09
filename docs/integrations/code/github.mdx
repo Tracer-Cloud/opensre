@@ -1,0 +1,128 @@
+---
+title: "GitHub"
+description: "Connect GitHub so OpenSRE can read and write issues/PRs, search code, inspect commits, and correlate changes with incidents"
+---
+
+## Overview
+
+OpenSRE connects to GitHub so the agent can work with issues, pull requests, repositories, Actions, and code — and correlate recent commits with incidents.
+
+Once GitHub is connected, the interactive-shell **action agent** uses **`github_cli`** (authenticated `gh`) for flexible reads and writes — create/list/view issues and PRs, assign, label, comment, merge, search, releases, workflow runs, and `gh api` — without a separate approval gate. Prefer this over shell `gh` / `!gh`. These requests stay on the action path (not the conversational gather/answer loop).
+
+| Area | How OpenSRE does it |
+| --- | --- |
+| Ad-hoc issues, PRs, repos, search, API | `github_cli` (action agent) |
+| Engineering digests, PR readiness, security alerts | [GitHub workflow tools](/integrations/code/github-workflow-tools) |
+| Security and quality fixes and PRs | [GitHub security and quality fix](/integrations/code/github-security-fix) |
+| Failing CI fixes and branch pushes | [GitHub CI fix](/cicd/github-ci-fix) |
+| Slack → GitHub issue create/update/close | Propose + approve via workflow mutation tools |
+| Code, commits, files, issue search | Dedicated GitHub tools |
+| Failed deploys / workflow runs | [GitHub Actions tools](/integrations/code/github-actions) |
+| Organization-owned incident runbooks | [Runbook-guided investigations](/integrations/incidents/runbook-guided-investigations) |
+
+## Prerequisites
+
+- GitHub account with repository access
+- An authorized GitHub connection created in the OpenSRE app
+- For agent fetches and pushes from an existing checkout, HTTPS GitHub remotes; SSH keys do not replace the app connection
+- For chat `github_cli`: the `gh` binary on `PATH` (OpenSRE supplies the token). If it is missing, follow the [GitHub CLI installation guide](https://cli.github.com/).
+
+## Setup
+
+Connect GitHub at [app.opensre.com](https://app.opensre.com) → Integrations.
+Every signed-in shell and CLI loads your authorized personal and workspace connections.
+
+The onboarding demos open a setup menu until an eligible app connection is available.
+After connecting, choose **I've connected GitHub — continue** to refresh and resume.
+
+### Choose among personal and workspace connections
+
+You can connect multiple GitHub accounts. A personal connection is visible only
+to you; an organization connection is visible to members of that workspace.
+List the integrations and copy the UUID from the `ID` column for the GitHub row
+whose `SOURCE` is `remote`:
+
+```bash
+opensre integrations list
+opensre --github-connection-id <UUID>
+```
+
+`--github-connection-id` accepts remote connection UUIDs, not IDs from `local` rows.
+The choice scopes the current shell and is forwarded with managed cloud
+requests. If a matching connection exists but is unavailable, or several
+connections leave the choice ambiguous, OpenSRE disables GitHub tools instead
+of guessing.
+
+### Connect in the OpenSRE app
+
+Connect GitHub in the OpenSRE app using browser sign-in or the app's token form.
+Personal and workspace connections are supported. A connection uploaded by an older
+CLI, or whose origin cannot be verified, must be reconnected in the app.
+
+```bash
+opensre integrations setup github
+```
+
+The command, `/integrations setup github`, and onboarding open or print the app setup
+page. Setup stays pending until OpenSRE refreshes an authorized app connection.
+On a signed-out machine, run `opensre account login` to load your app connections.
+In the setup menu, choose **I've connected GitHub — continue** after connecting.
+
+Local credential-store entries and `GITHUB_TOKEN`, `GH_TOKEN`, and
+`GITHUB_MCP_AUTH_TOKEN` do not authorize agent GitHub tools or their background work.
+
+## Credentials
+
+### Creating a personal access token
+
+1. Open [New fine-grained personal access token](https://github.com/settings/personal-access-tokens/new).
+2. Name it **OpenSRE**, choose an expiry, and select the owner and repositories OpenSRE may use.
+3. Grant read access to Contents, Metadata, Issues, Pull requests, and Actions. Add write access only for operations you want OpenSRE to perform.
+4. Generate and copy the token into the OpenSRE app. If your organization requires approval, approve it before reconnecting.
+
+## Tools
+
+| Tool / area | What it does |
+| --- | --- |
+| `github_cli` | Authenticated `gh` for ad-hoc issues, PRs, search, API (action agent) |
+| `search_github_issues` | Search issues |
+| `list_github_commits` | List recent commits |
+| `search_github_code` | Search code |
+| `get_github_file_contents` | Read a file from a repository |
+| `get_github_repository` | Repository metadata |
+| `get_github_repository_tree` | Repository tree |
+| `get_github_star_history` | Star history |
+| `get_git_deploy_timeline` | Deploy / git timeline signals |
+| Actions / workflow / fix tools | See [GitHub Actions](/integrations/code/github-actions), [workflow tools](/integrations/code/github-workflow-tools), [CI fix](/cicd/github-ci-fix), [security fix](/integrations/code/github-security-fix) |
+
+## Verify
+
+```bash
+opensre integrations verify github
+```
+
+Expected output:
+
+```
+Service: github
+Status: passed
+Detail: GitHub MCP validated for your-username; discovered 18 tools including repository source helpers
+```
+
+Inside the REPL: `/integrations verify github` or `/verify github`. Alias: `github_mcp`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Authentication failed** | Reconnect GitHub or review repository access in the OpenSRE app |
+| **Wrong workspace GitHub account** | Run `opensre integrations list`, copy the UUID from the remote GitHub row, then start the shell with `opensre --github-connection-id <UUID>` |
+| **Required tools missing** | Ensure toolsets include `repos` — it provides `get_file_contents`, `list_commits`, etc. |
+| **`github_cli` fails / gh not found** | Install [GitHub CLI](https://cli.github.com/) so `gh` is on `PATH`; review access in the OpenSRE app |
+| **Connection refused** | Check that GitHub and the app connection are reachable |
+
+## Security
+
+- Prefer the **least privilege** that matches how you use OpenSRE (read-only if you only ask questions; write scopes if you want chat to create/edit issues and PRs).
+- Limit token scope to the repositories OpenSRE needs.
+- Enter tokens only in the OpenSRE app; keep them out of source code.

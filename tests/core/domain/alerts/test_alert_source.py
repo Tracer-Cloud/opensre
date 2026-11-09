@@ -165,9 +165,19 @@ def test_relevant_sources_matches_keywords_in_alert_text() -> None:
     assert matched == ["eks"]
 
 
+def test_primary_sources_for_alert_new_relic() -> None:
+    assert primary_sources_for_alert({"alert_source": "new_relic"}) == ("new_relic",)
+
+
+def test_relevant_sources_matches_newrelic_url_in_alert_text() -> None:
+    state = {"message": "condition fired, see https://one.newrelic.com/alerts/incidents/123"}
+    matched = relevant_sources_for_alert(state, ["new_relic", "datadog", "knowledge"])
+    assert matched == ["new_relic"]
+
+
 def test_relevant_sources_excludes_secondary_sources() -> None:
     state = {"message": "need guidance"}
-    assert relevant_sources_for_alert(state, ["knowledge", "openclaw"]) == []
+    assert relevant_sources_for_alert(state, ["knowledge", "google_docs"]) == []
 
 
 def test_relevant_sources_empty_when_no_text_and_no_declared_sources() -> None:

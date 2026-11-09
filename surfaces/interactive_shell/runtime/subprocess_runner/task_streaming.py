@@ -15,19 +15,18 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
-from platform.common.task_types import TaskRecord
+from infrastructure.scheduling.task_types import TaskRecord
 from surfaces.interactive_shell.ui import DIM, ERROR
-from surfaces.interactive_shell.utils.error_handling.exception_reporting import report_exception
+from surfaces.shared.error_handling.exception_reporting import report_exception
 from tools.interactive_shell.subprocess import (
     CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS,
     MAX_COMMAND_OUTPUT_CHARS,
     MIN_SUBPROCESS_TERMINAL_WIDTH,
     SHELL_COMMAND_TIMEOUT_SECONDS,
-    SYNTHETIC_DIAG_CHARS,
-    SYNTHETIC_POLL_SECONDS,
-    SYNTHETIC_TEST_TIMEOUT_SECONDS,
+    TASK_DIAG_CHARS,
     TASK_OUTPUT_JOIN_TIMEOUT_SECONDS,
     TASK_OUTPUT_PREFIX_WIDTH,
+    TASK_POLL_SECONDS,
     read_diag,
     read_task_output,
     subprocess_env_with_width,
@@ -42,8 +41,8 @@ _SUBPROCESS_RUNNER_MODULE = "surfaces.interactive_shell.runtime.subprocess_runne
 
 # Backward-compatible aliases for tests and callers using underscore-prefixed names.
 _MAX_COMMAND_OUTPUT_CHARS = MAX_COMMAND_OUTPUT_CHARS
-_SYNTHETIC_POLL_SECONDS = SYNTHETIC_POLL_SECONDS
-_SYNTHETIC_DIAG_CHARS = SYNTHETIC_DIAG_CHARS
+_TASK_POLL_SECONDS = TASK_POLL_SECONDS
+_TASK_DIAG_CHARS = TASK_DIAG_CHARS
 _MIN_SUBPROCESS_TERMINAL_WIDTH = MIN_SUBPROCESS_TERMINAL_WIDTH
 _TASK_OUTPUT_PREFIX_WIDTH = TASK_OUTPUT_PREFIX_WIDTH
 _TASK_OUTPUT_JOIN_TIMEOUT_SECONDS = TASK_OUTPUT_JOIN_TIMEOUT_SECONDS
@@ -180,11 +179,10 @@ def _pump_task_pty(
 
 __all__ = [
     "SHELL_COMMAND_TIMEOUT_SECONDS",
-    "SYNTHETIC_TEST_TIMEOUT_SECONDS",
     "CLAUDE_CODE_IMPLEMENTATION_TIMEOUT_SECONDS",
-    "_SYNTHETIC_POLL_SECONDS",
+    "_TASK_POLL_SECONDS",
     "_MAX_COMMAND_OUTPUT_CHARS",
-    "_SYNTHETIC_DIAG_CHARS",
+    "_TASK_DIAG_CHARS",
     "_TASK_OUTPUT_PREFIX_WIDTH",
     "_MIN_SUBPROCESS_TERMINAL_WIDTH",
     "_TASK_OUTPUT_JOIN_TIMEOUT_SECONDS",

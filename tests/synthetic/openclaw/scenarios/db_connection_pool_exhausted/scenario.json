@@ -1,4 +1,0 @@
-{
-  "description": "checkout-api high error rate caused by database connection pool exhaustion after a feature flag doubled worker concurrency. The alert is sparse; the root cause is in OpenClaw conversations.",
-  "expected_root_cause_keywords": ["connection pool", "connection", "database", "pool", "hikari", "max_connections"]
-}

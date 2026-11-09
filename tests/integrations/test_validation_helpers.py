@@ -18,7 +18,7 @@ class TestReportValidationFailure:
     def test_default_severity_is_warning(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("boom")
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_validation_failure(
                 exc,
                 logger=mock_log,
@@ -30,7 +30,7 @@ class TestReportValidationFailure:
 
     def test_message_includes_integration_and_method(self) -> None:
         mock_log = _mock_logger()
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_validation_failure(
                 RuntimeError("x"),
                 logger=mock_log,
@@ -43,7 +43,7 @@ class TestReportValidationFailure:
     def test_tags_have_expected_shape(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("boom")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_validation_failure(
                 exc,
                 logger=mock_log,
@@ -58,7 +58,7 @@ class TestReportValidationFailure:
 
     def test_extras_pass_through_unprefixed(self) -> None:
         mock_log = _mock_logger()
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_validation_failure(
                 RuntimeError("x"),
                 logger=mock_log,
@@ -75,7 +75,7 @@ class TestReportValidationFailure:
 
     def test_severity_override_routes_to_logger(self) -> None:
         mock_log = _mock_logger()
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_validation_failure(
                 RuntimeError("x"),
                 logger=mock_log,
@@ -89,7 +89,7 @@ class TestReportValidationFailure:
     def test_default_suppresses_terminal_traceback(self) -> None:
         """Validator failures must not dump a stack trace into the REPL by default."""
         mock_log = _mock_logger()
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_validation_failure(
                 RuntimeError("boom"),
                 logger=mock_log,
@@ -101,7 +101,7 @@ class TestReportValidationFailure:
     def test_traceback_included_when_explicitly_requested(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("boom")
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_validation_failure(
                 exc,
                 logger=mock_log,
@@ -114,7 +114,7 @@ class TestReportValidationFailure:
     def test_captures_to_sentry_exactly_once(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("once")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_validation_failure(
                 exc,
                 logger=mock_log,
@@ -148,7 +148,7 @@ class TestReportClassifyFailure:
         else:
             raise AssertionError("expected ValidationError")
 
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_classify_failure(
                 validation_error,
                 logger=mock_log,
@@ -180,7 +180,7 @@ class TestReportClassifyFailure:
         else:
             raise AssertionError("expected ValidationError")
 
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_classify_failure(
                 validation_error,
                 logger=mock_log,
@@ -196,7 +196,7 @@ class TestReportClassifyFailure:
     def test_non_validation_error_passes_through_unchanged(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("boom")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_classify_failure(
                 exc,
                 logger=mock_log,
@@ -208,7 +208,7 @@ class TestReportClassifyFailure:
 
     def test_tags_have_expected_shape(self) -> None:
         mock_log = _mock_logger()
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_classify_failure(
                 RuntimeError("boom"),
                 logger=mock_log,

@@ -15,7 +15,7 @@ import httpx
 from pydantic import field_validator
 
 from config.strict_config import StrictConfigModel
-from platform.observability.errors.service import capture_service_error
+from infrastructure.observability.errors.service import capture_service_error
 
 logger = logging.getLogger(__name__)
 

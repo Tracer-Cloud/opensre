@@ -5,9 +5,9 @@ from __future__ import annotations
 from integrations.config_models import (
     GrafanaIntegrationConfig,
 )
-from integrations.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
-from integrations.grafana.client import get_grafana_client_from_credentials
-from integrations.splunk.client import SplunkClient, SplunkConfig
+from integrations.elasticsearch import ElasticsearchClient, ElasticsearchConfig
+from integrations.grafana import get_grafana_client_from_credentials
+from integrations.splunk import SplunkClient, SplunkConfig
 
 from .shared import IntegrationHealthResult
 

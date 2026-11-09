@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
-from integrations.bitbucket import list_commits
-from integrations.bitbucket.availability import bitbucket_available_or_backend
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
+from integrations.bitbucket.client import list_commits
+from integrations.bitbucket.tools.availability import bitbucket_available_or_backend
+from integrations.bitbucket.tools.bitbucket_commits_tool._evidence import (
+    map_list_bitbucket_commits,
+)
 from integrations.bitbucket.tools.bitbucket_search_code_tool import (
     _bb_creds,
     _resolve_config,
@@ -33,7 +38,9 @@ def _list_bitbucket_commits_available(sources: dict[str, dict]) -> bool:
     name="list_bitbucket_commits",
     description="List recent commits for a Bitbucket repository, optionally filtered by file path.",
     source="bitbucket",
-    surfaces=("investigation", "chat"),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Checking whether a recent change could explain a failure",
         "Reviewing commit history for a specific file or directory",
@@ -56,6 +63,7 @@ def _list_bitbucket_commits_available(sources: dict[str, dict]) -> bool:
     },
     is_available=_list_bitbucket_commits_available,
     extract_params=_list_bitbucket_commits_extract_params,
+    evidence_mapper=map_list_bitbucket_commits,
 )
 def list_bitbucket_commits(
     repo_slug: str,

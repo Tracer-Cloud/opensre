@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from infrastructure.delivery.notifications.redaction import redact_slack_token
 from integrations.slack.web_client import _request_json, resolve_bot_token
-from platform.notifications.redaction import redact_slack_token
 
 _PAGE_SIZE = 50
 _MAX_MESSAGES = 500

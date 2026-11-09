@@ -11,7 +11,7 @@ from typing import Any, Protocol
 from pydantic import field_validator
 
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_validation_failure
 
 _TRUE_ENV_VALUES = frozenset({"true", "1", "yes"})

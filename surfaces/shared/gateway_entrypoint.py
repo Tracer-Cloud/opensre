@@ -2,7 +2,7 @@
 
 A leaf: it imports only ``sys`` / ``pathlib``, so the CLI command and the
 interactive shell's ``/gateway`` command can both read it without either
-pulling in the other's package. Naming it inside ``surfaces.cli.gateway_entry``
+pulling in the other's package. Naming it inside ``surfaces.gateway_entry``
 instead would make the shell import the CLI entrypoint, which re-enters the
 shell's own command registry mid-import.
 
@@ -21,7 +21,7 @@ from pathlib import Path
 
 _PYTHON_EXECUTABLE_PREFIXES: tuple[str, ...] = ("python", "pypy")
 _FOREGROUND_GATEWAY: tuple[str, ...] = ("gateway", "start", "--foreground")
-_MODULE_GATEWAY_ENTRY: tuple[str, ...] = ("-m", "surfaces.cli.gateway_entry")
+_MODULE_GATEWAY_ENTRY: tuple[str, ...] = ("-m", "surfaces.gateway_entry")
 
 
 def _sys_executable_is_python() -> bool:
