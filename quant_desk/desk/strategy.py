@@ -2,7 +2,7 @@
 
 Timing (no lookahead): bars are stamped at their close. When the fast EMA crosses the slow EMA
 on bar ``t``, the desk fills at bar ``t``'s close and pays the fee on that bar; the new position
-earns the move from ``t`` to ``t+1`` onward. A cross up goes long (+1), a cross down goes short
+erns the move from ``t`` to ``t+1`` onward. A cross up goes long (+1), a cross down goes short
 (-1); the strategy is always in the market after its first cross (stop-and-reverse).
 """
 
@@ -51,21 +51,40 @@ def ema_cross(
         diff = fast - slow
         sign = 1 if diff > 0 else (-1 if diff < 0 else 0)
         fee = 0.0
-        if s_bars > warmup and sign != 0 and s_prev_sign != 0 and sign != s_prev_sign:
-            target = sign
-            fee = fee_bps * 1e-4 * abs(target - s_position)
-            csp.output(
-                fill=Fill(
-                    side="LONG" if target > 0 else "SHORT",
-                    price=close,
-                    prev_position=s_position,
-                    position=target,
-                    fee=fee,
-                    fast_ema=fast,
-                    slow_ema=slow,
+        target = s_position
+
+        if s_bars > warmup and sign != 0:
+            if s_position == 0:
+                target = sign
+                fee = fee_bps * 1e-4 * abs(target - s_position)
+                csp.output(
+                    fill=Fill(
+                        side="LONG" if target > 0 else "SHORT",
+                        price=close,
+                        prev_position=s_position,
+                        position=target,
+                        fee=fee,
+                        fast_ema=fast,
+                        slow_ema=slow,
+                    )
                 )
-            )
-            s_position = target
+                s_position = target
+            elif s_prev_sign != 0 and sign != s_prev_sign:
+                target = sign
+                fee = fee_bps * 1e-4 * abs(target - s_position)
+                csp.output(
+                    fill=Fill(
+                        side="LONG" if target > 0 else "SHORT",
+                        price=close,
+                        prev_position=s_position,
+                        position=target,
+                        fee=fee,
+                        fast_ema=fast,
+                        slow_ema=slow,
+                    )
+                )
+                s_position = target
+
         if sign != 0:
             s_prev_sign = sign
         csp.output(ret=gross - fee, position=s_position)
@@ -173,3 +192,4 @@ def run(
             fills=_fills_frame(out.get(f"{key}:fill", [])),
         )
     return runs
+

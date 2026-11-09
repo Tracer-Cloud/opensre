@@ -3,5 +3,4 @@ data/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
-# The repo root ignores output/; keep this run's report and charts as a committed snapshot.
-!output/
+output/
