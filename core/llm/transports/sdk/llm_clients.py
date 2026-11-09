@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import boto3
@@ -32,13 +32,19 @@ from pydantic import BaseModel
 
 from core.llm.providers import provider_credentials
 from core.llm.providers.bedrock_model_ids import is_anthropic_bedrock_model
-from core.llm.shared.llm_retry import extract_retry_after_seconds
+from core.llm.shared.llm_retry import (
+    extract_retry_after_seconds,
+    maybe_raise_credit_exhausted,
+    maybe_raise_github_required,
+)
 from core.llm.shared.openai_chat_completions import (
     _RETRY_INITIAL_BACKOFF_SEC,
     _RETRY_MAX_ATTEMPTS,
     LLM_CLIENT_TIMEOUT_SEC,
+    OPENAI_SDK_MAX_RETRIES,
     normalize_messages_openai,
 )
+from core.llm.shared.openai_token_limits import completion_token_retry_kwargs
 from core.llm.shared.structured_output import (
     StructuredOutputClient,
     json_schema_for_structured_output,
@@ -48,6 +54,11 @@ from core.llm.transports.sdk.anthropic_cache import (
     cached_system,
     is_cache_unsupported_error,
     strip_cache_markers,
+)
+from core.llm.transports.sdk.request_headers import (
+    RequestHeaders,
+    http_client_with_request_headers,
+    sdk_http_client_kwargs,
 )
 from core.llm.types import LLMResponse
 
@@ -171,17 +182,17 @@ def _format_openai_connection_error(err: Exception, provider_label: str) -> str:
 
 
 def _uses_max_completion_tokens(model: str) -> bool:
-    """Reasoning models (o1, o3, o4, gpt-5 series) require max_completion_tokens."""
-    return model.startswith(("o1", "o3", "o4", "gpt-5"))
+    """Reasoning models (o1, o3, o4, gpt-5/gpt-6 series) require max_completion_tokens."""
+    return model.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6"))
 
 
 def _resolve_openai_reasoning_effort(*, model: str, api_key_env: str) -> str | None:
-    """Session override for OpenAI reasoning models in the interactive shell."""
+    """Session, environment, or model-family effort for official OpenAI reasoning models."""
     if api_key_env != "OPENAI_API_KEY" or not _uses_max_completion_tokens(model):
         return None
-    from config.llm_reasoning_effort import get_active_reasoning_effort
+    from config.llm_reasoning_effort import resolve_reasoning_effort
 
-    return get_active_reasoning_effort()
+    return resolve_reasoning_effort(model)
 
 
 class LLMClient:
@@ -191,14 +202,34 @@ class LLMClient:
     _cache_markers_enabled = True
 
     def __init__(
-        self, *, model: str, max_tokens: int = 1024, temperature: float | None = None
+        self,
+        *,
+        model: str,
+        max_tokens: int = 1024,
+        temperature: float | None = None,
+        base_url: str | None = None,
+        api_key_env: str = "ANTHROPIC_API_KEY",
     ) -> None:
-        api_key = provider_credentials.resolve_llm_api_key("ANTHROPIC_API_KEY")
+        # base_url + api_key_env let a custom-anthropic gateway (Anthropic SDK
+        # with a base-URL override) reuse this client; they default to the
+        # first-party Anthropic endpoint/key, so existing behavior is unchanged.
+        self._api_key_env = api_key_env
+        self._base_url = base_url
+        api_key = provider_credentials.resolve_llm_api_key(api_key_env)
         self._api_key = api_key
-        self._client = Anthropic(api_key=api_key, timeout=LLM_CLIENT_TIMEOUT_SEC)
+        self._client = self._new_anthropic_client(api_key)
         self._model = model
         self._max_tokens = max_tokens
         self._temperature = temperature
+
+    def _new_anthropic_client(self, api_key: str) -> Anthropic:
+        client_kwargs: dict[str, Any] = {
+            "api_key": api_key,
+            "timeout": LLM_CLIENT_TIMEOUT_SEC,
+        }
+        if self._base_url:
+            client_kwargs["base_url"] = self._base_url
+        return Anthropic(**client_kwargs)
 
     def with_config(self, **_kwargs) -> LLMClient:
         return self
@@ -230,14 +261,15 @@ class LLMClient:
         ).content
 
     def _ensure_client(self) -> None:
-        api_key = provider_credentials.resolve_llm_api_key("ANTHROPIC_API_KEY")
+        api_key = provider_credentials.resolve_llm_api_key(self._api_key_env)
         if not api_key:
             raise RuntimeError(
-                "Missing ANTHROPIC_API_KEY. Set it in your environment, .env, or secure local keychain before running LLM steps."
+                f"Missing {self._api_key_env}. Set it in your environment, .env, or secure "
+                "local keychain before running LLM steps."
             )
         if api_key != self._api_key:
             self._api_key = api_key
-            self._client = Anthropic(api_key=api_key, timeout=LLM_CLIENT_TIMEOUT_SEC)
+            self._client = self._new_anthropic_client(api_key)
 
     def _build_request_kwargs(self, prompt_or_messages: Any) -> dict[str, Any]:
         """Refresh credentials, normalize messages, apply guardrails, and build API kwargs.
@@ -248,7 +280,7 @@ class LLMClient:
         self._ensure_client()
         system, messages = _normalize_messages(prompt_or_messages)
 
-        from platform.guardrails.apply import apply_guardrails_to_messages
+        from infrastructure.safety.guardrails.apply import apply_guardrails_to_messages
 
         messages, system = apply_guardrails_to_messages(messages, system)
 
@@ -282,7 +314,7 @@ class LLMClient:
         # What this request carries, decided before any concurrent turn can
         # clear the shared flag.
         marked = strip_cache_markers(kwargs) != kwargs
-        from platform.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
         max_attempts = _RETRY_MAX_ATTEMPTS
@@ -336,7 +368,7 @@ class LLMClient:
         so any post-emission failure propagates immediately. Auth and
         guardrail errors never retry.
         """
-        from platform.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         kwargs = self._build_request_kwargs(prompt_or_messages)
         # What this request carries, decided before any concurrent turn can
@@ -431,8 +463,8 @@ class BedrockLLMClient:
         assert self._anthropic_client is not None
         system, messages = _normalize_messages(prompt_or_messages)
 
-        from platform.guardrails.apply import apply_guardrails_to_messages
-        from platform.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.apply import apply_guardrails_to_messages
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         messages, system = apply_guardrails_to_messages(messages, system)
 
@@ -533,8 +565,8 @@ class BedrockLLMClient:
         assert self._boto3_client is not None
         system, messages = _normalize_messages(prompt_or_messages)
 
-        from platform.guardrails.apply import apply_guardrails_to_messages
-        from platform.guardrails.engine import GuardrailBlockedError
+        from infrastructure.safety.guardrails.apply import apply_guardrails_to_messages
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
         messages, system = apply_guardrails_to_messages(messages, system)
 
@@ -673,13 +705,17 @@ class OpenAILLMClient:
         api_key_env: str = "OPENAI_API_KEY",
         api_key_default: str = "",
         default_headers: dict[str, str] | None = None,
+        credential_resolver: Callable[[str], str] | None = None,
+        request_headers: RequestHeaders | None = None,
     ) -> None:
-        api_key = provider_credentials.resolve_llm_api_key(api_key_env) or api_key_default
+        self._credential_resolver = credential_resolver or provider_credentials.resolve_llm_api_key
+        api_key = self._credential_resolver(api_key_env) or api_key_default
         self._api_key = api_key
         self._api_key_default = api_key_default
         self._base_url = base_url
         self._api_key_env = api_key_env
         self._default_headers = default_headers
+        self._http_client = http_client_with_request_headers(request_headers)
         self._provider_label = api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
         self._client: OpenAI | None = None
         self._model = model
@@ -708,7 +744,9 @@ class OpenAILLMClient:
             api_key=api_key,
             base_url=self._base_url,
             timeout=LLM_CLIENT_TIMEOUT_SEC,
+            max_retries=OPENAI_SDK_MAX_RETRIES,
             default_headers=self._default_headers,
+            **sdk_http_client_kwargs(getattr(self, "_http_client", None)),
         )
 
     def with_config(self, **_kwargs) -> OpenAILLMClient:
@@ -719,6 +757,9 @@ class OpenAILLMClient:
 
     def invoke_structured(self, model: type[BaseModel], prompt: str) -> BaseModel:
         """Constrained JSON via OpenAI ``chat.completions.parse`` (strict schema)."""
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
         kwargs = self._build_request_kwargs(prompt)
         client = self._ensure_client()
         parse_kwargs: dict[str, Any] = {
@@ -762,6 +803,8 @@ class OpenAILLMClient:
             except (OpenAIAuthError, OpenAINotFoundError, OpenAIBadRequestError):
                 raise
             except Exception as err:
+                maybe_raise_github_required(err)
+                maybe_raise_credit_exhausted(getattr(self, "_provider_label", "OpenAI"), err)
                 last_err = err
                 if attempt == _RETRY_MAX_ATTEMPTS - 1:
                     raise
@@ -770,9 +813,7 @@ class OpenAILLMClient:
         raise RuntimeError("OpenAI structured invocation failed") from last_err
 
     def _ensure_client(self) -> OpenAI:
-        api_key = (
-            provider_credentials.resolve_llm_api_key(self._api_key_env) or self._api_key_default
-        )
+        api_key = self._credential_resolver(self._api_key_env) or self._api_key_default
         if not api_key:
             raise RuntimeError(
                 f"Missing {self._api_key_env}. Set it in your environment, .env, or secure local keychain before running LLM steps."
@@ -791,7 +832,7 @@ class OpenAILLMClient:
         self._ensure_client()
         messages = normalize_messages_openai(prompt_or_messages)
 
-        from platform.guardrails.apply import apply_guardrails_to_messages
+        from infrastructure.safety.guardrails.apply import apply_guardrails_to_messages
 
         messages, _ = apply_guardrails_to_messages(messages)
 
@@ -814,8 +855,10 @@ class OpenAILLMClient:
         return kwargs
 
     def invoke(self, prompt_or_messages: Any) -> LLMResponse:
-        from platform.guardrails.engine import GuardrailBlockedError
+        from core.llm.hosted_credits import admit_hosted_credits
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
+        admit_hosted_credits()
         # Build kwargs first (also calls _ensure_client internally) so the
         # captured client below reflects the latest key — guards against a
         # rotation between the two _ensure_client invocations.
@@ -825,7 +868,8 @@ class OpenAILLMClient:
         backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
         max_attempts = _RETRY_MAX_ATTEMPTS
         last_err: Exception | None = None
-        for attempt in range(max_attempts):
+        attempt = 0
+        while attempt < max_attempts:
             try:
                 response = client.chat.completions.create(**kwargs)
                 break
@@ -834,6 +878,7 @@ class OpenAILLMClient:
                     f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment, .env, or secure local keychain."
                 ) from err
             except OpenAINotFoundError as err:
+                attempt += 1
                 if self._activate_model_fallback():
                     kwargs = self._build_request_kwargs(prompt_or_messages)
                     continue
@@ -842,6 +887,11 @@ class OpenAILLMClient:
                     "Check your configured model name or endpoint."
                 ) from err
             except OpenAIBadRequestError as err:
+                retry = completion_token_retry_kwargs(kwargs, err)
+                if retry is not None:
+                    kwargs = retry
+                    continue
+                attempt += 1
                 if _is_openai_invalid_model_identifier(err) and self._activate_model_fallback():
                     kwargs = self._build_request_kwargs(prompt_or_messages)
                     continue
@@ -856,28 +906,19 @@ class OpenAILLMClient:
             except GuardrailBlockedError:
                 raise
             except OpenAITimeoutError as err:
-                if attempt == max_attempts - 1:
-                    raise RuntimeError(
-                        _format_openai_connection_error(err, self._provider_label)
-                    ) from err
-                time.sleep(backoff_seconds)
-                backoff_seconds *= 2
+                # Not retried: the request already ran upstream and was billed.
+                raise RuntimeError(
+                    _format_openai_connection_error(err, self._provider_label)
+                ) from err
             except OpenAIConnectionError as err:
                 raise RuntimeError(
                     _format_openai_connection_error(err, self._provider_label)
                 ) from err
             except OpenAIRateLimitError as err:
-                body = getattr(err, "body", None)
-                if (
-                    isinstance(body, dict)
-                    and body.get("error", {}).get("code") == "insufficient_quota"
-                ):
-                    raise RuntimeError(
-                        f"{self._provider_label} billing quota exceeded. "
-                        "Check your plan and billing details."
-                    ) from err
+                attempt += 1
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         f"{self._provider_label} rate limit exceeded (HTTP 429) after multiple retries. "
                         "Check your quota and billing details."
@@ -887,8 +928,11 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                attempt += 1
+                maybe_raise_github_required(err)
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 last_err = err
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         "LLM API request failed after multiple retries. Try again in a few seconds."
                     ) from err
@@ -918,8 +962,10 @@ class OpenAILLMClient:
         retrying would duplicate visible output, so post-emission failures
         propagate. Auth and guardrail errors never retry.
         """
-        from platform.guardrails.engine import GuardrailBlockedError
+        from core.llm.hosted_credits import admit_hosted_credits
+        from infrastructure.safety.guardrails.evaluator import GuardrailBlockedError
 
+        admit_hosted_credits()
         # Build kwargs first (also calls _ensure_client internally) so the
         # captured client below reflects the latest key — same rotation
         # guard as ``invoke``.
@@ -928,7 +974,8 @@ class OpenAILLMClient:
 
         backoff_seconds = _RETRY_INITIAL_BACKOFF_SEC
         max_attempts = _RETRY_MAX_ATTEMPTS
-        for attempt in range(max_attempts):
+        attempt = 0
+        while attempt < max_attempts:
             emitted = False
             try:
                 for chunk in client.chat.completions.create(stream=True, **kwargs):
@@ -944,6 +991,7 @@ class OpenAILLMClient:
                     f"{self._provider_label} authentication failed. Check {self._api_key_env} in your environment, .env, or secure local keychain."
                 ) from err
             except OpenAINotFoundError as err:
+                attempt += 1
                 if not emitted and self._activate_model_fallback():
                     kwargs = self._build_request_kwargs(prompt_or_messages)
                     continue
@@ -952,6 +1000,11 @@ class OpenAILLMClient:
                     "Check your configured model name or endpoint."
                 ) from err
             except OpenAIBadRequestError as err:
+                retry = completion_token_retry_kwargs(kwargs, err)
+                if retry is not None and not emitted:
+                    kwargs = retry
+                    continue
+                attempt += 1
                 if (
                     not emitted
                     and _is_openai_invalid_model_identifier(err)
@@ -972,12 +1025,10 @@ class OpenAILLMClient:
             except OpenAITimeoutError as err:
                 if emitted:
                     raise
-                if attempt == max_attempts - 1:
-                    raise RuntimeError(
-                        _format_openai_connection_error(err, self._provider_label)
-                    ) from err
-                time.sleep(backoff_seconds)
-                backoff_seconds *= 2
+                # Not retried: the request already ran upstream and was billed.
+                raise RuntimeError(
+                    _format_openai_connection_error(err, self._provider_label)
+                ) from err
             except OpenAIConnectionError as err:
                 if emitted:
                     raise
@@ -985,18 +1036,11 @@ class OpenAILLMClient:
                     _format_openai_connection_error(err, self._provider_label)
                 ) from err
             except OpenAIRateLimitError as err:
-                body = getattr(err, "body", None)
-                if (
-                    isinstance(body, dict)
-                    and body.get("error", {}).get("code") == "insufficient_quota"
-                ):
-                    raise RuntimeError(
-                        f"{self._provider_label} billing quota exceeded. "
-                        "Check your plan and billing details."
-                    ) from err
+                attempt += 1
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     raise
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         f"{self._provider_label} rate limit exceeded (HTTP 429) after multiple retries. "
                         "Check your quota and billing details."
@@ -1006,11 +1050,14 @@ class OpenAILLMClient:
                 time.sleep(wait)
                 backoff_seconds = wait * 2
             except Exception as err:
+                attempt += 1
+                maybe_raise_github_required(err)
+                maybe_raise_credit_exhausted(self._provider_label, err)
                 if emitted:
                     # Mid-stream failure: never retry — chunks are already on
                     # the user's screen and a retry would duplicate them.
                     raise
-                if attempt == max_attempts - 1:
+                if attempt == max_attempts:
                     raise RuntimeError(
                         "LLM API request failed after multiple retries. Try again in a few seconds."
                     ) from err

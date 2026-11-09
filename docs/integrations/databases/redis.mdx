@@ -1,0 +1,169 @@
+---
+title: "Redis"
+description: "Connect Redis so OpenSRE can diagnose cache, queue, and session issues during incidents"
+---
+
+## Overview
+
+OpenSRE uses Redis diagnostics to investigate cache and key-value store alerts — checking memory pressure and eviction rates, surfacing slow commands, monitoring replication lag, and inspecting key counts and TTLs. Works with Redis 5+ and compatible servers such as Valkey.
+
+## Prerequisites
+
+- Redis 5.0+ (or Valkey)
+- Network access from the OpenSRE environment to your Redis instance
+- Credentials, if authentication (`requirepass` or ACLs) is enabled
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup redis
+```
+
+### Option 2: Environment variables
+
+```bash
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_USERNAME=
+REDIS_PASSWORD=
+REDIS_DATABASE=0
+REDIS_SSL=false
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `REDIS_HOST` | — | **Required.** Redis hostname or IP |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_USERNAME` | _(empty)_ | ACL username (Redis 6+); leave blank for password-only auth |
+| `REDIS_PASSWORD` | _(empty)_ | Password (`requirepass` or ACL) |
+| `REDIS_DATABASE` | `0` | Database number to inspect |
+| `REDIS_SSL` | `false` | Connect using TLS |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "redis-prod",
+      "service": "redis",
+      "status": "active",
+      "credentials": {
+        "host": "cache.example.net",
+        "port": 6379,
+        "username": "",
+        "password": "s3cret",
+        "db": 0,
+        "ssl": true
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+- **Password only** (`requirepass`): set `REDIS_PASSWORD` and leave `REDIS_USERNAME` blank.
+- **ACL user** (Redis 6+): set both `REDIS_USERNAME` and `REDIS_PASSWORD`.
+- **No auth**: leave both blank (development only).
+
+Set `REDIS_SSL=true` for managed Redis / TLS endpoints (TLS is off by default). Confirm the server has TLS enabled (for example `tls-port 6379`).
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_redis_server_info` | Memory, clients, stats, eviction |
+| `get_redis_client_list` | Connected clients |
+| `get_redis_slowlog` | Slow command log |
+| `get_redis_replication` | Replication role / lag |
+| `get_redis_latency_doctor` | Latency doctor output |
+| `get_redis_list_depth` | List key depth |
+| `scan_redis_keys` | Non-blocking `SCAN` (never `KEYS`), hard-capped at 10k keys |
+
+## Verify
+
+```bash
+opensre integrations verify redis
+```
+
+Alias: `valkey`.
+
+### Local Docker verification
+
+Use this disposable instance to verify Redis without external credentials. The
+diagnostic settings make the slow log and latency tools return useful sample
+data; do not copy them to a production server.
+
+```bash
+docker run --rm --detach --name opensre-redis \
+  --publish 127.0.0.1:6379:6379 \
+  redis:7-alpine redis-server \
+  --latency-monitor-threshold 1 \
+  --slowlog-log-slower-than 0 \
+  --slowlog-max-len 128 \
+  --enable-debug-command yes
+```
+
+Wait for Redis, then seed two keys and one latency event:
+
+```bash
+until docker exec opensre-redis redis-cli ping; do sleep 1; done
+docker exec opensre-redis redis-cli RPUSH opensre:jobs job-1 job-2 job-3
+docker exec opensre-redis redis-cli SET opensre:service:status degraded EX 3600
+docker exec opensre-redis redis-cli DEBUG SLEEP 0.02
+```
+
+From a source checkout, configure the local connection with
+`uv run opensre integrations setup redis` and use these answers:
+
+| Prompt | Answer |
+| --- | --- |
+| Host | `127.0.0.1` |
+| Port | `6379` |
+| Username | leave blank |
+| Password | leave blank |
+| Database number | `0` |
+| Use TLS | `false` |
+
+Verify the connection:
+
+```bash
+uv run opensre integrations verify redis
+```
+
+The result should report a successful connection to Redis 7 on database 0. To
+exercise `scan_redis_keys` through an agent turn, run:
+
+```bash
+uv run opensre ask --allowed-tool scan_redis_keys \
+  "Use scan_redis_keys with pattern opensre:* and sample_limit 10. Report each key's type and TTL."
+```
+
+The result should include the `opensre:jobs` list and the expiring
+`opensre:service:status` string. Stop the disposable instance when finished:
+
+```bash
+docker stop opensre-redis
+```
+
+This local instance has no password. It binds only to loopback, and the recipe
+does not write a secret to the repository.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Check host, port, firewall |
+| **NOAUTH / WRONGPASS** | Set password and optional ACL username |
+| **TLS handshake failed** | Set `REDIS_SSL=true` for TLS endpoints |
+| **Key scan truncated** | Expected at 10k keys — narrow the pattern |
+
+## Security
+
+- Prefer ACL users with least privilege over `requirepass` as root.
+- Enable TLS for managed / production Redis.
+- Store credentials out of source control.

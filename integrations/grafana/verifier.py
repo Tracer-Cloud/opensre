@@ -36,9 +36,13 @@ def _discover_datasources(config: GrafanaIntegrationConfig) -> list[Any] | str:
         detail = f"Datasource discovery failed: HTTP {status} from {url}"
         return f"{detail}: {body}" if body else detail
     except requests.RequestException as exc:
-        return f"Datasource discovery failed: could not reach {config.endpoint} ({exc})."
+        # Keep DETAIL short for the verify table — the full HTTPConnectionPool
+        # dump overflows even with fold, and the endpoint + exception type
+        # are enough to diagnose unreachable Grafana.
+        kind = type(exc).__name__
+        return f"Datasource discovery failed: could not reach {config.endpoint} ({kind})"
     except Exception as exc:
-        return f"Datasource discovery failed: {exc}"
+        return f"Datasource discovery failed: {type(exc).__name__}: {exc}"
 
 
 @register_verifier("grafana")

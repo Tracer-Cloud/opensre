@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
-from gateway.core.runtime.terminal_outcome import TerminalOutcomeArbiter
+from gateway.core.middleware.terminal_outcome import TerminalOutcomeArbiter
 
 _THREAD_TIMEOUT_SECONDS = 1.0
 
@@ -81,7 +81,7 @@ def test_completed_timeout_context_cancels_timer(
         timers.append(timer)
         return timer
 
-    monkeypatch.setattr("gateway.core.runtime.terminal_outcome.threading.Timer", _build_timer)
+    monkeypatch.setattr("gateway.core.middleware.terminal_outcome.threading.Timer", _build_timer)
     arbiter = TerminalOutcomeArbiter()
 
     with arbiter.timeout_after(12.5, lambda: None):

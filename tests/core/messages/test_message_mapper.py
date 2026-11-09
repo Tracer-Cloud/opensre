@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import builtins
 import json
+import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -294,6 +296,19 @@ class TestSyntheticAssistantToolCall:
 # ---------------------------------------------------------------------------
 # Dispatch — the provider adapter is resolved once, at construction
 # ---------------------------------------------------------------------------
+
+
+def test_a_client_that_is_no_sdk_client_never_loads_the_provider_sdks() -> None:
+    """The startup menu's static ``/choose`` turn imported the OpenAI SDK before it drew."""
+    check = (
+        "import sys; from core.messages import MessageMapper; MessageMapper(object()); "
+        "print('core.llm.transports.sdk.agent_clients' in sys.modules, 'openai' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check], check=True, capture_output=True, text=True
+    )
+
+    assert result.stdout.split() == ["False", "False"]
 
 
 class TestAdapterCaching:

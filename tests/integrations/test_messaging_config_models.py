@@ -84,6 +84,7 @@ class TestSlackBotConfig:
         assert cfg.bot_token == "xoxb-test-token"
         assert cfg.signing_secret == ""
         assert cfg.app_id == ""
+        assert cfg.default_chat_id == ""
         assert cfg.identity_policy is None
 
     def test_full_config(self) -> None:

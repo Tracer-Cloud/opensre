@@ -1,4 +1,4 @@
-"""Local secret storage: the OS keyring, an owner-only fallback file, and the policy between them.
+"""Local secret storage: an owner-only credentials file and the policy around it.
 
 Import :mod:`config.llm_credentials` from feature code — it is the stable façade
 every surface already uses. Reach into this package directly only when you need

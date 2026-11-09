@@ -1,82 +1,101 @@
 ---
-title: "OpenSRE"
+title: "Welcome to OpenSRE"
+description: "Install OpenSRE, run your first CI/CD demo, and scale from a single laptop to a managed gateway for your organization."
 ---
 
-OpenSRE is agentic alert investigation for production systems. It connects to your observability stack, infrastructure, and knowledge bases to investigate incidents before your team gets paged — then delivers root-cause analysis and recommended fixes to Slack, PagerDuty, or local files.
-
-<div className="index-transition-note">
-  <p className="index-transition-note-label">Tracer to OpenSRE</p>
-  <p><strong>Coming from Tracer?</strong> Welcome. OpenSRE is the open-source home for these docs, while some live URLs, installers, assets, and Slack app labels still use the Tracer name during the transition.</p>
+<div className="index-actions">
+  <a className="index-action" href="/getting-started/quickstart">Quickstart guide →</a>
+  <a className="index-action index-action-secondary" href="https://app.opensre.com">Create an account →</a>
 </div>
 
-## Get started
+## Choose a path
+
+Start with a CI/CD outcome, an incident question, or a rollout for your organization. Pick the one that matches your goal.
 
 <CardGroup cols={3}>
-  <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Install OpenSRE and run your first alert investigation.
+  <Card title="Measure and fix CI" icon="code-branch" href="/cicd/overview">
+    A 30-day reliability report for a repository, fixes for failing checks, and an agent that keeps pull requests green.
+
+    **Run the CI/CD demo →**
   </Card>
-  <Card title="Connect integrations" icon="plug" href="/integrations-overview">
-    Wire OpenSRE into observability, incident, code, and data systems.
+  <Card title="Investigate an incident" icon="magnifying-glass-chart" href="/getting-started/quickstart">
+    Paste an alert or describe what is wrong. OpenSRE reads logs, metrics and deploys from your connected tools and answers in plain English.
+
+    **Run the quickstart →**
   </Card>
-  <Card title="Run an investigation" icon="magnifying-glass" href="/investigation-overview">
-    See how OpenSRE gathers evidence and produces root cause analysis.
+  <Card title="Roll it out to your team" icon="building" href="/install/install-enterprise">
+    One account for the organization and a managed gateway that keeps running repairs after the laptop closes. Slack and other integrations are configured on each engineer's machine.
+
+    **Review the enterprise setup →**
   </Card>
 </CardGroup>
 
-## First 5 minutes
+## Start with a surface
 
-```bash
-# Install (macOS / Linux)
-curl -fsSL https://install.opensre.com | bash
+The same `opensre` binary runs everywhere. Pick a surface, install it, and start your first session.
 
-# Configure LLM + integrations
-opensre onboard
+<Tabs>
+  <Tab title="Interactive shell">
+    Install with one command, sign in, and pick a demo or type a request.
 
-# Run a sample investigation
-opensre investigate -i tests/e2e/kubernetes/fixtures/datadog_k8s_alert.json
-```
+    ```bash
+    curl -fsSL https://install.opensre.com | bash -s -- -dc
+    opensre
+    ```
 
-After the run completes, open the generated artifacts:
+    Windows uses PowerShell; see [Install](/install). The first prompt offers the CI/CD analysis of a repository on your machine, or skip it with **E**.
 
-- `problem.md` — incident framing
-- `theory/hypothesis_*.md` — hypotheses tested during the run
-- `report.md` — root cause, confidence, and next steps
+    <Frame>
+      ![The CI/CD reliability report the first demo produces](/images/onboarding-ci-analysis-report.png)
+    </Frame>
+  </Tab>
+  <Tab title="Headless CLI">
+    One agent turn from a script or a CI job, with JSON output and exit codes.
 
-Or export JSON for automation:
+    ```bash
+    opensre --json ask "how many PRs currently have failing CI in Tracer-Cloud?"
+    ```
 
-```bash
-opensre investigate -i <alert-file> --output ./rca.json
-```
+    See [Headless CLI](/guides/headless-cli) for `--allowed-tool` and stdin prompts.
+  </Tab>
+  <Tab title="Slack">
+    Mention OpenSRE in a channel or DM it, and hand off DevOps chores to the team's agent.
 
-**Interactive shell** — run `opensre` with no subcommand to describe incidents in plain language and use slash commands (`/help`, `/verify datadog`, `/investigate`).
+    Demo option **D** in the shell connects Slack; see [Slack](/integrations/messaging/slack).
+  </Tab>
+  <Tab title="Managed gateway">
+    An organization admin provisions a hosted gateway at app.opensre.com; repairs and scheduled loops run there with the organization's credentials.
+
+    See [Keep CI green with an agent](/cicd/ci-repair-agent#the-managed-service) and [Deployment](/guides/deployment#opensre-cloud-managed-gateway).
+  </Tab>
+</Tabs>
 
 <Tip>
-  Stuck? See [Quickstart troubleshooting](/quickstart#troubleshooting) (Docker running, `make` installed, LLM configured).
+  Follow the [Quickstart](/getting-started/quickstart) to install, sign in and run your first demo in a few minutes.
 </Tip>
 
-## Start here
+## Explore the docs
 
-<CardGroup cols={2}>
-  <Card title="Investigations" icon="magnifying-glass" href="/investigation-overview">
-    Alert ingestion, evidence collection, masking, and remote runtime workflows.
-  </Card>
-  <Card title="Showcase" icon="photo-film" href="/showcase">
-    Sample outputs, quickstart demos, and CloudOpsBench benchmark walkthrough.
-  </Card>
-</CardGroup>
+- [Get started](/getting-started/quickstart): install on macOS, Linux, Windows or Docker, sign in, and the enterprise setup.
+- [CI/CD](/cicd/overview): the reliability report, fixing failing checks, the repair agent, and the organization-wide health scan.
+- [Using the shell](/getting-started/interactive-shell-commands): every slash command, how prompts map to tools, and goals that run across turns.
+- [Run it anywhere](/guides/deployment): the gateway daemon, headless CLI, HTTP and Python APIs, and the managed gateway.
+- [Platform](/platform/llm-providers): LLM providers, masking, sessions, memory, scheduled loops, and closed-loop learning.
+- [Integrations](/integrations): 60+ tools across monitoring, incidents, cloud, code, chat, databases and workflows.
+- [Community](/guides/bi-weekly-giveaway): the showcase giveaway and the pull request review flow.
 
-## How it works
+## How a turn runs
 
-When an alert fires, OpenSRE autonomously:
+Say an alert fires and you paste it in:
 
-1. **Ingests the alert** from metrics, logs, traces, or incident systems
-2. **Assembles context** — ownership, deploys, dependencies, baselines
-3. **Plans evidence collection** across connected integrations
-4. **Investigates in a loop** — queries tools, updates hypotheses, stops when confidence is high enough
-5. **Delivers a report** to Slack, local files, or your configured messaging channel
+1. OpenSRE reads the alert and decides what kind of problem it is looking at.
+2. It gathers context: who owns the service, what changed recently, what is normal.
+3. It checks the tools you connected for logs, metrics and traces.
+4. It keeps digging and testing ideas until it can answer.
+5. It answers in the shell and sends the result where you asked: Slack, Telegram, a file.
 
 <div className="index-diagram-frame">
-  <div className="index-diagram-kicker">Investigation workflow</div>
+  <div className="index-diagram-kicker">Agent workflow</div>
   <img
     src="/images/how_tracer_works.png"
     alt="How OpenSRE Works"
@@ -84,4 +103,4 @@ When an alert fires, OpenSRE autonomously:
   />
 </div>
 
-See [How an investigation works](/how-investigations-work) for a plain-language walkthrough of each stage.
+OpenSRE is open source. It works with the stack you already have, runs locally or hosted for a whole team, and shows how it reached every answer. The [FAQ](/guides/faq) has the short answers.

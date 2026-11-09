@@ -82,18 +82,23 @@ def _render_inline(line: str) -> str:
         safe_label = label.replace("|", "¦").strip() or url
         return f'<a href="{html.escape(url, quote=True)}">{html.escape(safe_label)}</a>'
 
+    def bold_html(match: re.Match[str], rendered: str) -> str:
+        underscore_inner = match.group(2)
+        if underscore_inner is not None and rendered[match.end() : match.end() + 1] == ".":
+            # ``__init__.py`` is a filename, not Markdown bold.
+            return match.group(0)
+        inner = (match.group(1) or underscore_inner or match.group(3) or "").strip()
+        if not inner:
+            return ""
+        return keep(f"<b>{html.escape(inner, quote=False)}</b>")
+
     # Stash rendered spans behind placeholders so escaping can't touch them.
     text = _INLINE_CODE.sub(
         lambda m: keep(f"<code>{html.escape(m.group(1), quote=False)}</code>"), line
     )
     text = _SLACK_LINK.sub(lambda m: keep(link(m.group(2) or m.group(1), m.group(1))), text)
     text = _MD_LINK.sub(lambda m: keep(link(m.group(1), m.group(2))), text)
-    text = _BOLD.sub(
-        lambda m: keep(
-            f"<b>{html.escape(m.group(1) or m.group(2) or m.group(3), quote=False)}</b>"
-        ),
-        text,
-    )
+    text = _BOLD.sub(lambda m: bold_html(m, text), text)
     text = html.escape(text, quote=False)
     text = _ITALIC.sub(r"<i>\1</i>", text)
     return _PLACEHOLDER.sub(lambda m: stash[int(m.group(1))], text)

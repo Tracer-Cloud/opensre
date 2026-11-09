@@ -13,13 +13,18 @@ stays store-only. Socket Mode tokens are mirrored to the keyring.
 
 from __future__ import annotations
 
-from config.constants.slack import SLACK_APP_TOKEN_ENV, SLACK_BOT_TOKEN_ENV
+from config.constants.slack import (
+    SLACK_APP_TOKEN_ENV,
+    SLACK_BOT_TOKEN_ENV,
+    SLACK_DEFAULT_CHAT_ID_ENV,
+)
 from integrations.setup_flow import IntegrationSetupSpec, SetupField, SetupMode
 from integrations.slack.verifier import verify_slack
 
 WEBHOOK_URL_FIELD = "webhook_url"
 BOT_TOKEN_FIELD = "bot_token"
 APP_TOKEN_FIELD = "app_token"
+DEFAULT_CHAT_ID_FIELD = "default_chat_id"
 
 
 SLACK_SETUP = IntegrationSetupSpec(
@@ -49,6 +54,14 @@ SLACK_SETUP = IntegrationSetupSpec(
             required=False,
             secret=True,
         ),
+        SetupField(
+            name=DEFAULT_CHAT_ID_FIELD,
+            label="Default Slack channel ID",
+            prompt="Default Slack channel ID for scheduled delivery (C…)",
+            env_var=SLACK_DEFAULT_CHAT_ID_ENV,
+            required=False,
+            secret=False,
+        ),
     ),
     mode_prompt="Slack setup:",
     modes=(
@@ -60,12 +73,12 @@ SLACK_SETUP = IntegrationSetupSpec(
         SetupMode(
             value="socket",
             label="Socket Mode bot (two-way gateway chat)",
-            fields=(BOT_TOKEN_FIELD, APP_TOKEN_FIELD),
+            fields=(BOT_TOKEN_FIELD, APP_TOKEN_FIELD, DEFAULT_CHAT_ID_FIELD),
         ),
         SetupMode(
             value="both",
             label="Both webhook and Socket Mode",
-            fields=(WEBHOOK_URL_FIELD, BOT_TOKEN_FIELD, APP_TOKEN_FIELD),
+            fields=(WEBHOOK_URL_FIELD, BOT_TOKEN_FIELD, APP_TOKEN_FIELD, DEFAULT_CHAT_ID_FIELD),
         ),
     ),
     verify=verify_slack,
@@ -74,6 +87,7 @@ SLACK_SETUP = IntegrationSetupSpec(
 __all__ = [
     "APP_TOKEN_FIELD",
     "BOT_TOKEN_FIELD",
+    "DEFAULT_CHAT_ID_FIELD",
     "SLACK_SETUP",
     "WEBHOOK_URL_FIELD",
 ]

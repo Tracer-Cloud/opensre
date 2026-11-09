@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+
+#: Receives one short line per step the coding agent takes ("Editing app.py").
+Progress = Callable[[str], None]
 
 
 @dataclass(frozen=True)

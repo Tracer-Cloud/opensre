@@ -51,7 +51,7 @@ class MessagingPlatform(StrEnum):
     DM-pairing/allow-list security checks (see ``gateway/transports/telegram``,
     ``gateway/transports/slack``, ``gateway/transports/discord``, and the ``opensre messaging`` CLI).
 
-    Distinct from ``platform.scheduler.types.Provider``, the canonical
+    Distinct from ``infrastructure.scheduling.scheduler.types.Provider``, the canonical
     *delivery* vocabulary for scheduled outbound messages. Rocket.Chat is a
     delivery-only provider with no gateway inbound surface, so it is
     deliberately absent here rather than a gap to fill.

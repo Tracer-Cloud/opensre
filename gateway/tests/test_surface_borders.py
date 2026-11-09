@@ -21,9 +21,9 @@ from config.constants.memory import OPENSRE_MEMORY_DIR_ENV
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness.session.persistence import paths as session_paths
-from gateway.core.storage.db import bindings_file_path, gateway_dir
 from gateway.core.storage.session.binding_store import open_file_binding_store
 from gateway.core.storage.session.file_bindings import FileBindingStore
+from gateway.core.storage.session.paths import bindings_file_path, gateway_dir
 from gateway.transports.slack.processing.principal import slack_scope
 
 ACME = Principal.org("org_acme")
@@ -333,13 +333,13 @@ def test_each_org_gets_its_own_bindings_database() -> None:
     assert acme_db != globex_db
 
 
-def test_telegram_runtime_wiring_can_read_and_write_bindings(
+def test_telegram_runtime_store_can_read_and_write_bindings(
     host: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Exercise the store Telegram actually builds, not a hand-made one.
 
-    The previous test built a store directly, so it kept passing when the real
-    wiring pointed at a database without the bindings table.
+    The previous test built a store directly, so it kept passing when the
+    runtime store pointed at a database without the bindings table.
     """
     # Arrange: the store the Telegram runtime constructs at startup.
     from gateway.core.storage.session.binding_store import open_binding_store

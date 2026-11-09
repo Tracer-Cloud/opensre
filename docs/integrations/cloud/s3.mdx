@@ -1,0 +1,111 @@
+---
+title: "AWS S3"
+description: "Inspect S3 objects, metadata, and pipeline markers during incidents"
+---
+
+## Overview
+
+OpenSRE uses AWS S3 to read object metadata and content when an alert points at data in a bucket — inspecting the files a pipeline produced, sampling an object to spot a schema change, pulling an audit payload, or confirming a run finished by checking for a completion marker.
+
+All S3 access is read-only and routed through the shared AWS client, so the integration cannot mutate or delete your objects.
+
+## Prerequisites
+
+- AWS credentials with S3 read access, configured per the [AWS integration](/integrations/cloud/aws)
+- An S3 bucket you want OpenSRE to read from
+- IAM permissions for the two S3 actions listed below
+
+## Setup
+
+S3 has no credentials of its own — it uses the same AWS credentials as the rest of the [AWS integration](/integrations/cloud/aws). The S3 tools build their client from the ambient AWS credential chain: environment keys, a shared credentials profile, or an attached instance/task role — plus the region.
+
+```bash
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_REGION=us-east-1
+```
+
+<Info>
+`AWS_ROLE_ARN` is assumed only by `opensre integrations verify aws` — the S3 tools do **not** assume it. The credentials above must have S3 read access themselves.
+</Info>
+
+The bucket, key, and prefix OpenSRE reads are **not** environment variables — they come from the alert's resolved sources. Each S3 tool turns on for the planner only when the sources carry the fields it needs:
+
+| Source key | Fields | Turns on |
+| --- | --- | --- |
+| `s3` | `bucket`, `key`, `prefix` | `list_s3_objects` (needs `bucket`), `inspect_s3_object` / `get_s3_object` (need `bucket` + `key`), `check_s3_marker` (needs `bucket` + `prefix`) |
+| `s3_audit` | `bucket`, `key` | `get_s3_object` — fetch an audit payload referenced by an alert |
+| `s3_processed` | `bucket` (`prefix` optional) | `check_s3_marker` — check a pipeline's output location |
+
+## Credentials
+
+### IAM permissions
+
+The integration only needs two read-only S3 actions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket",
+        "s3:GetObject"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Attach this to the same IAM role or user the S3 tools actually use — the ambient credential chain (env keys or instance/task role), not only a role that the verifier assumes. If you already use the AWS managed `ReadOnlyAccess` policy, both actions are covered.
+
+## Tools
+
+| Tool | IAM action | What it returns |
+| --- | --- | --- |
+| `list_s3_objects` | `s3:ListBucket` | Object keys under an optional prefix, each with size, last-modified, ETag, and storage class (up to 100 keys). |
+| `inspect_s3_object` | `s3:GetObject` | Object metadata — size, content type, ETag, version ID, user metadata — plus a decoded text sample of the first few KB. |
+| `get_s3_object` | `s3:GetObject` | The full object body (up to 1 MB) as text, for audit payloads, config, or manifest files. |
+| `check_s3_marker` | `s3:ListBucket` | Whether a completion marker is present under a prefix, plus the file list — a signal that a pipeline run finished. |
+
+### Use cases
+
+- Listing what a pipeline wrote to a bucket, or confirming an expected file is present
+- Sampling an object to detect a schema or format change in upstream input data
+- Reading an audit payload or manifest to trace an external vendor interaction
+- Confirming a batch job completed by checking for its `_SUCCESS` marker
+
+## Verify
+
+S3 shares the AWS integration's verification. Verify credentials and region with:
+
+```bash
+opensre integrations verify aws
+```
+
+Expected output:
+
+```
+Service: aws
+Status: passed
+Detail: Connected to AWS STS via static-creds in us-east-1; caller identity account=123456789012 arn=arn:aws:iam::123456789012:user/opensre.
+```
+
+This confirms the credentials S3 rides on. It does not test bucket-level access — that is exercised the first time a tool runs against a bucket.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **S3 tools never run** | The alert's sources have no `s3` entry, or it lacks the required field — object-level tools need both `bucket` **and** `key`, not just `bucket`. |
+| **AccessDenied on `GetObject` / `ListBucket`** | Attach the IAM policy above to the credentials the S3 tools actually use — the ambient credential chain (env keys or instance/task role), not only a role that the verifier assumes. |
+| **`check_s3_marker` reports no marker when the run finished** | It only counts files whose key contains `_SUCCESS` or `marker` (case-insensitive). A completion file named anything else won't be detected. |
+| **A binary object returns metadata but no readable text** | The object isn't UTF-8 (for example Parquet or gzip); you still get size, type, and ETag, but there is no text sample to read. |
+
+## Security
+
+- All S3 access is read-only — the integration cannot mutate or delete objects.
+- Prefer least-privilege IAM with only `s3:ListBucket` and `s3:GetObject` on the buckets you want OpenSRE to read.
+- Store AWS credentials in `.env` or your secret manager — not in source control.

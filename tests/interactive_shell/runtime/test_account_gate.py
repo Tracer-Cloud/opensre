@@ -1,0 +1,620 @@
+"""The production REPL cannot start without a validated OpenSRE account."""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import subprocess
+import threading
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from rich.console import Console
+
+import surfaces.interactive_shell.main as main_entrypoint
+import surfaces.interactive_shell.runtime.startup.account_gate as account_gate
+from config.account import AccountRecord
+from config.repl_config import ReplConfig
+from infrastructure.analytics import capture
+from infrastructure.analytics.events import Event
+from surfaces.interactive_shell.runtime.core.state import ReplState
+from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.sign_in import SignInChoice
+from surfaces.shared import account_session
+from surfaces.shared.account_session import AccountSessionState, AccountStatus, StoredLogin
+
+
+def _console() -> Console:
+    return Console(file=io.StringIO(), force_terminal=False, highlight=False, width=80)
+
+
+class _RecordingAnalytics:
+    def __init__(self) -> None:
+        self.events: list[tuple[Event, dict[str, object]]] = []
+
+    def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
+        self.events.append((event, dict(properties or {})))
+
+
+ACTIVE = AccountSessionState.ACTIVE
+SIGNED_OUT = AccountSessionState.SIGNED_OUT
+
+
+def _record() -> AccountRecord:
+    return AccountRecord(
+        user_id="user_123",
+        organization_id="org_123",
+        email=None,
+        app_url="https://app.opensre.com",
+        signed_in_at="2026-09-01T10:00:00+00:00",
+        token_expires_at="2026-12-01T10:00:00+00:00",
+    )
+
+
+def _account_state(monkeypatch: Any, state: AccountSessionState, detail: str = "") -> None:
+    status = AccountStatus(state, None if state is SIGNED_OUT else _record(), detail)
+    monkeypatch.setattr(account_gate, "current_account_status", lambda: status)
+    # A launch reads local state first; let this status decide there too.
+    monkeypatch.setattr(account_session, "local_account_status", lambda: status)
+
+
+def _stored_login_answered(monkeypatch: Any, validate: Any) -> None:
+    """A complete local login, which only ``validate`` (the webapp) can decide."""
+    login = StoredLogin(_record(), "token", "https://app.opensre.com")
+    monkeypatch.setattr(account_session, "local_account_status", lambda: login)
+    monkeypatch.setattr(account_session, "validate_stored_login", validate)
+
+
+class _FakeSpin:
+    def __init__(self, events: list[str], name: str) -> None:
+        self.events = events
+        self.name = name
+        self.aborted = False
+
+    def finish(self) -> None:
+        self.events.append(f"finish {self.name}")
+
+    def abort(self) -> None:
+        self.aborted = True
+        self.events.append(f"abort {self.name}")
+
+
+def _gate_with_choices(
+    monkeypatch: Any, choices: list[SignInChoice | None], *, signed_in: bool = False
+) -> _RecordingAnalytics:
+    analytics = _RecordingAnalytics()
+    picks = iter(choices)
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
+    monkeypatch.setattr(account_gate, "is_test_run", lambda: False)
+    _account_state(monkeypatch, ACTIVE if signed_in else SIGNED_OUT)
+    monkeypatch.setattr("surfaces.interactive_shell.ui.sign_in.repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen", lambda _console, **_k: None
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.prompt_login_or_exit", lambda: next(picks)
+    )
+    return analytics
+
+
+def test_account_is_signed_in_requires_active_webapp_status(monkeypatch: Any) -> None:
+    status = SimpleNamespace(authenticated=True)
+    monkeypatch.setattr(account_gate, "current_account_status", lambda: status)
+
+    assert account_gate.account_is_signed_in() is True
+
+    status.authenticated = False
+    assert account_gate.account_is_signed_in() is False
+
+
+def test_account_login_runs_webapp_command_then_validates_session(monkeypatch: Any) -> None:
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.subprocess_runner.build_opensre_cli_argv",
+        lambda args: ["opensre", *args],
+    )
+
+    def _run(
+        command: list[str], *, check: bool, env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        assert check is False
+        calls.append((command, env))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(account_gate.subprocess, "run", _run)
+    monkeypatch.setattr(account_gate, "account_is_signed_in", lambda: True)
+
+    assert account_gate.account_login(console=_console()) is True
+    assert calls[0][0] == ["opensre", "account", "login"]
+    assert calls[0][1]["OPENSRE_PARENT_INTERACTIVE_SHELL"] == "1"
+
+
+def test_account_login_rejects_failed_or_incomplete_login(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.subprocess_runner.build_opensre_cli_argv",
+        lambda args: ["opensre", *args],
+    )
+    monkeypatch.setattr(
+        account_gate.subprocess,
+        "run",
+        lambda command, **_kwargs: subprocess.CompletedProcess(command, 1),
+    )
+    console = _console()
+
+    assert account_gate.account_login(console=console) is False
+    assert "did not complete" in console.file.getvalue()  # type: ignore[attr-defined]
+
+
+def test_pass_sign_in_gate_skips_prompts_during_tests(monkeypatch: Any) -> None:
+    called: list[bool] = []
+    monkeypatch.setattr(account_gate, "is_test_run", lambda: True)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.run_sign_in_gate",
+        lambda *_a, **_k: called.append(True) or False,
+    )
+
+    assert account_gate.pass_sign_in_gate(_console()) is True
+    assert called == []
+
+
+def test_pass_sign_in_gate_allows_only_valid_account(monkeypatch: Any) -> None:
+    monkeypatch.setattr(account_gate, "is_test_run", lambda: False)
+    _account_state(monkeypatch, AccountSessionState.INVALID)
+    monkeypatch.setattr("surfaces.interactive_shell.ui.sign_in.repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen", lambda _console, **_k: None
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.prompt_login_or_exit",
+        lambda: SignInChoice.EXIT,
+    )
+
+    assert account_gate.pass_sign_in_gate(_console()) is False
+
+
+def test_an_unreachable_app_never_offers_sign_in(monkeypatch: Any) -> None:
+    """A login the app could not check is not a signed-out login.
+
+    Live QA on 50d8fc7: the session check did not answer for about 15s, the
+    shell offered "Sign in or create account", and a relaunch a minute later
+    with the same login went straight in.
+    """
+    analytics = _gate_with_choices(monkeypatch, [])
+    detail = "The OpenSRE app could not be reached to validate this login."
+    _account_state(monkeypatch, AccountSessionState.UNAVAILABLE, detail)
+    console = _console()
+
+    assert account_gate.pass_sign_in_gate(console) is False
+
+    printed = console.file.getvalue()  # type: ignore[attr-defined]
+    assert detail in printed
+    assert "saved login was kept" in printed
+    assert analytics.events == []
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt, SystemExit])
+def test_threaded_validation_propagates_errors(
+    monkeypatch: pytest.MonkeyPatch, error_type: type[BaseException]
+) -> None:
+    error = error_type("validation stopped")
+
+    def _validate(_login: StoredLogin) -> AccountStatus:
+        raise error
+
+    monkeypatch.setattr(account_session, "validate_stored_login", _validate)
+    login = StoredLogin(_record(), "token", "https://app.opensre.com")
+    answer = account_gate._validate_on_thread(login)
+
+    with pytest.raises(error_type) as raised:
+        answer.result(timeout=5)
+
+    assert raised.value is error
+
+
+@pytest.mark.parametrize("state", [AccountSessionState.INVALID, AccountSessionState.UNAVAILABLE])
+def test_a_login_rejected_under_the_launch_spin_still_stops_the_launch(
+    monkeypatch: Any, state: AccountSessionState
+) -> None:
+    """The webapp now answers while the spin turns; only an active login gets past.
+
+    The spin must be off the screen before the gate prints its reason or menu,
+    and the sign-in screen must not turn the wordmark a second time.
+    """
+    analytics = _gate_with_choices(monkeypatch, [SignInChoice.EXIT])
+    _stored_login_answered(
+        monkeypatch, lambda _login: AccountStatus(state, _record(), "The app said no.")
+    )
+    console = _console()
+    events: list[str] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen",
+        lambda _console, *, animate: events.append(f"sign-in screen, animate={animate}"),
+    )
+
+    def _spin() -> Any:
+        events.append("spin")
+        printed = console.file.getvalue  # type: ignore[attr-defined]
+        return lambda: events.append(f"abort after {len(printed())} chars")
+
+    assert account_gate.pass_sign_in_gate(console, while_validating=_spin) is False
+
+    if state is AccountSessionState.INVALID:
+        assert events == ["spin", "abort after 0 chars", "sign-in screen, animate=False"]
+        assert [event for event, _ in analytics.events] == [
+            Event.SIGN_IN_PROMPTED,
+            Event.STAY_SIGNED_OUT_SELECTED,
+        ]
+    else:
+        assert events == ["spin", "abort after 0 chars"]
+        assert "The app said no." in console.file.getvalue()  # type: ignore[attr-defined]
+        assert analytics.events == []
+
+
+def test_gate_records_exposure_and_every_explicit_choice_before_login_runs(
+    monkeypatch: Any,
+) -> None:
+    analytics = _gate_with_choices(
+        monkeypatch, [SignInChoice.LOGIN, SignInChoice.LOGIN, SignInChoice.EXIT]
+    )
+    login_attempts = 0
+
+    def _failing_login(**_kwargs: Any) -> bool:
+        nonlocal login_attempts
+        login_attempts += 1
+        # The intent must already be queued when the browser flow starts, so an
+        # abandoned login still leaves evidence of the click.
+        assert analytics.events[-1][0] is Event.SIGN_IN_SELECTED
+        return False
+
+    monkeypatch.setattr(account_gate, "account_login", _failing_login)
+
+    assert account_gate.pass_sign_in_gate(_console()) is False
+    assert login_attempts == 2
+    assert [event for event, _ in analytics.events] == [
+        Event.SIGN_IN_PROMPTED,
+        Event.SIGN_IN_SELECTED,
+        Event.SIGN_IN_SELECTED,
+        Event.STAY_SIGNED_OUT_SELECTED,
+    ]
+    assert analytics.events[1][1] == {
+        "choice_label": SignInChoice.LOGIN.value,
+        "method": "menu",
+        "entrypoint": "sign_in_gate",
+    }
+    assert analytics.events[3][1] == {
+        "choice_label": SignInChoice.EXIT.value,
+        "method": "menu",
+        "entrypoint": "sign_in_gate",
+    }
+
+
+def test_gate_records_a_dismissed_menu_as_staying_signed_out(monkeypatch: Any) -> None:
+    # The picker returns None for Esc, q, Ctrl-C, Ctrl-D and EOF alike, so the
+    # gate must not claim a more specific key than it can observe.
+    analytics = _gate_with_choices(monkeypatch, [None])
+
+    assert account_gate.pass_sign_in_gate(_console()) is False
+    assert [event for event, _ in analytics.events] == [
+        Event.SIGN_IN_PROMPTED,
+        Event.STAY_SIGNED_OUT_SELECTED,
+    ]
+    assert analytics.events[1][1]["method"] == "dismissed"
+
+
+def test_gate_records_only_the_prompt_and_choice_on_successful_login(monkeypatch: Any) -> None:
+    analytics = _gate_with_choices(monkeypatch, [SignInChoice.LOGIN])
+    monkeypatch.setattr(account_gate, "account_login", lambda **_kwargs: True)
+
+    assert account_gate.pass_sign_in_gate(_console()) is True
+    # ``account_authenticated`` is owned by the login command, not the gate.
+    assert [event for event, _ in analytics.events] == [
+        Event.SIGN_IN_PROMPTED,
+        Event.SIGN_IN_SELECTED,
+    ]
+
+
+@pytest.mark.parametrize("interactive", [True, False])
+def test_gate_emits_nothing_without_a_rendered_menu(monkeypatch: Any, interactive: bool) -> None:
+    # Already signed in: the screen is never shown. Signed out but
+    # non-interactive: the gate fails closed without a menu. Neither is a choice.
+    analytics = _gate_with_choices(monkeypatch, [], signed_in=interactive)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.repl_tty_interactive", lambda: interactive
+    )
+
+    assert account_gate.pass_sign_in_gate(_console()) is interactive
+    assert analytics.events == []
+
+
+def test_run_repl_stops_before_runtime_when_sign_in_is_declined(monkeypatch: Any) -> None:
+    started: list[bool] = []
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: False)
+
+    async def _run_async(**_kwargs: Any) -> int:
+        started.append(True)
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert started == []
+
+
+def test_run_repl_clears_sign_in_screen_then_starts_banner(monkeypatch: Any) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: True)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: events.append("clear"))
+
+    def _start_banner(_console: Console, **_kwargs: Any) -> Any:
+        events.append("banner")
+        return SimpleNamespace(finish=lambda: events.append("finish"), aborted=False)
+
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+
+    async def _run_async(**kwargs: Any) -> int:
+        assert kwargs["finish_banner"] is not None
+        events.append("runtime")
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert events == ["clear", "banner", "runtime"]
+
+
+def test_run_repl_paints_the_launch_spin_before_the_webapp_answers(monkeypatch: Any) -> None:
+    """First paint does not wait on the sign-in check, and that spin carries the boot."""
+    events: list[str] = []
+    spin_up = threading.Event()
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(account_gate, "is_test_run", lambda: False)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: events.append("clear"))
+
+    def _validate(_login: StoredLogin) -> AccountStatus:
+        # A gate that validated before painting would wait here forever.
+        assert spin_up.wait(5)
+        events.append("validated")
+        return AccountStatus(ACTIVE, _record(), "")
+
+    def _start_banner(_console: Console, **_kwargs: Any) -> _FakeSpin:
+        events.append("spin")
+        spin_up.set()
+        return _FakeSpin(events, "1")
+
+    async def _run_async(**kwargs: Any) -> int:
+        kwargs["finish_banner"]()
+        return 0
+
+    _stored_login_answered(monkeypatch, _validate)
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert events == ["clear", "spin", "validated", "finish 1"]
+
+
+@pytest.mark.parametrize("stored_login", [False, True], ids=["signed-out", "expired"])
+def test_run_repl_boots_under_a_fresh_spin_after_signing_in(
+    monkeypatch: Any, stored_login: bool
+) -> None:
+    """Signed out never spins before the sign-in screen; an expired login's spin is replaced."""
+    events: list[str] = []
+    _gate_with_choices(monkeypatch, [SignInChoice.LOGIN])
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(account_gate, "account_login", lambda **_kwargs: True)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: events.append("clear"))
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen",
+        lambda _console, *, animate: events.append(f"sign-in screen, animate={animate}"),
+    )
+    if stored_login:
+        _stored_login_answered(
+            monkeypatch, lambda _login: AccountStatus(AccountSessionState.INVALID, _record(), "")
+        )
+    spins = 0
+
+    def _start_banner(_console: Console, **_kwargs: Any) -> _FakeSpin:
+        nonlocal spins
+        spins += 1
+        events.append(f"spin {spins}")
+        return _FakeSpin(events, str(spins))
+
+    async def _run_async(**kwargs: Any) -> int:
+        kwargs["finish_banner"]()
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    if stored_login:
+        before_login = ["clear", "spin 1", "abort 1", "sign-in screen, animate=False"]
+        after_login = ["clear", "spin 2", "finish 2"]
+    else:
+        before_login = ["sign-in screen, animate=True"]
+        after_login = ["clear", "spin 1", "finish 1"]
+    assert events == before_login + after_login
+
+
+def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> None:
+    gated: list[bool] = []
+    started: list[bool] = []
+
+    class _Controller:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            return
+
+        async def start_interactive_shell(self) -> None:
+            started.append(True)
+
+    monkeypatch.setattr(main_entrypoint, "identify_saved_github_username", lambda: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "pass_sign_in_gate",
+        lambda _console, **_kwargs: gated.append(True) or False,
+    )
+    monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: None)
+    monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
+
+    class _SessionStore:
+        def open_store(self, _session: object) -> None:
+            return
+
+        def refresh_from_storage(self, _session: object) -> None:
+            return
+
+        def flush(self, _session: object) -> None:
+            return
+
+        def close(self, _session: object, **_kwargs: object) -> None:
+            return
+
+    monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _s: _SessionStore())
+
+    assert asyncio.run(main_entrypoint.run_repl_async()) == 0
+    assert gated == []
+    assert started == [True]
+
+
+def _boot_repl_without_prompt(monkeypatch: Any) -> None:
+    class _Controller:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            return
+
+        async def start_interactive_shell(self) -> None:
+            return
+
+    class _SessionStore:
+        def open_store(self, _session: object) -> None:
+            return
+
+        def refresh_from_storage(self, _session: object) -> None:
+            return
+
+        def flush(self, _session: object) -> None:
+            return
+
+        def close(self, _session: object, **_kwargs: object) -> None:
+            return
+
+    monkeypatch.setattr(main_entrypoint, "identify_saved_github_username", lambda: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
+    )
+    monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
+    monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _s: _SessionStore())
+
+
+def test_run_repl_async_always_offers_the_demo(monkeypatch: Any) -> None:
+    offered: list[bool] = []
+    _boot_repl_without_prompt(monkeypatch)
+    monkeypatch.setattr(
+        main_entrypoint, "offer_demo", lambda *_a, **_k: offered.append(True) or False
+    )
+
+    assert asyncio.run(main_entrypoint.run_repl_async()) == 0
+    assert offered == [True]
+
+
+def test_run_repl_records_shell_render_when_the_sign_in_screen_is_shown(
+    monkeypatch: Any,
+) -> None:
+    painted: list[str] = []
+    _gate_with_choices(monkeypatch, [SignInChoice.EXIT])
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: painted.append("captured"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "run_repl_async",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("runtime must not start")),
+    )
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert painted == ["captured"]
+
+
+def test_run_repl_does_not_record_shell_render_for_resume_or_onboard(
+    monkeypatch: Any,
+) -> None:
+    painted: list[str] = []
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: True)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: painted.append("captured"),
+    )
+
+    def _start_banner(_console: Console, *, on_painted: Any = None) -> Any:
+        if on_painted is not None:
+            on_painted()
+        return SimpleNamespace(finish=lambda: None, aborted=False)
+
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+
+    async def _run_async(**_kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert (
+        main_entrypoint.run_repl(
+            config=ReplConfig(enabled=True, layout="classic"),
+            resume_session_id="session-a",
+        )
+        == 0
+    )
+    assert (
+        main_entrypoint.run_repl(
+            config=ReplConfig(enabled=True, layout="classic"),
+            capture_shell_rendered=False,
+        )
+        == 0
+    )
+    assert painted == []
+
+
+def test_run_repl_records_shell_render_on_banner_when_already_signed_in(
+    monkeypatch: Any,
+) -> None:
+    painted: list[str] = []
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: True)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: painted.append("captured"),
+    )
+
+    def _start_banner(_console: Console, *, on_painted: Any = None) -> Any:
+        return SimpleNamespace(
+            finish=lambda: on_painted() if on_painted is not None else None, aborted=False
+        )
+
+    async def _run_async(**kwargs: Any) -> int:
+        finish = kwargs["finish_banner"]
+        assert finish is not None
+        finish()
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert painted == ["captured"]

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import smtplib
 from email.message import EmailMessage
 
 import pytest
 
 from integrations.smtp.delivery import (
-    format_background_rca_email,
     send_smtp_report,
     verify_smtp_connection,
 )
@@ -58,23 +58,6 @@ def _return_fake_client(fake_client: _FakeSMTP):
     return _factory
 
 
-def test_format_background_rca_email_includes_required_sections() -> None:
-    subject, body = format_background_rca_email(
-        task_id="bg-123",
-        command="/investigate checkout",
-        root_cause="postgres connection pool saturation",
-        top_analysis=("rds cpu spike", "error rate climbed"),
-        next_steps=("raise pool size",),
-        stats={"tool_call_count": 4, "investigation_loop_count": 2, "validity_score": 0.91},
-    )
-
-    assert subject == "OpenSRE RCA complete: bg-123"
-    assert "Root cause" in body
-    assert "Top analysis" in body
-    assert "What to do next" in body
-    assert "Internal stats" in body
-
-
 def test_verify_smtp_connection_uses_starttls(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_client = _FakeSMTP("smtp.example.com", 587, 15)
     monkeypatch.setattr("integrations.smtp.delivery.smtplib.SMTP", _return_fake_client(fake_client))
@@ -121,6 +104,37 @@ def test_send_smtp_report_sends_plain_text_email(monkeypatch: pytest.MonkeyPatch
     assert fake_client.sent[0]["From"] == "opensre@example.com"
     assert fake_client.sent[0]["To"] == "team@example.com"
     assert "hello world" in fake_client.sent[0].get_content()
+
+
+class _RefusingSMTP(_FakeSMTP):
+    def send_message(self, _message: EmailMessage) -> None:
+        raise smtplib.SMTPRecipientsRefused({"alice@example.com": (550, b"No such user")})
+
+
+def test_send_smtp_report_keeps_recipient_addresses_out_of_the_returned_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = _RefusingSMTP("smtp.example.com", 465, 15)
+    monkeypatch.setattr(
+        "integrations.smtp.delivery.smtplib.SMTP_SSL",
+        _return_fake_client(fake_client),
+    )
+
+    ok, error = send_smtp_report(
+        report="hello",
+        subject="RCA ready",
+        smtp_ctx={
+            "host": "smtp.example.com",
+            "port": 465,
+            "security": "ssl",
+            "from_address": "opensre@example.com",
+            "default_to": "alice@example.com",
+        },
+    )
+
+    assert ok is False
+    assert error == "SMTPRecipientsRefused"
+    assert "alice@example.com" not in error
 
 
 def test_send_smtp_report_requires_recipient() -> None:

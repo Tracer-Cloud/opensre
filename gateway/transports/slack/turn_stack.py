@@ -14,14 +14,14 @@ from dataclasses import dataclass
 
 from slack_sdk.web import WebClient
 
-from gateway.core.runtime.approvals import ApprovalBroker
-from gateway.core.runtime.sink_protocol import GatewayAgentCallback
+from gateway.core.middleware.approvals import ApprovalBroker
 from gateway.core.storage import SessionResolver
 from gateway.core.storage.session.binding_store import BindingStore, open_binding_store
 from gateway.transports.slack.client import SlackWebApiClient
 from gateway.transports.slack.delivery.channel_intro import ChannelIntroGreeter
 from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
 from gateway.transports.slack.settings import SlackGatewaySettings
+from infrastructure.turn_host.turn_callback import TurnCallback
 
 _PLATFORM_SLACK = "slack"
 
@@ -65,7 +65,7 @@ def build_slack_turn_stack(
     *,
     settings: SlackGatewaySettings,
     logger: logging.Logger,
-    handler: GatewayAgentCallback,
+    handler: TurnCallback,
 ) -> SlackTurnStack:
     """Construct the Slack turn collaborators for one gateway process."""
     web_client = WebClient(token=settings.bot_token)

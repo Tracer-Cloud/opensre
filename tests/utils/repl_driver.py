@@ -64,11 +64,9 @@ def _load_env(*, home: str | None = None) -> dict[str, str]:
     env = dict(os.environ)
     if home is not None:
         env["HOME"] = home
-    env.setdefault("OPENSRE_SKIP_GITHUB_LOGIN", "1")
     env_file = PROJECT_ROOT / ".env"
     if env_file.exists():
         env.update({k: v for k, v in dotenv_values(env_file).items() if v is not None})
-    env.setdefault("OPENSRE_SKIP_GITHUB_LOGIN", "1")
     return env
 
 

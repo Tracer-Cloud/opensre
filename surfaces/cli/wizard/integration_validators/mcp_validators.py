@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from integrations.github.mcp import (
+from integrations.github import (
     build_github_mcp_config,
     format_github_mcp_validation_cli_report,
     validate_github_mcp_config,
 )
-from integrations.openclaw import build_openclaw_config, validate_openclaw_config
 from integrations.posthog_mcp import (
     build_posthog_mcp_config,
     validate_posthog_mcp_config,
@@ -52,31 +51,6 @@ def validate_github_mcp_integration(
         detail=format_github_mcp_validation_cli_report(result),
         github_mcp=result,
     )
-
-
-def validate_openclaw_integration(
-    *,
-    url: str = "",
-    mode: str,
-    auth_token: str = "",
-    command: str = "",
-    args: list[str] | None = None,
-) -> IntegrationHealthResult:
-    """Validate OpenClaw MCP connectivity by listing available tools."""
-    try:
-        config = build_openclaw_config(
-            {
-                "url": url,
-                "mode": mode,
-                "auth_token": auth_token,
-                "command": command,
-                "args": args or [],
-            }
-        )
-        result = validate_openclaw_config(config)
-        return IntegrationHealthResult(ok=result.ok, detail=result.detail)
-    except Exception as err:
-        return IntegrationHealthResult(ok=False, detail=f"OpenClaw validation failed: {err}")
 
 
 def validate_posthog_mcp_integration(

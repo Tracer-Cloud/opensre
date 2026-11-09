@@ -1,0 +1,169 @@
+---
+title: Principal-scoped storage (Slack and Discord)
+description: How OpenSRE gives each messaging user laptop-like session context while sharing org integrations on a multi-tenant gateway.
+---
+
+# Principal-scoped storage (Slack and Discord)
+
+For a **Slack or Discord user** on a team install, OpenSRE resolves one
+**principal** (the organization this deployment serves) and one **actor**
+(the messaging user). Team integrations and billing follow the principal.
+Conversation sessions follow the actor — the same private context a laptop
+CLI user keeps under `~/.opensre`.
+
+Local CLI and Telegram stay on the flat host home when no org scope is bound.
+
+## Who owns the turn
+
+| Context | Principal | Actor |
+| --- | --- | --- |
+| Slack | Organization from `ORGANIZATION_ID` | Slack user id |
+| Discord | Organization from `ORGANIZATION_ID` | Discord user id |
+| Other surfaces (CLI, Telegram, …) | Unbound — flat host home | — |
+
+With no organization configured, or a workspace outside the allowlist
+(`OPENSRE_SILO_TEAM_IDS` for Slack, `DISCORD_SILO_GUILD_IDS` for Discord), the
+turn is **refused** rather than billed or attributed to the wrong owner.
+Discord DMs use a sentinel guild id and skip the guild allowlist; they still
+require `ORGANIZATION_ID`.
+
+## On-disk layout
+
+A laptop user keeps everything in `~/.opensre`. A Slack or Discord user gets
+the same private conversation context, filed under their organization.
+
+Deployed, the organization root is the mounted volume named by
+`OPENSRE_CONTEXT_ROOT` (for example `/workspace/memories`). The infrastructure
+chroots that mount to one organization through a per-org access point, so
+OpenSRE adds no org segment of its own:
+
+```text
+/workspace/memories/                     # = organizations/<organization_id>/
+  integrations.json                      # shared by every member of the org
+  users/<user_id>/                      # that user's own context
+    sessions/<session_id>.jsonl
+    memory/
+```
+
+Without the mount, a bound org principal nests under the host home so several
+organizations can be exercised on one machine:
+
+```text
+~/.opensre/
+  gateway/…                              # host: pidfile, logs
+  integrations.json                      # laptop / unbound: unchanged
+  sessions/
+  memory/
+  orgs/<clerk_org_id>/
+    integrations.json
+    users/<user_id>/
+      sessions/…
+      memory/
+```
+
+Integrations sit at the org root because credentials belong to the team:
+whoever connected Datadog, every member investigates with it. Sessions and
+memory sit under the user because conversation history is personal, the same
+way it is on a laptop.
+
+Personal connections are different: the OpenSRE app authorizes them against
+the signed-in Clerk user and returns them only to that user. They are never
+materialized into an organization's shared `integrations.json`.
+
+A deployed silo can also point integrations at ephemeral storage with
+`OPENSRE_INTEGRATIONS_STORE_PATH` (credentials re-hydrated at boot rather than
+kept on the shared mount).
+
+With no scope bound — a terminal run — every path resolves to the flat
+`~/.opensre` layout, unchanged.
+
+## What happens on a scoped turn
+
+1. Resolve `StorageScope` (`principal` + `actor`) at the start of the turn.
+2. Bind the scope for the turn (`bound_storage_scope`).
+3. Resolve paths: org home for integrations, member home for sessions.
+4. Look up / create session bindings with
+   `(platform, chat_id, principal_id, actor_id)`.
+5. Consume credits against `principal.id` (the org).
+
+Alice and Bob in the same Slack thread or Discord channel get different
+session files and different binding rows. They share the org's integrations
+store.
+
+## Other surfaces
+
+All four chat transports — Slack, Discord, Telegram, Buzz — resolve a scope
+and meter the turn. `principal` and `actor` stay optional on the binding store
+and resolver: the unbound CLI path omits them and keys bindings by empty
+principal/actor ids.
+
+## Which organization a deployment serves
+
+There is no install catalog. The workspace → organization mapping is
+control-plane data the webapp already owns, so OpenSRE does not keep a second
+copy that could drift.
+
+A deployment is told which organization it serves:
+
+```bash
+export ORGANIZATION_ID=org_...
+export OPENSRE_SILO_TEAM_IDS=T0123        # Slack — recommended in production
+export DISCORD_SILO_GUILD_IDS=G0123       # Discord — recommended with real credentials
+```
+
+With the Slack or Discord allowlist set, only those workspaces/servers are
+served and every other one is refused. Unset, any workspace that installed the
+app (or any Discord server the bot is in) is served from the configured
+organization — convenient for dogfood, and logged as a warning because an
+uninvited workspace would inherit that organization's credentials.
+
+**Consequence:** one process serves one organization. A gateway fronting
+several workspaces would need the workspace → organization lookup back,
+reading the webapp rather than a local catalog.
+
+## Upgrading an existing deployment
+
+Session bindings moved out of the host SQLite database into a per-organization
+`bindings.json` beside that organization's context. SQLite is gone from the
+live path: the context root is an NFS-backed mount, where its advisory locking
+is unreliable, while a write-temp-then-rename is atomic.
+
+Opening the JSON file for the first time adopts rows from any old SQLite
+index — including one written before scoping existed, which has neither
+`principal_id` nor `actor_id`; those adopt as unscoped rows and keep working
+for Telegram and the CLI. A deployment whose context moved onto a mounted
+volume also adopts from the host database.
+
+Scoped members still get a **new session on their first turn after upgrade**:
+an adopted row carries an empty actor id, so it no longer matches a
+member-scoped lookup. The transcript survives and remains readable.
+
+Session transcripts and `integrations.json` are not copied automatically. To
+keep continuity on a silo, copy them once:
+
+```bash
+mkdir -p ~/.opensre/orgs/$ORGANIZATION_ID/users
+cp ~/.opensre/integrations.json ~/.opensre/orgs/$ORGANIZATION_ID/
+```
+
+Telegram and other unbound surfaces keep matching their migrated empty-actor
+rows.
+
+## Related env vars
+
+| Env | Purpose |
+| --- | --- |
+| `ORGANIZATION_ID` | The organization this deployment serves. Required for Slack and Discord turns, and required to use `OPENSRE_CONTEXT_ROOT` |
+| `OPENSRE_CONTEXT_ROOT` | Mounted, org-scoped volume holding this organization's context (for example `/workspace/memories`). Requires `ORGANIZATION_ID` to say who owns it |
+| `OPENSRE_SILO_TEAM_IDS` | Comma-separated Slack team ids this deployment serves. Unset, any workspace is served (with a warning); set, every other workspace is refused |
+| `DISCORD_SILO_GUILD_IDS` | Comma-separated Discord server ids allowed to use this deployment's organization. Unset serves every server the bot is in (with a warning) |
+| `OPENSRE_INTEGRATIONS_STORE_PATH` | Optional override for the integrations store path (common on deployed silos) |
+
+## Non-goals
+
+- CLI emulation of a Slack or Discord member
+- Materializing personal webapp connections into a shared organization file
+- Nesting `opensre.json`, sessions, or REPL history under member homes
+- Changing local CLI individual home layout
+- A database of any kind: bindings are a JSON file
+- A workspace → organization catalog, so one process serves one organization

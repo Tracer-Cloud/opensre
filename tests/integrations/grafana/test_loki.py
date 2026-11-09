@@ -156,6 +156,35 @@ class TestQueryLokiSuccess:
         assert len(result["logs"]) == 2
         assert result["total_logs"] == 2
 
+    @patch("integrations.grafana.loki._MAX_LOKI_LOG_LINES", 2)
+    def test_requested_limit_above_loki_cap_uses_supported_request_size(self) -> None:
+        host = _FakeLokiHost()
+        host.make_request_mock.return_value = {
+            "data": {"result": [{"stream": {}, "values": [["1", "first"], ["2", "second"]]}]}
+        }
+
+        result = host.query_loki(_QUERY, limit=3)
+
+        assert host.last_params is not None
+        assert host.last_params["limit"] == "2"
+        assert result["success"] is True
+        assert result["total_logs"] == 2
+        assert result["truncated"] is True
+
+    @patch("integrations.grafana.loki._MAX_LOKI_LOG_LINES", 2)
+    def test_underfilled_capped_request_is_not_marked_truncated(self) -> None:
+        host = _FakeLokiHost()
+        host.make_request_mock.return_value = {
+            "data": {"result": [{"stream": {}, "values": [["1", "only"]]}]}
+        }
+
+        result = host.query_loki(_QUERY, limit=3)
+
+        assert host.last_params is not None
+        assert host.last_params["limit"] == "2"
+        assert result["total_logs"] == 1
+        assert result["truncated"] is False
+
 
 # ---------------------------------------------------------------------------
 # Not configured short-circuit

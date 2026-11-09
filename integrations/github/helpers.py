@@ -1,7 +1,7 @@
 """Helpers shared by GitHub MCP tools.
 
 Each function takes inputs produced by the rest of the runtime
-(integration store entries, MCP tool results, runtime-extracted kwargs)
+(integration store entries, runtime-extracted kwargs)
 and returns the shape the next layer expects. Callers live in
 ``integrations/github/tools/*.py`` and rely on these wrappers so the
 tool files stay thin.
@@ -13,15 +13,17 @@ Exports:
 - ``github_source_available``: predicate on the integration store entry.
 - ``github_creds``: maps classified integration fields to tool kwargs.
 - ``resolve_github_mcp_config``: merges env defaults with explicit overrides.
-- ``normalize_github_tool_result``: turns a raw MCP tool result into the
-  payload shape consumed by the tool framework.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from config.constants.github import (
+    GITHUB_CONNECTION_ORIGIN_PARAM,
+    GITHUB_CONNECTION_ORIGIN_TAG,
+    GITHUB_WEBAPP_ORIGIN,
+)
 from integrations.github.mcp import (
     DEFAULT_GITHUB_MCP_MODE,
     GitHubMCPConfig,
@@ -31,6 +33,8 @@ from integrations.github.mcp import (
 
 # Runtime connection/secret kwargs from ``extract_params``; must win over model input.
 GITHUB_INJECTED_PARAMS: tuple[str, ...] = (
+    "github_connection_origin",
+    "github_connection_id",
     "github_url",
     "github_mode",
     "github_token",
@@ -40,20 +44,27 @@ GITHUB_INJECTED_PARAMS: tuple[str, ...] = (
 
 
 def github_source_available(sources: dict[str, dict]) -> bool:
-    """Return True when the GitHub integration is configured and reachable.
+    """Return whether the selected app grant supplies a REST token."""
+    from integrations.github.rest_token import has_github_rest_token
 
-    ``sources`` is the per-integration view assembled by the runtime from the
-    integration store; the relevant entry is ``sources["github"]``. Returns
-    True only when that entry's ``connection_verified`` flag is set truthy
-    (typically by the verifier after a live credentials check). Missing
-    ``github`` entry or a falsy/missing ``connection_verified`` returns False.
-    """
-    return bool(sources.get("github", {}).get("connection_verified"))
+    return has_github_rest_token(sources)
+
+
+def github_repository_source_available(sources: dict[str, dict]) -> bool:
+    """Require a repository and an available GitHub grant without selection fallback."""
+    gh = sources.get("github", {})
+    if gh.get("connection_selection_error"):
+        return False
+    return bool(github_source_available(sources) and gh.get("owner") and gh.get("repo"))
 
 
 def github_creds(gh: dict) -> dict[str, Any]:
     """Map classified GitHub integration fields to tool credential kwargs."""
-    creds: dict[str, Any] = {}
+    if gh.get(GITHUB_CONNECTION_ORIGIN_TAG) != GITHUB_WEBAPP_ORIGIN:
+        return {}
+    creds: dict[str, Any] = {GITHUB_CONNECTION_ORIGIN_PARAM: GITHUB_WEBAPP_ORIGIN}
+    if gh.get("connection_id"):
+        creds["github_connection_id"] = gh["connection_id"]
     url = gh.get("github_url") or gh.get("url")
     if url:
         creds["github_url"] = url
@@ -81,7 +92,7 @@ def _has_explicit_github_mcp_overrides(
     github_command: str | None,
     github_args: list[str] | None,
 ) -> bool:
-    if github_url or github_token or github_command or github_args:
+    if github_url or github_token is not None or github_command or github_args:
         return True
     return bool(github_mode and github_mode != DEFAULT_GITHUB_MCP_MODE)
 
@@ -112,41 +123,12 @@ def resolve_github_mcp_config(
         {
             "url": github_url or (env_config.url if env_config else ""),
             "mode": github_mode or (env_config.mode if env_config else DEFAULT_GITHUB_MCP_MODE),
-            "auth_token": github_token or (env_config.auth_token if env_config else ""),
+            "auth_token": github_token
+            if github_token is not None
+            else (env_config.auth_token if env_config else ""),
             "command": github_command or (env_config.command if env_config else ""),
             "args": github_args or (list(env_config.args) if env_config else []),
             "headers": env_config.headers if env_config else {},
             "toolsets": env_config.toolsets if env_config else (),
         }
     )
-
-
-def normalize_github_tool_result(result: dict[str, Any]) -> dict[str, Any]:
-    """Normalize a raw GitHub MCP tool result into the tool-framework payload.
-
-    ``result`` is the dict returned by ``call_github_mcp_tool``: it carries
-    ``is_error`` (bool), ``text`` (str, root-cause message on error),
-    ``tool`` (str, the MCP tool name), ``arguments`` (dict passed to the tool),
-    ``structured_content`` (parsed JSON or None), and ``content`` (list of MCP
-    content items). When ``is_error`` is truthy, returns the standard
-    ``tool_unavailable("github", ...)`` envelope so the framework surfaces a
-    consistent unavailable-source response. Otherwise returns a dict with
-    ``source="github"``, ``available=True``, and the original ``tool``,
-    ``arguments``, ``text``, ``structured_content``, ``content`` keys preserved.
-    """
-    if result.get("is_error"):
-        return tool_unavailable(
-            "github",
-            result.get("text") or "GitHub MCP tool call failed.",
-            tool=result.get("tool"),
-            arguments=result.get("arguments", {}),
-        )
-    return {
-        "source": "github",
-        "available": True,
-        "tool": result.get("tool"),
-        "arguments": result.get("arguments", {}),
-        "text": result.get("text", ""),
-        "structured_content": result.get("structured_content"),
-        "content": result.get("content", []),
-    }

@@ -16,6 +16,37 @@ from integrations.grafana.config import GrafanaAccountConfig
 
 logger = logging.getLogger(__name__)
 
+# Client-side transport failures (host unreachable). Soft empty results after
+# these mislead gather: tools look successful and the circuit breaker never
+# marks Grafana, so SessionGoal turns re-pay connect timeouts.
+_TRANSPORT_ERROR_MARKERS = (
+    "connect timeout",
+    "connecttimeouterror",
+    "connection refused",
+    "connection timed out",
+    "max retries exceeded",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "no route to host",
+    "network is unreachable",
+    "httpconnectionpool",
+)
+
+
+def _is_transport_failure(exc: BaseException) -> bool:
+    """True when ``exc`` is a requests/urllib3 failure to reach Grafana itself."""
+    if isinstance(
+        exc,
+        (
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ),
+    ):
+        return True
+    lowered = str(exc).lower()
+    return any(marker in lowered for marker in _TRANSPORT_ERROR_MARKERS)
+
 
 def _extract_datasource_uid(rule: dict) -> str:
     """Extract the primary datasource UID from an alert rule."""
@@ -264,6 +295,8 @@ class GrafanaClientBase:
             return result
         except Exception as e:
             logger.warning("[grafana] Failed to discover datasource UIDs: %s", e)
+            if _is_transport_failure(e):
+                raise
             return {}
 
     def query_loki_label_values(self, label: str = "service_name") -> list[str]:
@@ -278,8 +311,10 @@ class GrafanaClientBase:
             data = self._make_get_request(url)
             values: list[str] = data.get("data", [])
             return values
-        except Exception:
+        except Exception as e:
             logger.debug("Failed to fetch Loki label values for %s", label, exc_info=True)
+            if _is_transport_failure(e):
+                raise
             return []
 
     def query_alert_rules(self, folder: str | None = None) -> list[dict[str, Any]]:
@@ -310,6 +345,8 @@ class GrafanaClientBase:
             return rules
         except Exception as e:
             logger.warning("[grafana] Failed to query alert rules: %s", e)
+            if _is_transport_failure(e):
+                raise
             return []
 
     def query_annotations(
@@ -339,6 +376,8 @@ class GrafanaClientBase:
             return [_map_annotation(item) for item in data if isinstance(item, dict)]
         except Exception as e:
             logger.warning("[grafana] Failed to query annotations: %s", e)
+            if _is_transport_failure(e):
+                raise
             return []
 
     def create_annotation(

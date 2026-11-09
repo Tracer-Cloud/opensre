@@ -1,5 +1,0 @@
-base: 000-healthy
-scenario_id: 005-failover
-failure_mode: failover
-severity: critical
-scenario_difficulty: 1

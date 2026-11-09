@@ -1,8 +1,8 @@
 """One turn's streamed Slack message — the ``chat.startStream`` state machine.
 
-Separate from the sink: the sink chooses a delivery path and renders blocks,
-this owns stream lifecycle (start / append / stop), chunk throttling, and the
-open-task bookkeeping the timeline surface needs.
+Separate from turn output: that class chooses a delivery path and renders
+blocks; this owns stream lifecycle (start / append / stop), chunk throttling,
+and the open-task bookkeeping the timeline surface needs.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ from gateway.transports.slack.client import (
     Blocks,
     SlackMessagingClient,
 )
-from platform.common.truncation import truncate
+from infrastructure.text.markdown import tighten_markdown_emphasis
+from infrastructure.text.truncation import truncate
 
 logger = logging.getLogger("gateway")
 
@@ -125,9 +126,17 @@ class TurnStream:
             # Already finished once (e.g. a timeout finalize raced the answer);
             # the streamed message stands as delivered.
             return True
-        streamed = self._sent_text + self._joined_pending()
+        # Compare in tightened space: flushes already collapse ``** bold **``.
+        full_text = tighten_markdown_emphasis(full_text)
+        pending = tighten_markdown_emphasis(self._joined_pending())
+        self._pending_parts.clear()
+        if pending:
+            self._pending_parts.append(pending)
+        streamed = self._sent_text + pending
         if full_text.startswith(streamed):
-            self._pending_parts.append(full_text[len(streamed) :])
+            rest = full_text[len(streamed) :]
+            if rest:
+                self._pending_parts.append(rest)
         elif full_text != streamed:
             # A finalize with unrelated text (error copy, timeout notice)
             # lands after whatever partial answer already streamed.
@@ -142,7 +151,7 @@ class TurnStream:
             # Content is fully appended; a failed stop only leaves the
             # streaming indicator until Slack expires it. Don't re-post.
             logger.warning(
-                "[slack-sink] chat.stopStream failed channel=%s ts=%s",
+                "[slack-turn-output] chat.stopStream failed channel=%s ts=%s",
                 self._channel_id,
                 self._ts,
             )
@@ -186,9 +195,12 @@ class TurnStream:
             chunks.extend(self._close_open_task_chunks())
         if pending:
             budget = SLACK_MAX_MARKDOWN_BLOCK_CHARS - len(self._sent_text)
-            text = truncate(pending, max(budget, 1), suffix="…")
+            flushed = tighten_markdown_emphasis(pending)
+            text = truncate(flushed, max(budget, 1), suffix="…")
             chunks.append({"type": "markdown_text", "text": text})
-            self._sent_text += pending
+            # Account for the logical tightened content even if Slack got a
+            # truncated view at the markdown-block cap.
+            self._sent_text += flushed
             self._pending_parts.clear()
         if chunks:
             self._append(chunks)

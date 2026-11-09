@@ -38,7 +38,8 @@ def test_run_happy_path() -> None:
     mock_core_v1 = MagicMock()
     mock_core_v1.read_namespaced_pod_log.return_value = "line1\nline2\n"
     with patch(
-        "integrations.eks.tools.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+        "integrations.eks.tools.eks_pod_logs_tool.build_k8s_clients",
+        return_value=(mock_core_v1, MagicMock()),
     ):
         result = get_eks_pod_logs(
             cluster_name="c1",
@@ -52,7 +53,10 @@ def test_run_happy_path() -> None:
 
 
 def test_run_handles_exception() -> None:
-    with patch("integrations.eks.tools.build_k8s_clients", side_effect=Exception("k8s error")):
+    with patch(
+        "integrations.eks.tools.eks_pod_logs_tool.build_k8s_clients",
+        side_effect=Exception("k8s error"),
+    ):
         result = get_eks_pod_logs(
             cluster_name="c1",
             namespace="default",

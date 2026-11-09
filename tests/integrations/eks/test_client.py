@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from integrations.eks.aws_credentials import stored_credentials_to_aws_creds
 from integrations.eks.eks_client import EKSClient
-from integrations.eks.utils import stored_credentials_to_aws_creds
 
 # ---------------------------------------------------------------------------
 # stored_credentials_to_aws_creds

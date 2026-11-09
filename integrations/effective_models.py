@@ -48,13 +48,12 @@ class EffectiveIntegrations(StrictConfigModel):
     google_docs: EffectiveIntegrationEntry | None = None
     gitlab: EffectiveIntegrationEntry | None = None
     vercel: EffectiveIntegrationEntry | None = None
+    neon: EffectiveIntegrationEntry | None = None
     railway: EffectiveIntegrationEntry | None = None
     jira: EffectiveIntegrationEntry | None = None
     servicenow: EffectiveIntegrationEntry | None = None
-    opsgenie: EffectiveIntegrationEntry | None = None
     pagerduty: EffectiveIntegrationEntry | None = None
     incident_io: EffectiveIntegrationEntry | None = None
-    notion: EffectiveIntegrationEntry | None = None
     prefect: EffectiveIntegrationEntry | None = None
     posthog: EffectiveIntegrationEntry | None = None
     kafka: EffectiveIntegrationEntry | None = None
@@ -70,10 +69,8 @@ class EffectiveIntegrations(StrictConfigModel):
     smtp: EffectiveIntegrationEntry | None = None
     whatsapp: EffectiveIntegrationEntry | None = None
     twilio: EffectiveIntegrationEntry | None = None
-    openclaw: EffectiveIntegrationEntry | None = None
     posthog_mcp: EffectiveIntegrationEntry | None = None
     sentry_mcp: EffectiveIntegrationEntry | None = None
-    x_mcp: EffectiveIntegrationEntry | None = None
     mysql: EffectiveIntegrationEntry | None = None
     snowflake: EffectiveIntegrationEntry | None = None
     azure: EffectiveIntegrationEntry | None = None
@@ -91,3 +88,4 @@ class EffectiveIntegrations(StrictConfigModel):
     tempo: EffectiveIntegrationEntry | None = None
     temporal: EffectiveIntegrationEntry | None = None
     kubernetes: EffectiveIntegrationEntry | None = None
+    new_relic: EffectiveIntegrationEntry | None = None

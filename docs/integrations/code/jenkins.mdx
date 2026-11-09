@@ -1,0 +1,221 @@
+---
+title: "Jenkins"
+description: "Connect Jenkins so OpenSRE can correlate failed builds and deployments with incidents"
+---
+
+## Overview
+
+Correlate failed builds and deployments with incidents. OpenSRE reads your [Jenkins](https://www.jenkins.io) server over its REST API to answer: *"was there a recent build or deployment that coincides with this alert?"*
+
+## Prerequisites
+
+- Jenkins server reachable from OpenSRE
+- Jenkins username with API access
+- A Jenkins **API token** (not your account password)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup jenkins
+```
+
+You will be prompted for the Jenkins URL, username, and API token.
+
+Related commands:
+
+| Command | What it does |
+| --- | --- |
+| `opensre integrations verify jenkins` | Check connectivity to the Jenkins server |
+| `opensre integrations show jenkins` | Show the configured Jenkins connection |
+| `opensre integrations remove jenkins` | Remove the stored Jenkins credentials |
+
+### Option 2: Environment variables
+
+```bash
+export JENKINS_URL="http://localhost:8080"
+export JENKINS_USER="your-username"        # required — Basic auth is username:token
+export JENKINS_API_TOKEN="<your-api-token>"
+```
+
+| Variable | Description |
+| --- | --- |
+| `JENKINS_URL` | **Required.** Jenkins base URL |
+| `JENKINS_USER` | **Required.** Jenkins username for Basic auth |
+| `JENKINS_API_TOKEN` | **Required.** API token (not password) |
+
+Folder-organized jobs are supported — pass the full path, for example `team/payment-service`.
+
+## Credentials
+
+### Create a Jenkins API token
+
+In Jenkins: click your **username** (top-right) → **Security** → **API Token** → **Add new Token** → **Generate**. Copy the token — Jenkins shows it only once.
+
+API access uses HTTP Basic auth with your **username** and this **token** (not your password).
+
+### Quick local test with Docker
+
+Bring up a disposable Jenkins with a pre-configured admin account (no setup wizard):
+
+```bash
+mkdir -p /tmp/jenkins-init
+cat > /tmp/jenkins-init/basic-security.groovy << 'EOF'
+import jenkins.model.*
+import hudson.security.*
+
+def instance = Jenkins.get()
+def realm = new HudsonPrivateSecurityRealm(false)
+realm.createAccount("admin", "admin")
+instance.setSecurityRealm(realm)
+def strategy = new FullControlOnceLoggedInAuthorizationStrategy()
+strategy.setAllowAnonymousRead(false)
+instance.setAuthorizationStrategy(strategy)
+instance.save()
+EOF
+
+docker run -d --name jenkins-dev -p 127.0.0.1:8090:8080 \
+  -e JAVA_OPTS="-Djenkins.install.runSetupWizard=false" \
+  -v /tmp/jenkins-init/basic-security.groovy:/usr/share/jenkins/ref/init.groovy.d/basic-security.groovy \
+  jenkins/jenkins:lts-jdk17
+```
+
+Wait for it to come up, then create and run a job so there is a real build to inspect:
+
+```bash
+i=0
+until curl -sf -o /dev/null -u admin:admin http://localhost:8090/crumbIssuer/api/json; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: Jenkins never became ready" >&2; exit 1; }
+  sleep 2
+done
+
+COOKIE_JAR=/tmp/jenkins-init/cookies.txt
+CRUMB=$(curl -s -c "$COOKIE_JAR" -u admin:admin http://localhost:8090/crumbIssuer/api/json | python3 -c "import json,sys;print(json.load(sys.stdin)['crumb'])")
+
+curl -s -b "$COOKIE_JAR" -u admin:admin -H "Jenkins-Crumb: $CRUMB" -H "Content-Type: application/xml" \
+  --data-binary '<project><builders><hudson.tasks.Shell><command>echo deploying payment-service; exit 1</command></hudson.tasks.Shell></builders></project>' \
+  "http://localhost:8090/createItem?name=payment-service-deploy"
+
+curl -s -b "$COOKIE_JAR" -u admin:admin -H "Jenkins-Crumb: $CRUMB" -X POST \
+  "http://localhost:8090/job/payment-service-deploy/build"
+
+# The build runs async — wait for it to leave the queue and finish before inspecting it
+i=0
+until curl -s -u admin:admin "http://localhost:8090/job/payment-service-deploy/lastBuild/api/json" \
+  | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('result') else 1)" 2>/dev/null; do
+  i=$((i + 1))
+  [ "$i" -ge 30 ] && { echo "ERROR: build never finished" >&2; exit 1; }
+  sleep 2
+done
+```
+
+```bash
+export JENKINS_URL="http://localhost:8090"
+export JENKINS_USER="admin"
+export JENKINS_API_TOKEN="admin"  # local demo only — real deployments must use a token, not a password
+export OPENSRE_INTEGRATIONS_STORE_PATH="$(mktemp /tmp/opensre-jenkins-demo.XXXXXX)"
+```
+
+`admin`/`admin` is only valid because this is a disposable local instance with anonymous read disabled — Jenkins accepts a real password over Basic auth the same way it accepts a token when no token is configured. Never do this against a real server.
+
+The empty temporary integration store prevents saved integrations from overriding the demo environment variables.
+
+Verify:
+
+```bash
+opensre integrations verify jenkins
+```
+
+```
+SERVICE │ SOURCE    │ STATUS   │ DETAIL
+jenkins │ local env │ ✓ passed │ Jenkins connectivity successful at
+        │           │          │ http://localhost:8090 (node: built-in)
+```
+
+The exported variables also make Jenkins available in chat; no separate setup step is required.
+
+Now ask the agent about the failing build:
+
+```bash
+opensre
+```
+
+Ask: *Why did the latest build of the payment-service-deploy Jenkins job fail?*
+
+Against this exact local build the agent calls `list_jenkins_jobs`,
+`list_jenkins_running_builds`, `get_jenkins_pipeline_stages`, and
+`get_jenkins_build_log`, and finds the real cause: the job's only 'Execute shell'
+step is a placeholder that runs `echo deploying payment-service` followed by
+`exit 1`, so every build fails deterministically.
+
+`list_jenkins_builds` is the one registered tool not needed here -- `list_jenkins_jobs` already returned this job's last-build number and status, so the agent went straight to `get_jenkins_pipeline_stages`/`get_jenkins_build_log` for that specific build instead of a redundant builds listing.
+
+Teardown:
+
+```bash
+docker rm -f jenkins-dev
+rm -rf /tmp/jenkins-init
+rm -f "$OPENSRE_INTEGRATIONS_STORE_PATH"
+unset JENKINS_URL JENKINS_USER JENKINS_API_TOKEN OPENSRE_INTEGRATIONS_STORE_PATH
+```
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_jenkins_builds` | Recent builds for a job with status (SUCCESS / FAILURE / RUNNING / ABORTED) and timestamp |
+| `get_jenkins_build_log` | Console log for a specific build — the failing step or error |
+| `get_jenkins_pipeline_stages` | Per-stage status and duration for a Pipeline build (empty for freestyle jobs) |
+| `list_jenkins_jobs` | All jobs with their last-build status |
+| `list_jenkins_running_builds` | Builds currently in progress across all jobs |
+
+### Example question
+
+Name the affected job so the agent can pull its recent builds and logs:
+
+```text
+Error rate spiked shortly after a deploy — did the payment-service-deploy Jenkins job fail recently?
+```
+
+The agent lists recent builds for the job, spots the failed one near the time you mention, fetches its console log, and surfaces the failing step in its answer.
+
+### API reference
+
+| Purpose | Endpoint |
+| --- | --- |
+| Connectivity check | `GET {JENKINS_URL}/api/json` |
+| Recent builds | `GET {JENKINS_URL}/job/<job>/api/json?tree=builds[number,result,timestamp,duration,url,building]` |
+| Build console log | `GET {JENKINS_URL}/job/<job>/<number>/consoleText` |
+| Pipeline stages | `GET {JENKINS_URL}/job/<job>/<number>/wfapi/describe` (Pipeline Stage View) |
+| Job list | `GET {JENKINS_URL}/api/json?tree=jobs[name,url,color,lastBuild[...]]` |
+
+## Verify
+
+```bash
+opensre integrations verify jenkins
+```
+
+A successful check reports the server it reached, for example:
+
+```
+Jenkins connectivity successful at http://localhost:8080 (node: built-in)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `Jenkins base URL is required` | Set `JENKINS_URL` or run `opensre integrations setup jenkins`. |
+| `Jenkins API token is required` | Generate an API token (User → Security → API Token) and configure it. |
+| `HTTP 401` on verify | Check the username and regenerate the API token; passwords are not accepted. |
+| `HTTP 403` on verify | The user lacks Overall/Read permission, or CSRF/crumb settings block the token. |
+| No builds returned | Confirm the job name is correct and has at least one build. |
+| Pipeline stages empty | Freestyle jobs have no Stage View data — use console logs instead. |
+
+## Security
+
+- Use an API token, never your Jenkins password.
+- Prefer a dedicated Jenkins user with read access to the jobs OpenSRE should inspect.
+- Store credentials in `.env` or your secret manager — not in source control.

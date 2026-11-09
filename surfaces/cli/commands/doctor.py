@@ -20,22 +20,16 @@ Rendered output (colour roles):
 from __future__ import annotations
 
 import json
-import os
-import sys
-from pathlib import Path
-from typing import Any
 
 import click
 from rich.console import Console
 from rich.rule import Rule
 from rich.text import Text
 
-import platform
-from config.version import get_opensre_version
-from platform.common.exit_codes import ERROR as EXIT_ERROR
-from platform.common.exit_codes import SUCCESS
-from platform.common.runtime_flags import is_json_output
-from platform.terminal.theme import (
+from infrastructure.process.exit_codes import ERROR as EXIT_ERROR
+from infrastructure.process.exit_codes import SUCCESS
+from infrastructure.process.runtime_flags import is_json_output
+from infrastructure.terminal.theme import (
     DIM,
     ERROR,
     GLYPH_ERROR,
@@ -46,125 +40,7 @@ from platform.terminal.theme import (
     TEXT,
     WARNING,
 )
-
-
-def _check(name: str, fn: Any) -> dict[str, str]:
-    """Run a single diagnostic check and return a result dict."""
-    try:
-        ok, detail = fn()
-        return {"check": name, "status": "ok" if ok else "warn", "detail": detail}
-    except Exception as exc:
-        return {"check": name, "status": "error", "detail": str(exc)}
-
-
-def _check_python_version() -> tuple[bool, str]:
-    version = platform.python_version()
-    major, minor = sys.version_info[:2]
-    if (major, minor) < (3, 11):
-        return False, f"Python {version} — opensre requires >= 3.11"
-    return True, f"Python {version}"
-
-
-def _check_env_file() -> tuple[bool, str]:
-    env_path = os.getenv("OPENSRE_PROJECT_ENV_PATH", ".env")
-    path = Path(env_path)
-    if not path.exists():
-        return False, f"{env_path} not found"
-    content = path.read_text(encoding="utf-8", errors="replace")
-    lines = [ln for ln in content.splitlines() if ln.strip() and not ln.strip().startswith("#")]
-    return True, f"{env_path} ({len(lines)} keys)"
-
-
-def _check_llm_provider() -> tuple[bool, str]:
-    from config.config import get_configured_llm_provider
-    from config.llm_auth.credentials import status as credential_status
-
-    provider = get_configured_llm_provider()
-    auth = credential_status(provider)
-    if auth.configured and not auth.stale:
-        return True, f"provider={provider}, auth={auth.source} ({auth.detail})"
-    if auth.stale:
-        return False, f"provider={provider}, auth stale ({auth.detail})"
-    return False, f"provider={provider}, auth missing ({auth.detail})"
-
-
-def _check_integrations() -> tuple[bool, str]:
-    from integrations.store import STORE_PATH, list_integrations
-
-    path = Path(str(STORE_PATH))
-    if not path.exists():
-        return False, f"{STORE_PATH} not found — run 'opensre integrations setup'"
-    items = list_integrations()
-    if not items:
-        return False, "no integrations configured"
-    names = [i["service"] for i in items]
-    return True, f"{len(items)} configured: {', '.join(names)}"
-
-
-def _check_buzz_cli() -> tuple[bool, str]:
-    """Surface the ``buzz`` CLI's PATH status, but only when Buzz is configured.
-
-    Buzz is an optional integration and ``buzz-cli`` has no package-manager
-    distribution (cargo build only), so this check would otherwise warn every
-    user who has never touched Buzz.
-    """
-    from integrations.buzz.client import resolve_buzz_binary
-    from integrations.catalog import resolve_effective_integrations
-
-    if not resolve_effective_integrations().get("buzz"):
-        return True, "not configured (optional)"
-    path = resolve_buzz_binary()
-    if path:
-        return True, f"buzz CLI found ({path})"
-    return False, (
-        "Buzz is configured but the buzz CLI is not on PATH — install with "
-        "`cargo install --path crates/buzz-cli` (see docs/messaging/buzz)"
-    )
-
-
-def _check_version_freshness() -> tuple[bool, str]:
-    current = get_opensre_version()
-    from surfaces.cli.lifecycle.update import (
-        _fetch_latest_version,
-        _is_update_available,
-        development_install_doctor_version_detail,
-    )
-
-    dev_detail = development_install_doctor_version_detail(current)
-    if dev_detail is not None:
-        return True, dev_detail
-
-    try:
-        latest = _fetch_latest_version()
-        if _is_update_available(current, latest):
-            return False, f"current={current}, latest={latest} — run 'opensre update'"
-        return True, f"{current} (up to date)"
-    except Exception as exc:
-        return True, f"{current} (could not check: {exc})"
-
-
-def _check_agent_capabilities() -> tuple[bool, str]:
-    """Warn when the environment withholds something the agent is told it can do."""
-    from platform.sandbox.capabilities import (
-        probe_capabilities,
-        unavailable_capability_warnings,
-    )
-
-    warnings = unavailable_capability_warnings(probe_capabilities())
-    if warnings:
-        return False, "; ".join(warnings)
-    return True, "python, shell, file reading and network are all available"
-
-
-_CHECKS = [
-    ("python", _check_python_version),
-    ("env_file", _check_env_file),
-    ("llm_provider", _check_llm_provider),
-    ("integrations", _check_integrations),
-    ("agent_capabilities", _check_agent_capabilities),
-    ("buzz_cli", _check_buzz_cli),
-    ("version", _check_version_freshness),
-]
+from surfaces.shared.doctor_checks import run_doctor_checks
 
 
 def _render_doctor_results(console: Console, results: list[dict[str, str]]) -> None:
@@ -245,9 +121,7 @@ def _render_doctor_results(console: Console, results: list[dict[str, str]]) -> N
 @click.command(name="doctor")
 def doctor_command() -> None:
     """Run a full environment diagnostic to surface setup issues."""
-    results: list[dict[str, str]] = []
-    for name, fn in _CHECKS:
-        results.append(_check(name, fn))
+    results = run_doctor_checks()
 
     if is_json_output():
         click.echo(json.dumps(results, indent=2))

@@ -16,8 +16,3 @@ class DeploymentInfo:
     status: str | None
     commit_hash: str | None
     commit_message: str | None
-
-
-@dataclass(frozen=True)
-class RedeployInfo:
-    deployment_id: str | None

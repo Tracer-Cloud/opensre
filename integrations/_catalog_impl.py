@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import logging
 import os
-import threading
 from collections.abc import Callable
 from typing import Any
 
-from config.config import get_tracer_base_url
 from config.constants.alertmanager import (
     ALERTMANAGER_BEARER_TOKEN_ENV,
     ALERTMANAGER_PASSWORD_ENV,
@@ -24,6 +21,16 @@ from config.constants.aws import (
     AWS_ROLE_ARN_ENV,
     AWS_SECRET_ACCESS_KEY_ENV,
     AWS_SESSION_TOKEN_ENV,
+)
+from config.constants.azure import (
+    AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT,
+    AZURE_LOG_ANALYTICS_ENDPOINT_ENV,
+    AZURE_LOG_ANALYTICS_TOKEN_ENV,
+    AZURE_LOG_ANALYTICS_WORKSPACE_ID_ENV,
+    AZURE_MAX_RESULTS_DEFAULT,
+    AZURE_MAX_RESULTS_ENV,
+    AZURE_SUBSCRIPTION_ID_ENV,
+    AZURE_TENANT_ID_ENV,
 )
 from config.constants.azure_sql import (
     AZURE_SQL_DATABASE_ENV,
@@ -40,16 +47,30 @@ from config.constants.betterstack import (
     BETTERSTACK_SOURCES_ENV,
     BETTERSTACK_USERNAME_ENV,
 )
+from config.constants.buzz import (
+    BUZZ_AUTH_TAG_ENV,
+    BUZZ_DEFAULT_CHANNEL_ENV,
+    BUZZ_PATH_ENV,
+    BUZZ_PRIVATE_KEY_ENV,
+    BUZZ_RELAY_URL_ENV,
+)
 from config.constants.coralogix import (
     CORALOGIX_API_KEY_ENV,
     CORALOGIX_APPLICATION_NAME_ENV,
     CORALOGIX_BASE_URL_ENV,
     CORALOGIX_SUBSYSTEM_NAME_ENV,
 )
+from config.constants.dagster import DAGSTER_API_TOKEN_ENV, DAGSTER_ENDPOINT_ENV
 from config.constants.datadog import (
     DATADOG_API_KEY_ENV,
     DATADOG_APP_KEY_ENV,
     DATADOG_SITE_ENV,
+)
+from config.constants.discord import (
+    DISCORD_APPLICATION_ID_ENV,
+    DISCORD_BOT_TOKEN_ENV,
+    DISCORD_DEFAULT_CHANNEL_ID_ENV,
+    DISCORD_PUBLIC_KEY_ENV,
 )
 from config.constants.github import (
     GITHUB_MCP_ARGS_ENV,
@@ -60,6 +81,10 @@ from config.constants.github import (
     GITHUB_MCP_URL_ENV,
 )
 from config.constants.gitlab import GITLAB_AUTH_TOKEN_ENV, GITLAB_BASE_URL_ENV
+from config.constants.google_docs import (
+    GOOGLE_CREDENTIALS_FILE_ENV,
+    GOOGLE_DRIVE_FOLDER_ID_ENV,
+)
 from config.constants.grafana import (
     GRAFANA_CA_BUNDLE_ENV,
     GRAFANA_INSTANCE_URL_ENV,
@@ -74,11 +99,19 @@ from config.constants.groundcover import (
     GROUNDCOVER_TENANT_UUID_ENV,
     GROUNDCOVER_TIMEZONE_ENV,
 )
+from config.constants.helm import (
+    HELM_KUBE_CONTEXT_ENV,
+    HELM_KUBECONFIG_ENV,
+    HELM_NAMESPACE_ENV,
+    HELM_PATH_ENV,
+    OSRE_HELM_INTEGRATION_ENV,
+)
 from config.constants.honeycomb import (
     HONEYCOMB_API_KEY_ENV,
     HONEYCOMB_BASE_URL_ENV,
     HONEYCOMB_DATASET_ENV,
 )
+from config.constants.incident_io import INCIDENT_IO_API_KEY_ENV, INCIDENT_IO_BASE_URL_ENV
 from config.constants.kubernetes import (
     KUBECONFIG_CONTENT_ENV,
     KUBECONFIG_CONTEXT_ENV,
@@ -99,6 +132,12 @@ from config.constants.mongodb import (
     MONGODB_DATABASE_ENV,
     MONGODB_TLS_ENV,
 )
+from config.constants.mongodb_atlas import (
+    MONGODB_ATLAS_BASE_URL_ENV,
+    MONGODB_ATLAS_PRIVATE_KEY_ENV,
+    MONGODB_ATLAS_PROJECT_ID_ENV,
+    MONGODB_ATLAS_PUBLIC_KEY_ENV,
+)
 from config.constants.mysql import (
     MYSQL_DATABASE_ENV,
     MYSQL_HOST_ENV,
@@ -107,12 +146,12 @@ from config.constants.mysql import (
     MYSQL_SSL_MODE_ENV,
     MYSQL_USERNAME_ENV,
 )
-from config.constants.openclaw import (
-    OPENCLAW_MCP_ARGS_ENV,
-    OPENCLAW_MCP_AUTH_TOKEN_ENV,
-    OPENCLAW_MCP_COMMAND_ENV,
-    OPENCLAW_MCP_MODE_ENV,
-    OPENCLAW_MCP_URL_ENV,
+from config.constants.neon import NEON_API_KEY_ENV, NEON_BRANCH_ID_ENV, NEON_PROJECT_ID_ENV
+from config.constants.new_relic import (
+    NEW_RELIC_ACCOUNT_ID_ENV,
+    NEW_RELIC_API_KEY_ENV,
+    NEW_RELIC_BASE_URL_ENV,
+    NEW_RELIC_INSTANCES_ENV,
 )
 from config.constants.opensearch import (
     OPENSEARCH_API_KEY_ENV,
@@ -120,6 +159,7 @@ from config.constants.opensearch import (
     OPENSEARCH_URL_ENV,
     OPENSEARCH_USERNAME_ENV,
 )
+from config.constants.pagerduty import PAGERDUTY_API_KEY_ENV, PAGERDUTY_BASE_URL_ENV
 from config.constants.postgresql import (
     POSTGRESQL_DATABASE_ENV,
     POSTGRESQL_HOST_ENV,
@@ -140,6 +180,12 @@ from config.constants.railway import (
     RAILWAY_SERVICE_ENV,
     RAILWAY_TOKEN_ENV,
 )
+from config.constants.rocketchat import (
+    ROCKETCHAT_AUTH_TOKEN_ENV,
+    ROCKETCHAT_DEFAULT_CHANNEL_ENV,
+    ROCKETCHAT_SERVER_URL_ENV,
+    ROCKETCHAT_USER_ID_ENV,
+)
 from config.constants.sentry import (
     DEFAULT_SENTRY_BASE_URL,
     SENTRY_AUTH_TOKEN_ENV,
@@ -157,7 +203,31 @@ from config.constants.servicenow import (
     SERVICENOW_PASSWORD_ENV,
     SERVICENOW_USERNAME_ENV,
 )
-from config.constants.slack import SLACK_APP_TOKEN_ENV, SLACK_BOT_TOKEN_ENV
+from config.constants.slack import (
+    SLACK_APP_TOKEN_ENV,
+    SLACK_BOT_TOKEN_ENV,
+    SLACK_DEFAULT_CHAT_ID_ENV,
+    SLACK_WEBHOOK_URL_ENV,
+)
+from config.constants.smtp import (
+    SMTP_DEFAULT_TO_ENV,
+    SMTP_FROM_ADDRESS_ENV,
+    SMTP_HOST_ENV,
+    SMTP_PASSWORD_ENV,
+    SMTP_PORT_ENV,
+    SMTP_SECURITY_ENV,
+    SMTP_USERNAME_ENV,
+)
+from config.constants.telegram import (
+    TELEGRAM_BOT_TOKEN_ENV,
+    TELEGRAM_DEFAULT_CHAT_ID_ENV,
+)
+from config.constants.temporal import (
+    TEMPORAL_API_KEY_ENV,
+    TEMPORAL_BASE_URL_ENV,
+    TEMPORAL_NAMESPACE_ENV,
+)
+from config.constants.tracer import TRACER_BASE_URL_ENV, TRACER_JWT_TOKEN_ENV
 from config.constants.twilio import (
     TWILIO_ACCOUNT_SID_ENV,
     TWILIO_AUTH_TOKEN_ENV,
@@ -168,8 +238,10 @@ from config.constants.twilio import (
     WHATSAPP_DEFAULT_TO_ENV,
 )
 from config.constants.vercel import VERCEL_API_TOKEN_ENV, VERCEL_TEAM_ID_ENV
-from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
 from config.llm_credentials import resolve_env_credential
+from config.tracer_urls import get_tracer_base_url
+from infrastructure.observability.errors.boundary import report_exception
+from infrastructure.text.coercion import safe_int
 from integrations.airflow.config import airflow_config_from_env
 from integrations.airflow.config import classify as _classify_airflow
 from integrations.alertmanager import classify as _classify_alertmanager
@@ -180,7 +252,7 @@ from integrations.azure_sql import build_azure_sql_config
 from integrations.azure_sql import classify as _classify_azure_sql
 from integrations.betterstack import build_betterstack_config
 from integrations.betterstack import classify as _classify_betterstack
-from integrations.bitbucket import classify as _classify_bitbucket
+from integrations.bitbucket.config import classify as _classify_bitbucket
 from integrations.buzz import classify as _classify_buzz
 from integrations.config_models import (
     DEFAULT_DATADOG_SITE,
@@ -191,13 +263,12 @@ from integrations.config_models import (
     CoralogixIntegrationConfig,
     DatadogIntegrationConfig,
     DiscordBotConfig,
+    GoogleDocsIntegrationConfig,
     GrafanaIntegrationConfig,
-    GroundcoverIntegrationConfig,
     HelmIntegrationConfig,
     IncidentIoIntegrationConfig,
     JiraIntegrationConfig,
     KubernetesIntegrationConfig,
-    OpsGenieIntegrationConfig,
     PagerDutyIntegrationConfig,
     RailwayIntegrationConfig,
     RocketChatConfig,
@@ -222,6 +293,7 @@ from integrations.gitlab import DEFAULT_GITLAB_BASE_URL, build_gitlab_config
 from integrations.gitlab import classify as _classify_gitlab
 from integrations.grafana import classify as _classify_grafana
 from integrations.groundcover import classify as _classify_groundcover
+from integrations.groundcover.config import GroundcoverIntegrationConfig
 from integrations.helm import classify as _classify_helm
 from integrations.honeycomb import classify as _classify_honeycomb
 from integrations.honeycomb.config import HoneycombIntegrationConfig
@@ -238,12 +310,14 @@ from integrations.mongodb_atlas import build_mongodb_atlas_config
 from integrations.mongodb_atlas import classify as _classify_mongodb_atlas
 from integrations.mysql import build_mysql_config
 from integrations.mysql import classify as _classify_mysql
-from integrations.openclaw import build_openclaw_config
-from integrations.openclaw import classify as _classify_openclaw
+from integrations.neon import build_neon_config
+from integrations.neon import classify as _classify_neon
+from integrations.new_relic import classify as _classify_new_relic
+from integrations.new_relic.config import NewRelicIntegrationConfig
 from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
-from integrations.opsgenie import classify as _classify_opsgenie
 from integrations.pagerduty import classify as _classify_pagerduty
+from integrations.pipedream import classify as _classify_pipedream
 from integrations.postgresql import build_postgresql_config
 from integrations.postgresql import classify as _classify_postgresql
 from integrations.posthog import posthog_config_from_env
@@ -262,10 +336,8 @@ from integrations.registry import (
     DIRECT_CLASSIFIED_EFFECTIVE_SERVICES,
     INTEGRATION_SPECS_BY_SERVICE,
     SKIP_CLASSIFIED_SERVICES,
-    builtin_claimed_keys,
     external_integration_services,
     family_key,
-    normalize_service_key,
     service_key,
 )
 from integrations.rocketchat import classify as _classify_rocketchat
@@ -293,10 +365,6 @@ from integrations.vercel import classify as _classify_vercel
 from integrations.vercel.client import VercelConfig
 from integrations.victoria_logs import classify as _classify_victoria_logs
 from integrations.whatsapp import classify as _classify_whatsapp
-from integrations.x_mcp import build_x_mcp_config
-from integrations.x_mcp import classify as _classify_x_mcp
-from platform.common.coercion import safe_int
-from platform.observability.errors.boundary import report_exception
 
 logger = logging.getLogger(__name__)
 
@@ -402,6 +470,9 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             resolved[f"_all_{service}_instances"] = instances
 
     resolved["_all"] = active
+    from integrations.github.connections import classify_github_connections
+
+    classify_github_connections(integrations, resolved)
     return resolved
 
 
@@ -426,8 +497,9 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "mongodb_atlas": _classify_mongodb_atlas,
     "mariadb": _classify_mariadb,
     "vercel": _classify_vercel,
-    "opsgenie": _classify_opsgenie,
+    "neon": _classify_neon,
     "pagerduty": _classify_pagerduty,
+    "pipedream": _classify_pipedream,
     "incident_io": _classify_incident_io,
     "jira": _classify_jira,
     "servicenow": _classify_servicenow,
@@ -438,11 +510,9 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "slack": _classify_slack,
     "whatsapp": _classify_whatsapp,
     "twilio": _classify_twilio,
-    "openclaw": _classify_openclaw,
     "posthog": _classify_posthog,
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
-    "x_mcp": _classify_x_mcp,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -468,142 +538,8 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "smtp": _classify_smtp,
     "prefect": _classify_prefect,
     "railway": _classify_railway,
+    "new_relic": _classify_new_relic,
 }
-
-#: Classifiers contributed by out-of-tree integration packages.
-_EXTERNAL_CLASSIFIERS: dict[str, _ClassifyFn] = {}
-
-#: Environment loaders contributed by out-of-tree integration packages. Each
-#: returns an active record, or None when its variables are not set.
-_EXTERNAL_ENV_LOADERS: dict[str, Any] = {}
-
-#: Cheap "is this configured?" predicates for out-of-tree integrations, used by
-#: the startup-safe presence check that must not touch the keyring.
-_EXTERNAL_ENV_PRESENCE: dict[str, Callable[[], bool]] = {}
-
-
-#: Which package registered each hook, keyed by ``(hook, service)``. The hook
-#: maps themselves store only the callable, and the entry has to be attributable
-#: to decide whether a second registration is the same plugin reloading or a
-#: different one taking the key over.
-_EXTERNAL_HOOK_OWNERS: dict[tuple[str, str], str] = {}
-
-#: Serialises claiming a key with installing the callback. Reading the current
-#: owner and then writing is a check-then-act: two packages registering the same
-#: key concurrently could both see it free and the later one would win silently.
-_HOOK_REGISTRATION_LOCK = threading.Lock()
-
-
-def _hook_owner(callback: Any) -> str:
-    """Return the top-level package *callback* was defined in, or "" if unknown.
-
-    Owner is inferred rather than passed in so the hook signatures stay as they
-    are. A plugin that reloads produces a new function object from the same
-    package, which has to keep working; a different package must not.
-    """
-    target = callback
-    while isinstance(target, functools.partial):
-        target = target.func
-    module = str(getattr(target, "__module__", "") or "")
-    root = module.split(".", 1)[0]
-    # ``functools`` is what a partial reports through its type, and a builtin
-    # says nothing about who registered it - neither identifies a plugin.
-    return "" if root in {"functools", "builtins"} else root
-
-
-def _install_external_hook(
-    target: dict[str, Any], service: str, callback: Any, *, hook: str
-) -> None:
-    """Claim *service* for *callback* and install it into *target*, as one step.
-
-    Claiming and installing are a single critical section: read the owner, then
-    write, and two packages registering the same key concurrently would both see
-    it free and the later one would take it with nothing reported.
-    """
-    with _HOOK_REGISTRATION_LOCK:
-        target[_claim_external_hook(service, callback, hook=hook)] = callback
-
-
-def _claim_external_hook(service: str, callback: Any, *, hook: str) -> str:
-    """Return the key *hook* may be stored under, or raise if it is not allowed.
-
-    Callers reach this through :func:`_install_external_hook`, which holds the
-    registration lock across the check and the write.
-
-    ``register_integration_spec`` already refuses built-in keys and keys another
-    plugin holds, but each hook below can be called without ever registering a
-    spec. Two packages registering under the same key would otherwise be settled
-    by import order, with the later one classifying, loading or reporting
-    presence for the earlier one's integration.
-
-    Normalized for the same reason the registry normalizes: every lookup here is
-    by a stripped, lower-cased key, so storing ``"GitHub"`` verbatim would both
-    slip past this check and register under a name nothing ever queries.
-    """
-    key = normalize_service_key(service)
-    if not key:
-        raise ValueError(f"Cannot register {hook} without a service name.")
-    if key in builtin_claimed_keys():
-        raise ValueError(
-            f"Cannot register {hook} for {service!r}: a built-in integration already "
-            "answers to that key."
-        )
-
-    owner = _hook_owner(callback)
-    previous = _EXTERNAL_HOOK_OWNERS.get((hook, key))
-    if previous is not None and (not owner or previous != owner):
-        held_by = f"{previous!r}" if previous else "another package"
-        raise ValueError(
-            f"Cannot register {hook} for {key!r}: already registered by {held_by}. "
-            "Two packages cannot share one integration's hooks; pick a key unique to "
-            "this integration."
-        )
-
-    _EXTERNAL_HOOK_OWNERS[(hook, key)] = owner
-    return key
-
-
-def register_classifier(service: str, classify: _ClassifyFn) -> None:
-    """Register the classifier for an integration shipped outside this repo."""
-    _install_external_hook(_EXTERNAL_CLASSIFIERS, service, classify, hook="a classifier")
-
-
-def register_env_loader(service: str, loader: Any) -> None:
-    """Register an environment loader for an out-of-tree integration.
-
-    The loader is called with no arguments during ``load_env_integrations`` and
-    returns a record in the same shape ``_active_env_record`` produces, or None
-    when the integration is not configured in the environment. The record must
-    be for *service*: one naming a different integration is dropped, since the
-    merge that follows lets a later record replace an earlier one by service.
-    """
-    _install_external_hook(_EXTERNAL_ENV_LOADERS, service, loader, hook="an environment loader")
-
-
-def register_env_presence(service: str, is_configured: Callable[[], bool]) -> None:
-    """Register the startup-safe presence check for an out-of-tree integration.
-
-    ``load_env_integration_services`` runs before the first prompt and must not
-    resolve secrets, so it cannot call the full loader registered above. Without
-    a predicate here an integration configured purely from the environment stays
-    invisible to the welcome, REPL and health surfaces even though verification
-    and tool resolution both see it.
-    """
-    _install_external_hook(_EXTERNAL_ENV_PRESENCE, service, is_configured, hook="a presence check")
-
-
-def external_env_presence_services() -> list[str]:
-    """Return the out-of-tree services whose environment variables are set."""
-    present: list[str] = []
-    # Snapshot: a plugin registering from another thread would otherwise turn
-    # this into "dictionary changed size during iteration" mid-startup.
-    for service, is_configured in list(_EXTERNAL_ENV_PRESENCE.items()):
-        try:
-            if is_configured():
-                present.append(service)
-        except Exception as exc:  # a plugin predicate must not break startup
-            _report_env_loader_failure(exc, integration=service)
-    return present
 
 
 def _classify_service_instance(
@@ -616,7 +552,7 @@ def _classify_service_instance(
     ``key`` itself, but Grafana splits into ``grafana`` or ``grafana_local``
     based on its ``is_local`` property.
     """
-    handler = _CLASSIFIERS.get(key) or _EXTERNAL_CLASSIFIERS.get(key)
+    handler = _CLASSIFIERS.get(key)
     if handler is not None:
         return handler(credentials, record_id)
     # Fallback for unknown services: pass through credentials + record id.
@@ -633,9 +569,9 @@ def _parse_instances_env(env_name: str, service: str) -> dict[str, Any] | None:
     var is unset, empty, invalid JSON, or not a non-empty list (logs a
     warning on parse failure so callers can fall through to legacy vars).
 
-    Critical: always returns a SINGLE record with multiple instances inside,
-    never multiple records — otherwise ``merge_integrations_by_service``
-    would drop all but one (PR #527 bug #2).
+    Returns one record with multiple instances because one env var is one
+    connection source; hosted APIs may represent connections as separate
+    records and the merge layer preserves those too.
     """
     raw = os.getenv(env_name, "").strip()
     if not raw:
@@ -832,6 +768,35 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 _active_env_record(
                     "honeycomb",
                     honeycomb_config.model_dump(exclude={"integration_id"}),
+                )
+            )
+
+    new_relic_multi = _parse_instances_env(NEW_RELIC_INSTANCES_ENV, "new_relic")
+    if new_relic_multi is not None:
+        integrations.append(new_relic_multi)
+        new_relic_api_key = ""
+        new_relic_account_id = ""
+        new_relic_base_url = ""
+    else:
+        new_relic_api_key = resolve_env_credential(NEW_RELIC_API_KEY_ENV)
+        new_relic_account_id = os.getenv(NEW_RELIC_ACCOUNT_ID_ENV, "").strip()
+        new_relic_base_url = os.getenv(NEW_RELIC_BASE_URL_ENV, "").strip()
+    if new_relic_api_key and new_relic_account_id:
+        try:
+            new_relic_config = NewRelicIntegrationConfig.model_validate(
+                {
+                    "api_key": new_relic_api_key,
+                    "account_id": new_relic_account_id,
+                    "base_url": new_relic_base_url,
+                }
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="new_relic")
+        else:
+            integrations.append(
+                _active_env_record(
+                    "new_relic",
+                    new_relic_config.model_dump(exclude={"integration_id"}),
                 )
             )
 
@@ -1067,7 +1032,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    helm_env_enabled = os.getenv("OSRE_HELM_INTEGRATION", "").strip().lower() in {
+    helm_env_enabled = os.getenv(OSRE_HELM_INTEGRATION_ENV, "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -1076,10 +1041,10 @@ def load_env_integrations() -> list[dict[str, Any]]:
         try:
             helm_env_config = HelmIntegrationConfig.model_validate(
                 {
-                    "helm_path": os.getenv("HELM_PATH", "helm").strip() or "helm",
-                    "kube_context": os.getenv("HELM_KUBE_CONTEXT", "").strip(),
-                    "kubeconfig": os.getenv("HELM_KUBECONFIG", "").strip(),
-                    "default_namespace": os.getenv("HELM_NAMESPACE", "").strip(),
+                    "helm_path": os.getenv(HELM_PATH_ENV, "helm").strip() or "helm",
+                    "kube_context": os.getenv(HELM_KUBE_CONTEXT_ENV, "").strip(),
+                    "kubeconfig": os.getenv(HELM_KUBECONFIG_ENV, "").strip(),
+                    "default_namespace": os.getenv(HELM_NAMESPACE_ENV, "").strip(),
                 }
             )
         except Exception as exc:
@@ -1111,30 +1076,32 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    opsgenie_api_key = resolve_env_credential("OPSGENIE_API_KEY")
-    if opsgenie_api_key:
+    neon_api_key = resolve_env_credential(NEON_API_KEY_ENV)
+    neon_project_id = os.getenv(NEON_PROJECT_ID_ENV, "").strip()
+    if neon_api_key and neon_project_id:
         try:
-            opsgenie_config = OpsGenieIntegrationConfig.model_validate(
+            neon_config = build_neon_config(
                 {
-                    "api_key": opsgenie_api_key,
-                    "region": os.getenv("OPSGENIE_REGION", "us").strip() or "us",
+                    "api_key": neon_api_key,
+                    "project_id": neon_project_id,
+                    "branch_id": os.getenv(NEON_BRANCH_ID_ENV, "").strip(),
                 }
             )
         except Exception as exc:
-            _report_env_loader_failure(exc, integration="opsgenie")
+            _report_env_loader_failure(exc, integration="neon")
         else:
             integrations.append(
                 _active_env_record(
-                    "opsgenie",
-                    opsgenie_config.model_dump(exclude={"integration_id"}),
+                    "neon",
+                    neon_config.model_dump(include={"api_key", "project_id", "branch_id"}),
                 )
             )
 
-    pagerduty_api_key = resolve_env_credential("PAGERDUTY_API_KEY")
+    pagerduty_api_key = resolve_env_credential(PAGERDUTY_API_KEY_ENV)
     if pagerduty_api_key:
         try:
             _envs: dict[str, Any] = {"api_key": pagerduty_api_key}
-            base_url = os.getenv("PAGERDUTY_BASE_URL", "").strip()
+            base_url = os.getenv(PAGERDUTY_BASE_URL_ENV, "").strip()
             if base_url:
                 _envs["base_url"] = base_url
             pagerduty_config = PagerDutyIntegrationConfig.model_validate(_envs)
@@ -1148,13 +1115,13 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    incident_io_api_key = resolve_env_credential("INCIDENT_IO_API_KEY")
+    incident_io_api_key = resolve_env_credential(INCIDENT_IO_API_KEY_ENV)
     if incident_io_api_key:
         try:
             incident_io_config = IncidentIoIntegrationConfig.model_validate(
                 {
                     "api_key": incident_io_api_key,
-                    "base_url": os.getenv("INCIDENT_IO_BASE_URL", "").strip(),
+                    "base_url": os.getenv(INCIDENT_IO_BASE_URL_ENV, "").strip(),
                 }
             )
         except Exception as exc:
@@ -1191,6 +1158,29 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
+    google_docs_credentials_file = os.getenv(GOOGLE_CREDENTIALS_FILE_ENV, "").strip()
+    google_docs_folder_id = os.getenv(GOOGLE_DRIVE_FOLDER_ID_ENV, "").strip()
+    if google_docs_credentials_file and google_docs_folder_id:
+        try:
+            google_docs_config = GoogleDocsIntegrationConfig.model_validate(
+                {
+                    "credentials_file": google_docs_credentials_file,
+                    "folder_id": google_docs_folder_id,
+                }
+            )
+        except Exception as exc:
+            _report_env_loader_failure(exc, integration="google_docs")
+        else:
+            integrations.append(
+                _active_env_record(
+                    "google_docs",
+                    {
+                        "credentials_file": google_docs_config.credentials_file,
+                        "folder_id": str(google_docs_config.folder_id).strip(),
+                    },
+                )
+            )
+
     servicenow_instance_url = os.getenv(SERVICENOW_INSTANCE_URL_ENV, "").strip()
     servicenow_username = os.getenv(SERVICENOW_USERNAME_ENV, "").strip()
     # Resolve the password (env, then OS keyring) only once the cheap env vars
@@ -1219,15 +1209,15 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    discord_bot_token = resolve_env_credential("DISCORD_BOT_TOKEN")
+    discord_bot_token = resolve_env_credential(DISCORD_BOT_TOKEN_ENV)
     if discord_bot_token:
         try:
             discord_config = DiscordBotConfig.model_validate(
                 {
                     "bot_token": discord_bot_token,
-                    "application_id": os.getenv("DISCORD_APPLICATION_ID", "").strip(),
-                    "public_key": os.getenv("DISCORD_PUBLIC_KEY", "").strip(),
-                    "default_channel_id": os.getenv("DISCORD_DEFAULT_CHANNEL_ID", "").strip()
+                    "application_id": os.getenv(DISCORD_APPLICATION_ID_ENV, "").strip(),
+                    "public_key": os.getenv(DISCORD_PUBLIC_KEY_ENV, "").strip(),
+                    "default_channel_id": os.getenv(DISCORD_DEFAULT_CHANNEL_ID_ENV, "").strip()
                     or None,
                 }
             )
@@ -1240,13 +1230,13 @@ def load_env_integrations() -> list[dict[str, Any]]:
     if airflow_config is not None:
         integrations.append(_active_env_record("airflow", airflow_config.model_dump()))
 
-    telegram_bot_token = resolve_env_credential("TELEGRAM_BOT_TOKEN")
+    telegram_bot_token = resolve_env_credential(TELEGRAM_BOT_TOKEN_ENV)
     if telegram_bot_token:
         try:
             tg_config = TelegramBotConfig.model_validate(
                 {
                     "bot_token": telegram_bot_token,
-                    "default_chat_id": os.getenv("TELEGRAM_DEFAULT_CHAT_ID", "").strip() or None,
+                    "default_chat_id": os.getenv(TELEGRAM_DEFAULT_CHAT_ID_ENV, "").strip() or None,
                 }
             )
         except Exception as exc:
@@ -1255,17 +1245,18 @@ def load_env_integrations() -> list[dict[str, Any]]:
             integrations.append(_active_env_record("telegram", tg_config.model_dump()))
 
     # PAT is keyring-backed via wizard sync_env_secret; webhook URL stays store/env only.
-    rocketchat_auth_token = resolve_env_credential("ROCKETCHAT_AUTH_TOKEN")
+    rocketchat_auth_token = resolve_env_credential(ROCKETCHAT_AUTH_TOKEN_ENV)
     rocketchat_webhook_url = os.getenv("ROCKETCHAT_WEBHOOK_URL", "").strip()
     if rocketchat_auth_token or rocketchat_webhook_url:
         try:
             rocketchat_config = RocketChatConfig.model_validate(
                 {
-                    "server_url": os.getenv("ROCKETCHAT_SERVER_URL", "").strip(),
+                    "server_url": os.getenv(ROCKETCHAT_SERVER_URL_ENV, "").strip(),
                     "auth_token": rocketchat_auth_token,
-                    "user_id": os.getenv("ROCKETCHAT_USER_ID", "").strip(),
+                    "user_id": os.getenv(ROCKETCHAT_USER_ID_ENV, "").strip(),
                     "webhook_url": rocketchat_webhook_url,
-                    "default_channel": os.getenv("ROCKETCHAT_DEFAULT_CHANNEL", "").strip() or None,
+                    "default_channel": os.getenv(ROCKETCHAT_DEFAULT_CHANNEL_ENV, "").strip()
+                    or None,
                 }
             )
         except Exception as exc:
@@ -1275,16 +1266,17 @@ def load_env_integrations() -> list[dict[str, Any]]:
 
     # Private key is keyring-backed via wizard sync_env_secret; the rest stay
     # store/env only (relay_url, default_channel, auth_tag, buzz_path).
-    buzz_private_key = resolve_env_credential("BUZZ_PRIVATE_KEY")
+    buzz_private_key = resolve_env_credential(BUZZ_PRIVATE_KEY_ENV)
     if buzz_private_key:
         try:
             buzz_config = BuzzConfig.model_validate(
                 {
-                    "relay_url": os.getenv("BUZZ_RELAY_URL", "").strip() or "http://localhost:3000",
+                    "relay_url": os.getenv(BUZZ_RELAY_URL_ENV, "").strip()
+                    or "http://localhost:3000",
                     "private_key": buzz_private_key,
-                    "default_channel": os.getenv("BUZZ_DEFAULT_CHANNEL", "").strip(),
-                    "auth_tag": os.getenv("BUZZ_AUTH_TAG", "").strip(),
-                    "buzz_path": os.getenv("BUZZ_PATH", "").strip() or "buzz",
+                    "default_channel": os.getenv(BUZZ_DEFAULT_CHANNEL_ENV, "").strip(),
+                    "auth_tag": os.getenv(BUZZ_AUTH_TAG_ENV, "").strip(),
+                    "buzz_path": os.getenv(BUZZ_PATH_ENV, "").strip() or "buzz",
                 }
             )
         except Exception as exc:
@@ -1295,29 +1287,30 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
 
     slack_bot_token = resolve_env_credential(SLACK_BOT_TOKEN_ENV)
-    slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL", "").strip()
+    slack_webhook_url = os.getenv(SLACK_WEBHOOK_URL_ENV, "").strip()
     if slack_bot_token or slack_webhook_url:
         slack_credentials = {
             "webhook_url": slack_webhook_url,
             "bot_token": slack_bot_token,
             "app_token": resolve_env_credential(SLACK_APP_TOKEN_ENV),
+            "default_chat_id": os.getenv(SLACK_DEFAULT_CHAT_ID_ENV, "").strip(),
         }
         slack_view, _slack_key = _classify_slack(slack_credentials, record_id="env:slack")
         if slack_view is not None:
             integrations.append(_active_env_record("slack", slack_view))
 
-    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_host = os.getenv(SMTP_HOST_ENV, "").strip()
     if smtp_host:
         try:
             smtp_config = SMTPIntegrationConfig.model_validate(
                 {
                     "host": smtp_host,
-                    "port": os.getenv("SMTP_PORT", "").strip() or 587,
-                    "security": os.getenv("SMTP_SECURITY", "").strip() or "starttls",
-                    "username": os.getenv("SMTP_USERNAME", "").strip(),
-                    "password": resolve_env_credential("SMTP_PASSWORD"),
-                    "from_address": os.getenv("SMTP_FROM_ADDRESS", "").strip(),
-                    "default_to": os.getenv("SMTP_DEFAULT_TO", "").strip() or None,
+                    "port": os.getenv(SMTP_PORT_ENV, "").strip() or 587,
+                    "security": os.getenv(SMTP_SECURITY_ENV, "").strip() or "starttls",
+                    "username": os.getenv(SMTP_USERNAME_ENV, "").strip(),
+                    "password": resolve_env_credential(SMTP_PASSWORD_ENV),
+                    "from_address": os.getenv(SMTP_FROM_ADDRESS_ENV, "").strip(),
+                    "default_to": os.getenv(SMTP_DEFAULT_TO_ENV, "").strip() or None,
                 }
             )
         except Exception as exc:
@@ -1378,9 +1371,9 @@ def load_env_integrations() -> list[dict[str, Any]]:
                 )
             )
 
-    atlas_pub = resolve_env_credential("MONGODB_ATLAS_PUBLIC_KEY")
-    atlas_priv = resolve_env_credential("MONGODB_ATLAS_PRIVATE_KEY")
-    atlas_project = os.getenv("MONGODB_ATLAS_PROJECT_ID", "").strip()
+    atlas_pub = resolve_env_credential(MONGODB_ATLAS_PUBLIC_KEY_ENV)
+    atlas_priv = resolve_env_credential(MONGODB_ATLAS_PRIVATE_KEY_ENV)
+    atlas_project = os.getenv(MONGODB_ATLAS_PROJECT_ID_ENV, "").strip()
     if atlas_pub and atlas_priv and atlas_project:
         try:
             atlas_config = build_mongodb_atlas_config(
@@ -1389,7 +1382,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "api_private_key": atlas_priv,
                     "project_id": atlas_project,
                     "base_url": os.getenv(
-                        "MONGODB_ATLAS_BASE_URL", "https://cloud.mongodb.com/api/atlas/v2"
+                        MONGODB_ATLAS_BASE_URL_ENV, "https://cloud.mongodb.com/api/atlas/v2"
                     ).strip(),
                 }
             )
@@ -1402,39 +1395,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     atlas_config.model_dump(exclude={"integration_id"}),
                 )
             )
-
-    openclaw_url = os.getenv(OPENCLAW_MCP_URL_ENV, "").strip()
-    openclaw_command = os.getenv(OPENCLAW_MCP_COMMAND_ENV, "").strip()
-    openclaw_mode = os.getenv(OPENCLAW_MCP_MODE_ENV, "streamable-http").strip().lower()
-    openclaw_mode = openclaw_mode or "streamable-http"
-    if (openclaw_mode == "stdio" and openclaw_command) or (
-        openclaw_mode != "stdio" and openclaw_url
-    ):
-        try:
-            openclaw_config = build_openclaw_config(
-                {
-                    "url": openclaw_url,
-                    "mode": openclaw_mode,
-                    "command": openclaw_command,
-                    "args": [
-                        part
-                        for part in os.getenv(OPENCLAW_MCP_ARGS_ENV, "").strip().split()
-                        if part
-                    ],
-                    "auth_token": resolve_env_credential(OPENCLAW_MCP_AUTH_TOKEN_ENV),
-                }
-            )
-            integrations.append(
-                _active_env_record(
-                    "openclaw",
-                    {
-                        **openclaw_config.model_dump(exclude={"integration_id"}),
-                        "connection_verified": True,
-                    },
-                )
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="openclaw")
 
     try:
         posthog_config = posthog_config_from_env()
@@ -1526,36 +1486,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception as exc:
             _report_env_loader_failure(exc, integration="sentry_mcp")
 
-    x_mcp_mode = os.getenv("X_MCP_MODE", "streamable-http").strip().lower()
-    x_mcp_mode = x_mcp_mode or "streamable-http"
-    x_mcp_command = os.getenv("X_MCP_COMMAND", "").strip()
-    x_mcp_token = resolve_env_credential(X_MCP_AUTH_TOKEN_ENV)
-    x_mcp_bearer_token = resolve_env_credential("X_BEARER_TOKEN")
-    x_mcp_url = os.getenv(X_MCP_URL_ENV, "").strip()
-    if (x_mcp_mode == "stdio" and x_mcp_command) or (x_mcp_mode != "stdio" and x_mcp_url):
-        try:
-            x_mcp_config = build_x_mcp_config(
-                {
-                    "url": x_mcp_url,
-                    "mode": x_mcp_mode,
-                    "command": x_mcp_command,
-                    "args": [part for part in os.getenv("X_MCP_ARGS", "").strip().split() if part],
-                    "auth_token": x_mcp_token,
-                    "bearer_token": x_mcp_bearer_token,
-                }
-            )
-            integrations.append(
-                _active_env_record(
-                    "x_mcp",
-                    {
-                        **x_mcp_config.model_dump(exclude={"integration_id"}),
-                        "connection_verified": True,
-                    },
-                )
-            )
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration="x_mcp")
-
     mariadb_host = os.getenv(MARIADB_HOST_ENV, "").strip()
     mariadb_database = os.getenv(MARIADB_DATABASE_ENV, "").strip()
     if mariadb_host and mariadb_database:
@@ -1580,13 +1510,13 @@ def load_env_integrations() -> list[dict[str, Any]]:
         except Exception as exc:
             _report_env_loader_failure(exc, integration="mariadb")
 
-    dagster_endpoint = os.getenv("DAGSTER_ENDPOINT", "").strip()
+    dagster_endpoint = os.getenv(DAGSTER_ENDPOINT_ENV, "").strip()
     if dagster_endpoint:
         try:
             dagster_config = build_dagster_config(
                 {
                     "endpoint": dagster_endpoint,
-                    "api_token": resolve_env_credential("DAGSTER_API_TOKEN"),
+                    "api_token": resolve_env_credential(DAGSTER_API_TOKEN_ENV),
                 }
             )
             integrations.append(
@@ -1744,8 +1674,8 @@ def load_env_integrations() -> list[dict[str, Any]]:
             )
         )
 
-    azure_workspace_id = os.getenv("AZURE_LOG_ANALYTICS_WORKSPACE_ID", "").strip()
-    azure_access_token = resolve_env_credential("AZURE_LOG_ANALYTICS_TOKEN")
+    azure_workspace_id = os.getenv(AZURE_LOG_ANALYTICS_WORKSPACE_ID_ENV, "").strip()
+    azure_access_token = resolve_env_credential(AZURE_LOG_ANALYTICS_TOKEN_ENV)
     if azure_workspace_id and azure_access_token:
         integrations.append(
             _active_env_record(
@@ -1755,13 +1685,17 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "access_token": azure_access_token,
                     "endpoint": (
                         os.getenv(
-                            "AZURE_LOG_ANALYTICS_ENDPOINT", "https://api.loganalytics.io"
+                            AZURE_LOG_ANALYTICS_ENDPOINT_ENV,
+                            AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT,
                         ).strip()
-                        or "https://api.loganalytics.io"
+                        or AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT
                     ),
-                    "tenant_id": os.getenv("AZURE_TENANT_ID", "").strip(),
-                    "subscription_id": os.getenv("AZURE_SUBSCRIPTION_ID", "").strip(),
-                    "max_results": safe_int(os.getenv("AZURE_MAX_RESULTS", "100"), 100),
+                    "tenant_id": os.getenv(AZURE_TENANT_ID_ENV, "").strip(),
+                    "subscription_id": os.getenv(AZURE_SUBSCRIPTION_ID_ENV, "").strip(),
+                    "max_results": safe_int(
+                        os.getenv(AZURE_MAX_RESULTS_ENV, str(AZURE_MAX_RESULTS_DEFAULT)),
+                        AZURE_MAX_RESULTS_DEFAULT,
+                    ),
                 },
             )
         )
@@ -1942,14 +1876,14 @@ def load_env_integrations() -> list[dict[str, Any]]:
     except Exception as exc:
         _report_env_loader_failure(exc, integration="tempo")
 
-    temporal_url = os.getenv("TEMPORAL_API_URL", "").strip()
-    temporal_namespace = os.getenv("TEMPORAL_NAMESPACE", "default").strip()
+    temporal_url = os.getenv(TEMPORAL_BASE_URL_ENV, "").strip()
+    temporal_namespace = os.getenv(TEMPORAL_NAMESPACE_ENV, "default").strip()
     if temporal_url and temporal_namespace:
         try:
             temporal_config = TemporalConfig.model_validate(
                 {
                     "base_url": temporal_url,
-                    "api_key": resolve_env_credential("TEMPORAL_API_KEY"),
+                    "api_key": resolve_env_credential(TEMPORAL_API_KEY_ENV),
                     "namespace": temporal_namespace,
                 }
             )
@@ -1962,27 +1896,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     temporal_config.model_dump(),
                 )
             )
-
-    for service, loader in list(_EXTERNAL_ENV_LOADERS.items()):
-        try:
-            record = loader()
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration=service)
-        else:
-            if not record:
-                continue
-            emitted = normalize_service_key(str(record.get("service", service)))
-            if emitted != service:
-                # The merge below replaces an earlier record with a later one of
-                # the same service, so an emitted name other than the registered
-                # one would let this loader stand in for another integration.
-                logger.warning(
-                    "load_env_integrations: loader registered for %r emitted %r; dropping it",
-                    service,
-                    emitted,
-                )
-                continue
-            integrations.append(record)
 
     return integrations
 
@@ -1998,14 +1911,26 @@ def merge_local_integrations(
 def merge_integrations_by_service(
     *integration_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Merge integration records by service, letting later groups override earlier ones."""
-    merged_by_service: dict[str, dict[str, Any]] = {}
+    """Merge connection sets by service, letting later sources override earlier ones.
+
+    A source may contain several records for any service. Replacing happens at
+    the service boundary, while every connection in the winning source is kept.
+    """
+    merged_by_service: dict[str, list[dict[str, Any]]] = {}
     for integration_group in integration_groups:
+        grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for integration in integration_group:
             service = str(integration.get("service", "")).strip()
-            if service:
-                merged_by_service[service] = integration
-    return list(merged_by_service.values())
+            if not service:
+                continue
+            record_id = str(integration.get("id", "")).strip() or service
+            grouped.setdefault(service, {})[record_id] = integration
+        for service, records in grouped.items():
+            merged_by_service[service] = list(records.values())
+    from integrations.github.connections import preserve_app_github_records
+
+    merged = [record for records in merged_by_service.values() for record in records]
+    return preserve_app_github_records(merged, *integration_groups)
 
 
 def _effective_entry(source: str, config: dict[str, Any]) -> dict[str, Any]:
@@ -2061,9 +1986,11 @@ def _publish_classified_effective_service(
 def _service_metadata(
     store_integrations: list[dict[str, Any]],
     env_integrations: list[dict[str, Any]],
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    """Source labels and the winning raw record per service (remote > store > env)."""
     source_by_service: dict[str, str] = {}
-    store_integration_by_service: dict[str, dict[str, Any]] = {}
+    record_by_service: dict[str, dict[str, Any]] = {}
 
     for integration in env_integrations:
         service = str(integration.get("service", "")).strip().lower()
@@ -2074,9 +2001,15 @@ def _service_metadata(
         service = str(integration.get("service", "")).strip().lower()
         if service:
             source_by_service[service] = "local store"
-            store_integration_by_service.setdefault(service, integration)
+            record_by_service.setdefault(service, integration)
 
-    return source_by_service, store_integration_by_service
+    for integration in remote_integrations or []:
+        service = str(integration.get("service", "")).strip().lower()
+        if service:
+            source_by_service[service] = "remote"
+            record_by_service[service] = integration
+
+    return source_by_service, record_by_service
 
 
 def _raw_credentials(config: dict[str, Any]) -> dict[str, Any]:
@@ -2097,7 +2030,12 @@ def _raw_credentials(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _slack_effective_config(
-    *, webhook_url: str, bot_token: str, app_token: str, webhook_label: str
+    *,
+    webhook_url: str,
+    bot_token: str,
+    app_token: str,
+    webhook_label: str,
+    default_chat_id: str = "",
 ) -> dict[str, str]:
     """Return the Slack effective config: webhook and/or Socket Mode tokens.
 
@@ -2115,6 +2053,8 @@ def _slack_effective_config(
     if bot_token or app_token:
         config["bot_token"] = bot_token
         config["app_token"] = app_token
+    if default_chat_id.strip():
+        config["default_chat_id"] = default_chat_id.strip()
     return config
 
 
@@ -2122,17 +2062,30 @@ def resolve_effective_integrations(
     *,
     store_integrations: list[dict[str, Any]] | None = None,
     env_integrations: list[dict[str, Any]] | None = None,
+    remote_integrations: list[dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Resolve effective local integrations from ~/.opensre and environment variables."""
+    """Resolve effective integrations from the signed-in account, ~/.opensre, and env.
+
+    Per service the remote (web app) record wins over the local store, which
+    wins over environment variables.
+    """
     store_records = (
         list(store_integrations) if store_integrations is not None else load_integrations()
     )
     env_records = (
         list(env_integrations) if env_integrations is not None else load_env_integrations()
     )
-    merged_integrations = merge_local_integrations(store_records, env_records)
+    if remote_integrations is not None:
+        remote_records = list(remote_integrations)
+    else:
+        from integrations.account_integrations import load_account_integrations
+
+        remote_records = load_account_integrations()
+    merged_integrations = merge_integrations_by_service(env_records, store_records, remote_records)
     classified_integrations = classify_integrations(merged_integrations)
-    source_by_service, store_integration_by_service = _service_metadata(store_records, env_records)
+    source_by_service, record_by_service = _service_metadata(
+        store_records, env_records, remote_records
+    )
 
     effective: dict[str, dict[str, Any]] = {}
 
@@ -2145,17 +2098,17 @@ def resolve_effective_integrations(
         )
 
     if "datadog" not in effective:
-        datadog_store_integration = store_integration_by_service.get("datadog")
-        if isinstance(datadog_store_integration, dict):
-            datadog_credentials = _raw_credentials(datadog_store_integration)
+        datadog_record = record_by_service.get("datadog")
+        if isinstance(datadog_record, dict):
+            datadog_credentials = _raw_credentials(datadog_record)
             effective["datadog"] = _effective_entry(
-                "local store",
+                source_by_service.get("datadog", "local store"),
                 {
                     "api_key": str(datadog_credentials.get("api_key", "")).strip(),
                     "app_key": str(datadog_credentials.get("app_key", "")).strip(),
                     "site": str(datadog_credentials.get("site", "datadoghq.com")).strip()
                     or "datadoghq.com",
-                    "integration_id": str(datadog_store_integration.get("id", "")).strip(),
+                    "integration_id": str(datadog_record.get("id", "")).strip(),
                 },
             )
 
@@ -2170,33 +2123,37 @@ def resolve_effective_integrations(
             },
         )
     else:
-        jwt_token = resolve_env_credential("JWT_TOKEN")
+        jwt_token = resolve_env_credential(TRACER_JWT_TOKEN_ENV)
         if jwt_token:
             effective["tracer"] = _effective_entry(
                 "local env",
                 {
-                    "base_url": os.getenv("TRACER_API_URL", "").strip() or get_tracer_base_url(),
+                    "base_url": os.getenv(TRACER_BASE_URL_ENV, "").strip() or get_tracer_base_url(),
                     "jwt_token": jwt_token,
                 },
             )
 
-    slack_store_integration = store_integration_by_service.get("slack")
-    if isinstance(slack_store_integration, dict):
-        slack_credentials = _raw_credentials(slack_store_integration)
+    slack_record = record_by_service.get("slack")
+    if isinstance(slack_record, dict):
+        slack_credentials = _raw_credentials(slack_record)
         slack_config = _slack_effective_config(
             webhook_url=str(slack_credentials.get("webhook_url", "")).strip(),
             bot_token=str(slack_credentials.get("bot_token", "")).strip(),
             app_token=str(slack_credentials.get("app_token", "")).strip(),
+            default_chat_id=str(slack_credentials.get("default_chat_id", "")).strip(),
             webhook_label="Slack webhook URL from store",
         )
         if slack_config:
-            effective["slack"] = _effective_entry("local store", slack_config)
+            effective["slack"] = _effective_entry(
+                source_by_service.get("slack", "local store"), slack_config
+            )
     else:
         slack_config = _slack_effective_config(
-            webhook_url=os.getenv("SLACK_WEBHOOK_URL", "").strip(),
+            webhook_url=os.getenv(SLACK_WEBHOOK_URL_ENV, "").strip(),
             bot_token=resolve_env_credential(SLACK_BOT_TOKEN_ENV),
             app_token=resolve_env_credential(SLACK_APP_TOKEN_ENV),
-            webhook_label="SLACK_WEBHOOK_URL",
+            default_chat_id=os.getenv(SLACK_DEFAULT_CHAT_ID_ENV, "").strip(),
+            webhook_label=SLACK_WEBHOOK_URL_ENV,
         )
         if slack_config:
             effective["slack"] = _effective_entry("local env", slack_config)
@@ -2214,8 +2171,8 @@ def resolve_effective_integrations(
             },
         )
     else:
-        credentials_file = os.getenv("GOOGLE_CREDENTIALS_FILE", "").strip()
-        folder_id = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "").strip()
+        credentials_file = os.getenv(GOOGLE_CREDENTIALS_FILE_ENV, "").strip()
+        folder_id = os.getenv(GOOGLE_DRIVE_FOLDER_ID_ENV, "").strip()
         if credentials_file and folder_id:
             effective["google_docs"] = _effective_entry(
                 "local env",

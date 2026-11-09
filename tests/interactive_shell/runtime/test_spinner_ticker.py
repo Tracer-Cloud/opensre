@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import pytest
 
-from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskManager
+from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.session import Session
 
@@ -22,7 +22,7 @@ async def test_spinner_ticker_invalidates_once_after_streaming_stops(
     state = ReplState()
     spinner = SpinnerState()
     calls: list[int] = []
-    manager = BackgroundTaskManager(
+    pool = BackgroundTaskPool(
         cast(Session, cast(Any, object())),
         state,
         spinner,
@@ -45,7 +45,7 @@ async def test_spinner_ticker_invalidates_once_after_streaming_stops(
         await real_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-    await manager._spinner_ticker()
+    await pool._spinner_ticker()
 
     # ticks 1-2 stream (2 invalidations) + one trailing edge at tick 3, then
     # silence while idle at tick 4.

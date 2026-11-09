@@ -17,6 +17,13 @@ from typing import Any
 import httpx
 from pydantic import Field
 
+from config.constants.tempo import (
+    TEMPO_API_KEY_ENV,
+    TEMPO_ORG_ID_ENV,
+    TEMPO_PASSWORD_ENV,
+    TEMPO_URL_ENV,
+    TEMPO_USERNAME_ENV,
+)
 from config.llm_credentials import resolve_env_credential
 from config.strict_config import StrictConfigModel
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
@@ -76,17 +83,17 @@ def build_tempo_config(raw: dict[str, Any] | None) -> TempoConfig:
 
 def tempo_config_from_env() -> TempoConfig | None:
     """Load a Tempo config from env vars."""
-    url = os.getenv("TEMPO_URL", "").strip()
+    url = os.getenv(TEMPO_URL_ENV, "").strip()
     if not url:
         return None
 
     return build_tempo_config(
         {
             "url": url,
-            "api_key": resolve_env_credential("TEMPO_API_KEY"),
-            "username": os.getenv("TEMPO_USERNAME", "").strip(),
-            "password": resolve_env_credential("TEMPO_PASSWORD"),
-            "org_id": os.getenv("TEMPO_ORG_ID", "").strip(),
+            "api_key": resolve_env_credential(TEMPO_API_KEY_ENV),
+            "username": os.getenv(TEMPO_USERNAME_ENV, "").strip(),
+            "password": resolve_env_credential(TEMPO_PASSWORD_ENV),
+            "org_id": os.getenv(TEMPO_ORG_ID_ENV, "").strip(),
         }
     )
 
@@ -143,11 +150,11 @@ def tempo_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     """
     tempo = sources.get("tempo", {})
     return {
-        "url": str(tempo.get("url", "")).strip(),
-        "api_key": str(tempo.get("api_key", "")).strip(),
-        "username": str(tempo.get("username", "")).strip(),
-        "password": str(tempo.get("password", "")).strip(),
-        "org_id": str(tempo.get("org_id", "")).strip(),
+        "url": str(tempo.get("url") or "").strip(),
+        "api_key": str(tempo.get("api_key") or "").strip(),
+        "username": str(tempo.get("username") or "").strip(),
+        "password": str(tempo.get("password") or "").strip(),
+        "org_id": str(tempo.get("org_id") or "").strip(),
     }
 
 
@@ -155,11 +162,11 @@ def classify(credentials: dict[str, Any], record_id: str) -> tuple[TempoConfig |
     try:
         cfg = build_tempo_config(
             {
-                "url": credentials.get("url", ""),
-                "api_key": credentials.get("api_key", ""),
-                "username": credentials.get("username", ""),
-                "password": credentials.get("password", ""),
-                "org_id": credentials.get("org_id", ""),
+                "url": credentials.get("url") or "",
+                "api_key": credentials.get("api_key") or "",
+                "username": credentials.get("username") or "",
+                "password": credentials.get("password") or "",
+                "org_id": credentials.get("org_id") or "",
                 "integration_id": record_id,
             }
         )

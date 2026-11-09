@@ -24,13 +24,13 @@ _RUN = "integrations.pi.tools.pi_coding_tool.runner.run_pi_coding_task"
 # --------------------------------------------------------------------------- #
 # metadata + availability
 # --------------------------------------------------------------------------- #
-def test_metadata_is_mutating_on_investigation_surface() -> None:
+def test_metadata_is_mutating_on_action_surface() -> None:
     t = pi_coding_task
     assert t.name == "pi_coding_task"
     assert t.source == "knowledge"
     assert t.side_effect_level == "mutating"
     assert t.requires_approval is False
-    assert t.surfaces == ("investigation",)
+    assert t.surfaces == ("action",)
     assert t.input_schema["required"] == ["task"]
     assert "error_kind" in t.outputs
     assert t.metadata().name == "pi_coding_task"
@@ -152,14 +152,14 @@ def test_run_unexpected_exception_returns_error_dict(
 # --------------------------------------------------------------------------- #
 # registry discovery
 # --------------------------------------------------------------------------- #
-def test_registry_discovers_pi_coding_on_investigation_surface() -> None:
+def test_registry_discovers_pi_coding_on_action_surface() -> None:
     from tools.registry import get_registered_tool_map
 
-    investigation = get_registered_tool_map("investigation")
+    action = get_registered_tool_map("action")
     chat = get_registered_tool_map("chat")
-    assert "pi_coding_task" in investigation
+    assert "pi_coding_task" in action
     assert "pi_coding_task" not in chat
-    rt = investigation["pi_coding_task"]
+    rt = action["pi_coding_task"]
     assert rt.requires_approval is False
     assert rt.side_effect_level == "mutating"
 

@@ -36,14 +36,26 @@ class TokenUsage:
         """True when any recorded tokens were estimated rather than measured."""
         return bool(self.totals.get("input_estimated") or self.totals.get("output_estimated"))
 
+    def cached_total(self) -> int:
+        """Input tokens the provider served from its prompt cache (part of ``input``)."""
+        try:
+            return max(0, int(self.totals.get("input_cached", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
     def record(
         self,
         *,
         input_tokens: int = 0,
         output_tokens: int = 0,
         estimated: bool = False,
+        cache_read_tokens: int = 0,
     ) -> None:
-        """Accumulate one LLM call's token counts (input/output + breakdown)."""
+        """Accumulate one LLM call's token counts (input/output + breakdown).
+
+        ``cache_read_tokens`` is the cached part of ``input_tokens``, kept as
+        its own bucket so spend can be shown as cached versus fresh.
+        """
         if not input_tokens and not output_tokens:
             return
         suffix = "estimated" if estimated else "measured"
@@ -53,6 +65,8 @@ class TokenUsage:
             self.totals[direction] = self.totals.get(direction, 0) + count
             bucket = f"{direction}_{suffix}"
             self.totals[bucket] = self.totals.get(bucket, 0) + count
+        if cache_read_tokens:
+            self.totals["input_cached"] = self.totals.get("input_cached", 0) + cache_read_tokens
         self.call_count += 1
 
     def reset(self) -> None:

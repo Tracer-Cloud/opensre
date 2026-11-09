@@ -40,7 +40,9 @@ def test_run_happy_path() -> None:
         "resourcesVpcConfig": {},
         "tags": {},
     }
-    with patch("integrations.eks.tools.EKSClient", return_value=mock_client):
+    with patch(
+        "integrations.eks.tools.eks_describe_cluster_tool.EKSClient", return_value=mock_client
+    ):
         result = describe_eks_cluster(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is True
     assert result["status"] == "ACTIVE"
@@ -53,6 +55,8 @@ def test_run_handles_client_error() -> None:
         {"Error": {"Code": "AccessDenied", "Message": "Access denied"}}, "DescribeCluster"
     )
     mock_client.describe_cluster.side_effect = error
-    with patch("integrations.eks.tools.EKSClient", return_value=mock_client):
+    with patch(
+        "integrations.eks.tools.eks_describe_cluster_tool.EKSClient", return_value=mock_client
+    ):
         result = describe_eks_cluster(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is False

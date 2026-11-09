@@ -1,9 +1,8 @@
-"""Chat transport peers — Slack, Discord, Telegram.
+"""Chat transports: Slack, Discord, Telegram, Buzz.
 
-Each transport owns settings, inbound worker, security, output sink, and
-``startup.py``. Transports are peers: none imports another. Shared machinery
-lives under ``gateway.core``. Consumer composition (starting peers together)
-lives in ``gateway.channels``.
+Each package owns its settings, inbound worker, security, turn output, and
+``startup``. Peers do not import each other. Shared turn steps come from
+``gateway.core``. The process starts every configured transport in one pass.
 """
 
 from __future__ import annotations

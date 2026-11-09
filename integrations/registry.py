@@ -176,12 +176,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=20,
     ),
     IntegrationSpec(
-        service="opsgenie",
-        has_verifier=True,
-        direct_effective=True,
-        verify_order=21,
-    ),
-    IntegrationSpec(
         service="incident_io",
         aliases=("incident.io", "incidentio"),
         has_verifier=True,
@@ -247,13 +241,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=28,
     ),
     IntegrationSpec(
-        service="openclaw",
-        has_verifier=True,
-        direct_effective=True,
-        setup_order=12,
-        verify_order=39,
-    ),
-    IntegrationSpec(
         service="posthog_mcp",
         aliases=("posthog mcp", "posthog-mcp"),
         has_verifier=True,
@@ -268,14 +255,6 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         direct_effective=True,
         setup_order=34,
         verify_order=45,
-    ),
-    IntegrationSpec(
-        service="x_mcp",
-        aliases=("x mcp", "x-mcp", "twitter", "twitter_mcp", "twitter-mcp"),
-        has_verifier=True,
-        direct_effective=True,
-        setup_order=39,
-        verify_order=49,
     ),
     IntegrationSpec(
         service="mysql",
@@ -303,6 +282,7 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         aliases=("azure monitor", "azure_monitor"),
         has_verifier=True,
         direct_effective=True,
+        setup_order=44,
         verify_order=30,
     ),
     IntegrationSpec(
@@ -386,12 +366,16 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         setup_order=25,
         verify_order=9,
     ),
-    IntegrationSpec(service="google_docs", has_verifier=True, verify_order=19),
+    IntegrationSpec(
+        service="google_docs",
+        has_verifier=True,
+        setup_order=55,
+        verify_order=19,
+    ),
     IntegrationSpec(service="kafka", has_verifier=True, verify_order=37),
     IntegrationSpec(service="clickhouse", has_verifier=True, verify_order=23),
     IntegrationSpec(service="alicloud", direct_effective=True),
-    IntegrationSpec(service="notion"),
-    IntegrationSpec(service="prefect", has_verifier=True, verify_order=51),
+    IntegrationSpec(service="prefect", has_verifier=True, direct_effective=True, verify_order=51),
     IntegrationSpec(
         service="posthog",
         has_verifier=True,
@@ -401,6 +385,13 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
     ),
     IntegrationSpec(service="trello"),
     IntegrationSpec(service="rds", setup_order=11),
+    IntegrationSpec(
+        service="neon",
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=60,
+        verify_order=60,
+    ),
     IntegrationSpec(
         service="supabase",
         has_verifier=True,
@@ -442,6 +433,15 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         core_verify=True,
         setup_order=51,
         verify_order=53,
+    ),
+    IntegrationSpec(
+        service="new_relic",
+        aliases=("newrelic", "new relic"),
+        has_verifier=True,
+        direct_effective=True,
+        core_verify=True,
+        setup_order=53,
+        verify_order=59,
     ),
 )
 
@@ -690,13 +690,13 @@ def family_key(service_key: str) -> str:
 
 # Wire the concrete resolver into the platform-level seam so callers in
 # ``tools/`` can normalize service keys without importing from
-# ``integrations/`` directly, keeping ``platform/`` free of a reverse
+# ``integrations/`` directly, keeping ``infrastructure/`` free of a reverse
 # dependency on ``integrations/``.
 # Kept at import time so any consumer that has already imported the
 # ``integrations`` package (every CLI entry point does so during startup)
 # sees the real mapping instead of the identity fallback.
 def _install_family_key_resolver() -> None:
-    from platform.common.service_families import register_family_key_resolver
+    from infrastructure.service_families.families import register_family_key_resolver
 
     register_family_key_resolver(family_key)
 

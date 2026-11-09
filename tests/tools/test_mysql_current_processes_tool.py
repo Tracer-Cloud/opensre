@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-from integrations.mysql.tools.mysql_current_processes_tool import get_mysql_current_processes
+from integrations.mysql.tools.mysql_current_processes_tool import (
+    _map_get_mysql_current_processes,
+    get_mysql_current_processes,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -89,3 +92,45 @@ def test_no_default_db_warning_when_database_provided() -> None:
     ):
         result = get_mysql_current_processes(host="localhost", database="mydb")
     assert "default_db_warning" not in result
+
+
+class TestMapGetMysqlCurrentProcesses:
+    def test_records_entry_with_longest_running(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_current_processes(
+            evidence,
+            {
+                "available": True,
+                "threshold_seconds": 2,
+                "total_processes": 2,
+                "processes": [
+                    {"id": 42, "time_seconds": 15},
+                    {"id": 43, "time_seconds": 30},
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mysql_current_processes"
+        assert entries[0]["summary"] == "2 process(es) over 2s, longest running 30s"
+
+    def test_records_nothing_when_no_processes(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_current_processes(
+            evidence, {"available": True, "threshold_seconds": 1, "processes": []}, {}
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_current_processes(
+            evidence, {"available": False, "error": "access denied"}, {}
+        )
+
+        assert "catalog_entries" not in evidence

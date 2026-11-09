@@ -5,7 +5,10 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
-from integrations.mysql.tools.mysql_slow_queries_tool import get_mysql_slow_queries
+from integrations.mysql.tools.mysql_slow_queries_tool import (
+    _map_get_mysql_slow_queries,
+    get_mysql_slow_queries,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -89,3 +92,65 @@ def test_run_error_propagated() -> None:
         result = get_mysql_slow_queries(host="localhost", database="invalid_db")
     assert "error" in result
     assert result["available"] is False
+
+
+class TestMapGetMysqlSlowQueries:
+    def test_records_entry_with_slowest_query(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_slow_queries(
+            evidence,
+            {
+                "available": True,
+                "performance_schema_available": True,
+                "threshold_ms": 500.0,
+                "total_queries": 2,
+                "queries": [
+                    {"digest_text": "SELECT * FROM orders", "avg_time_ms": 850.1},
+                    {"digest_text": "UPDATE inventory", "avg_time_ms": 620.5},
+                ],
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mysql_slow_queries"
+        assert entries[0]["summary"] == "2 queries above 500.0ms, slowest avg 850.1ms"
+
+    def test_records_note_when_performance_schema_disabled(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_slow_queries(
+            evidence,
+            {
+                "available": True,
+                "performance_schema_available": False,
+                "note": "performance_schema is disabled. Enable it in my.cnf to collect slow query data.",
+                "queries": [],
+            },
+            {},
+        )
+
+        assert (
+            evidence["catalog_entries"][0]["summary"]
+            == "performance_schema is disabled. Enable it in my.cnf to collect slow query data."
+        )
+
+    def test_records_nothing_when_no_slow_queries_found(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_slow_queries(
+            evidence,
+            {"available": True, "performance_schema_available": True, "queries": []},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mysql_slow_queries(evidence, {"available": False, "error": "timeout"}, {})
+
+        assert "catalog_entries" not in evidence

@@ -3,10 +3,9 @@
 Every field is individually optional: the Railway CLI can be pre-authenticated
 interactively (no token), and project/service/environment can be supplied per
 tool call instead of as defaults. What is *not* optional is the combination — a
-token **or** a complete default project/service/environment — and that either/or
-rule lives in :func:`integrations.railway.verifier.verify_railway`, not here, so
-``opensre integrations setup railway`` and ``opensre integrations verify
-railway`` agree on what "configured" means (see integrations/AGENTS.md).
+token **or** a complete default project/service/environment.
+:func:`integrations.railway.verifier.verify_railway` is that either/or rule, so
+setup and verify agree on "configured" (see integrations/AGENTS.md).
 
 ``railway_path`` and ``environment`` carry defaults so pressing enter lands on
 the same credentials a non-prompting surface would persist.

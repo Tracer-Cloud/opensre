@@ -1,0 +1,1160 @@
+"""Tests for the SQLite-backed claim store (dedup and run history)."""
+
+from __future__ import annotations
+
+import sqlite3
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from infrastructure.scheduling.scheduler.storage import database, migrations
+from infrastructure.scheduling.scheduler.storage.run_store import (
+    _RECOVERABLE_RUNS_QUERY,
+    ExecutionClaim,
+    RecoverableRun,
+    complete_run,
+    delete_runs,
+    get_backlog_snapshot,
+    get_latest_finished_run,
+    get_latest_run_for_fire_time,
+    get_latest_targeted_run,
+    get_recoverable_runs,
+    get_runs,
+    has_live_claim,
+    renew_claims,
+    try_claim,
+    try_queue_run,
+)
+from infrastructure.scheduling.scheduler.types import DeliveryOutcome, Provider, TaskStatus
+
+_RECOVERY_REFERENCE_QUERY = """
+    SELECT task_id, fire_time
+    FROM task_runs AS current
+    WHERE (current.status = ? OR (
+        current.status = ? AND current.lease_expires_at != '' AND current.lease_expires_at < ?
+    ))
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_runs AS live
+        WHERE live.task_id = current.task_id
+        AND live.status = ?
+        AND live.lease_expires_at >= ?
+    )
+    AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?)))
+    AND current.attempt = (
+        SELECT MAX(latest.attempt)
+        FROM task_runs AS latest
+        WHERE latest.task_id = current.task_id
+        AND latest.fire_time = current.fire_time
+    )
+    ORDER BY current.started_at, current.task_id, current.fire_time
+    LIMIT ?
+"""
+
+
+def _recovery_query_arguments(now: str, limit: int) -> tuple[str | None | int, ...]:
+    return (
+        TaskStatus.PENDING.value,
+        TaskStatus.RUNNING.value,
+        now,
+        TaskStatus.RUNNING.value,
+        now,
+        None,
+        None,
+        limit,
+    )
+
+
+def _recovery_index_names(conn: sqlite3.Connection) -> set[str]:
+    return {str(row[1]) for row in conn.execute("PRAGMA index_list(task_runs)")}
+
+
+@pytest.fixture()
+def db_path(tmp_path: Path) -> Path:
+    return tmp_path / "scheduler.db"
+
+
+def _claimed(db_path: Path, task_id: str, fire_time: str) -> ExecutionClaim:
+    claim = try_claim(task_id, fire_time, db_path=db_path)
+    assert claim is not None
+    return claim
+
+
+def _expire_claim(db_path: Path, task_id: str, fire_time: str) -> None:
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "UPDATE task_runs SET lease_expires_at = ? WHERE task_id = ? AND fire_time = ?",
+        ("2020-01-01T00:00:00+00:00", task_id, fire_time),
+    )
+    conn.commit()
+    conn.close()
+
+
+class _AlterFailsConnection:
+    """Wraps a real connection, failing only its ``ALTER TABLE`` statements.
+
+    ``sqlite3.Connection.execute`` cannot be monkeypatched directly (it is a
+    read-only C attribute), so this stands in for the connection when a test
+    needs a schema write to fail for a reason unrelated to the column already
+    existing (e.g. a genuine lock timeout).
+    """
+
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def execute(self, sql: str, *args: object) -> object:
+        if sql.strip().startswith("ALTER TABLE"):
+            raise sqlite3.OperationalError("database is locked")
+        return self._conn.execute(sql, *args)
+
+
+class TestClaimStore:
+    def test_backlog_snapshot_tracks_oldest_durable_pending_run(self, db_path: Path) -> None:
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs (task_id, fire_time, started_at, status) "
+                "VALUES (?, ?, ?, ?)",
+                [
+                    (
+                        f"task-{index}",
+                        f"tick-{index}",
+                        (
+                            "2026-01-01T09:00:00+00:00"
+                            if index == 0
+                            else "2026-01-01T10:00:00+00:00"
+                        ),
+                        TaskStatus.PENDING.value,
+                    )
+                    for index in range(1_000)
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            now=datetime(2026, 1, 1, 10, 30, tzinfo=UTC),
+        )
+
+        assert snapshot.pending_count == 1_000
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 5_400
+
+    def test_backlog_snapshot_survives_reopen_and_excludes_claimed_work(
+        self, db_path: Path
+    ) -> None:
+        assert try_queue_run("waiting", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_queue_run("removed", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_queue_run("active", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_claim("active", "2026-01-01T09:00Z", db_path=db_path) is not None
+
+        snapshot = get_backlog_snapshot(db_path, eligible_task_ids={"waiting", "active"})
+
+        assert snapshot.pending_count == 1
+
+    def test_backlog_snapshot_with_no_eligible_tasks_ignores_retained_history(
+        self, db_path: Path
+    ) -> None:
+        assert try_queue_run("removed", "2026-01-01T09:00Z", db_path=db_path)
+
+        snapshot = get_backlog_snapshot(db_path, eligible_task_ids=set())
+
+        assert snapshot.pending_count == 0
+        assert snapshot.oldest_pending_at is None
+
+    def test_backlog_counts_latest_expired_claims_but_not_live_or_deleted_work(
+        self, db_path: Path
+    ) -> None:
+        now = datetime(2026, 1, 1, 10, 30, tzinfo=UTC)
+        expired_at = "2026-01-01T10:00:00+00:00"
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs "
+                "(task_id, fire_time, attempt, started_at, status, lease_expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (task_id, "tick", attempt, "2026-01-01T09:00:00+00:00", status, lease)
+                    for task_id, attempt, status, lease in [
+                        ("expired", 1, "running", expired_at),
+                        ("removed", 1, "running", expired_at),
+                        ("live", 1, "running", now.isoformat()),
+                        ("no-lease", 1, "running", ""),
+                        ("superseded", 1, "running", expired_at),
+                        ("superseded", 2, "success", ""),
+                    ]
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            eligible_task_ids={"expired", "live", "no-lease", "superseded"},
+            now=now,
+        )
+
+        assert snapshot.pending_count == 1
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 10, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 1_800
+
+        # A pending tick still waits even when another tick owns the task.
+        assert try_queue_run("live", "next-tick", db_path=db_path)
+        assert get_backlog_snapshot(db_path, eligible_task_ids={"live"}, now=now).pending_count == 1
+
+    def test_empty_backlog_snapshot_has_no_synthetic_age(self, db_path: Path) -> None:
+        snapshot = get_backlog_snapshot(db_path)
+
+        assert snapshot.pending_count == 0
+        assert snapshot.oldest_pending_at is None
+        assert snapshot.oldest_pending_age_seconds is None
+
+    def test_first_claim_succeeds(self, db_path: Path) -> None:
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
+
+    def test_duplicate_claim_fails(self, db_path: Path) -> None:
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is None
+
+    def test_active_lease_cannot_be_reclaimed(self, db_path: Path) -> None:
+        first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+
+        assert first is not None
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is None
+
+    def test_expired_lease_is_abandoned_and_reclaimed(self, db_path: Path) -> None:
+        first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert first is not None
+
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+
+        second = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+
+        assert second is not None
+        assert second.attempt == 2
+        assert second.owner_token != first.owner_token
+        assert get_runs("task1", db_path=db_path)[0].status is TaskStatus.RUNNING
+        assert get_runs("task1", db_path=db_path)[1].status is TaskStatus.ABANDONED
+
+    def test_a_dead_claimant_blocks_its_task_for_minutes_not_half_an_hour(
+        self, db_path: Path
+    ) -> None:
+        """A killed ``/cron run`` left its CI repair stuck ``running`` for 30 minutes.
+
+        Live owners renew every third of the lease, so the lease only bounds how
+        long a claimant that died mid-tick keeps the task's later ticks out.
+        """
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        now = datetime.now(UTC)
+
+        assert now + timedelta(seconds=90) < claim.lease_expires_at <= now + timedelta(minutes=2)
+
+    def test_expired_claims_are_visible_to_the_scheduler_recovery_sweep(
+        self, db_path: Path
+    ) -> None:
+        _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+
+        assert get_recoverable_runs(db_path=db_path) == [
+            RecoverableRun(task_id="task1", fire_time="2026-01-01T09:00")
+        ]
+
+    def test_stale_owner_cannot_complete_after_reclaim(self, db_path: Path) -> None:
+        first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert first is not None
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+        second = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert second is not None
+
+        assert (
+            complete_run(
+                first,
+                status=TaskStatus.SUCCESS,
+                db_path=db_path,
+            )
+            is False
+        )
+        assert get_runs("task1", db_path=db_path)[0].status is TaskStatus.RUNNING
+        assert complete_run(
+            second,
+            status=TaskStatus.SUCCESS,
+            db_path=db_path,
+        )
+
+    def test_active_claims_are_renewed_in_one_transaction(self, db_path: Path) -> None:
+        first = _claimed(db_path, "task1", "2026-01-01T09:00")
+        second = _claimed(db_path, "task2", "2026-01-01T09:00")
+
+        renewed = renew_claims((first, second), db_path=db_path)
+
+        assert set(renewed) == {first, second}
+        assert renewed[first] > first.lease_expires_at
+        assert renewed[second] > second.lease_expires_at
+
+    def test_renewal_rejects_an_expired_claim_before_recovery(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, claim.task_id, claim.fire_time)
+
+        assert renew_claims((claim,), db_path=db_path) == {}
+        assert not complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+        assert get_runs(claim.task_id, db_path=db_path)[0].status is TaskStatus.RUNNING
+
+    def test_batch_renewal_excludes_a_reclaimed_owner(self, db_path: Path) -> None:
+        stale = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, stale.task_id, stale.fire_time)
+        current = _claimed(db_path, stale.task_id, stale.fire_time)
+
+        renewed = renew_claims((stale, current), db_path=db_path)
+
+        assert stale not in renewed
+        assert current in renewed
+
+    def test_different_fire_times_run_serially(self, db_path: Path) -> None:
+        first = _claimed(db_path, "task1", "2026-01-01T09:00")
+        assert try_queue_run("task1", "2026-01-01T10:00", db_path=db_path)
+        assert try_claim("task1", "2026-01-01T10:00", db_path=db_path) is None
+        assert get_recoverable_runs(db_path=db_path) == []
+        assert complete_run(first, status=TaskStatus.SUCCESS, db_path=db_path)
+        assert try_claim("task1", "2026-01-01T10:00", db_path=db_path) is not None
+
+    def test_different_tasks_same_fire_time(self, db_path: Path) -> None:
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
+        assert try_claim("task2", "2026-01-01T09:00", db_path=db_path) is not None
+
+    def test_complete_run_success(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        complete_run(
+            claim,
+            status=TaskStatus.SUCCESS,
+            posted_message_id="msg123",
+            provider="telegram",
+            db_path=db_path,
+        )
+        runs = get_runs("task1", db_path=db_path)
+        assert len(runs) == 1
+        assert runs[0].status == TaskStatus.SUCCESS
+        assert runs[0].posted_message_id == "msg123"
+        assert runs[0].finished_at is not None
+
+    def test_complete_run_failed(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        complete_run(
+            claim,
+            status=TaskStatus.FAILED,
+            error="Connection timeout",
+            provider="slack",
+            db_path=db_path,
+        )
+        runs = get_runs("task1", db_path=db_path)
+        assert len(runs) == 1
+        assert runs[0].status == TaskStatus.FAILED
+        assert runs[0].error == "Connection timeout"
+
+    def test_get_runs_ordered_newest_first(self, db_path: Path) -> None:
+        for i in range(5):
+            fire_time = f"2026-01-01T0{i}:00"
+            claim = _claimed(db_path, "task1", fire_time)
+            complete_run(
+                claim,
+                status=TaskStatus.SUCCESS,
+                db_path=db_path,
+            )
+
+        runs = get_runs("task1", db_path=db_path)
+        assert len(runs) == 5
+        # Newest first
+        assert runs[0].fire_time == "2026-01-01T04:00"
+        assert runs[-1].fire_time == "2026-01-01T00:00"
+
+    def test_get_runs_respects_limit(self, db_path: Path) -> None:
+        for i in range(10):
+            fire_time = f"2026-01-01T{i:02d}:00"
+            claim = _claimed(db_path, "task1", fire_time)
+            complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+
+        runs = get_runs("task1", limit=3, db_path=db_path)
+        assert len(runs) == 3
+
+    def test_get_runs_empty(self, db_path: Path) -> None:
+        runs = get_runs("nonexistent", db_path=db_path)
+        assert runs == []
+
+    def test_get_latest_run_for_fire_time_uses_latest_attempt(self, db_path: Path) -> None:
+        first = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+        second = _claimed(db_path, "task1", "2026-01-01T09:00")
+        assert second.attempt == 2
+        assert complete_run(second, status=TaskStatus.SUCCESS, db_path=db_path)
+
+        run = get_latest_run_for_fire_time("task1", "2026-01-01T09:00", db_path=db_path)
+
+        assert run is not None
+        assert run.attempt == 2
+        assert run.status is TaskStatus.SUCCESS
+        assert first.attempt == 1
+
+    def test_get_latest_finished_run_ignores_newer_in_flight_starts(self, db_path: Path) -> None:
+        # Arrange: one finished delivery, then six newer RUNNING claims. A
+        # start-ordered lookback of five would drop the finished row.
+        with database.connection(db_path) as conn:
+            conn.execute(
+                "INSERT INTO task_runs "
+                "(task_id, fire_time, started_at, finished_at, status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    "task1",
+                    "2026-08-05T09:00:00Z",
+                    "2026-08-05T09:00:00Z",
+                    "2026-08-05T09:05:00Z",
+                    TaskStatus.SUCCESS.value,
+                ),
+            )
+            for i in range(6):
+                conn.execute(
+                    "INSERT INTO task_runs "
+                    "(task_id, fire_time, started_at, status) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        "task1",
+                        f"2026-08-05T10:{i:02d}:00Z",
+                        f"2026-08-05T10:{i:02d}:00Z",
+                        TaskStatus.RUNNING.value,
+                    ),
+                )
+            conn.commit()
+
+        # Act
+        run = get_latest_finished_run("task1", db_path=db_path)
+
+        # Assert
+        assert run is not None
+        assert run.status == TaskStatus.SUCCESS
+        assert run.fire_time == "2026-08-05T09:00:00Z"
+        assert len(get_runs("task1", limit=5, db_path=db_path)) == 5
+        assert all(
+            r.status == TaskStatus.RUNNING for r in get_runs("task1", limit=5, db_path=db_path)
+        )
+
+    def test_delete_runs_removes_only_matching_task(self, db_path: Path) -> None:
+        _claimed(db_path, "task1", "2026-01-01T09:00")
+        try_claim("task2", "2026-01-01T09:00", db_path=db_path)
+        assert len(get_runs("task1", db_path=db_path)) == 1
+        assert len(get_runs("task2", db_path=db_path)) == 1
+
+        deleted = delete_runs("task1", db_path=db_path)
+        assert deleted == 1
+
+        # task1 runs are gone
+        assert get_runs("task1", db_path=db_path) == []
+        # task2 runs are untouched
+        assert len(get_runs("task2", db_path=db_path)) == 1
+
+    def test_delete_runs_idempotent(self, db_path: Path) -> None:
+        try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert delete_runs("task1", db_path=db_path) == 1
+        assert delete_runs("task1", db_path=db_path) == 0
+
+    def test_delete_runs_empty_db(self, db_path: Path) -> None:
+        assert delete_runs("nonexistent", db_path=db_path) == 0
+
+    def test_delete_runs_deletes_multiple_runs(self, db_path: Path) -> None:
+        for i in range(3):
+            fire_time = f"2026-01-01T{i:02d}:00"
+            try_queue_run("task1", fire_time, db_path=db_path)
+
+        assert delete_runs("task1", db_path=db_path) == 3
+        assert get_runs("task1", db_path=db_path) == []
+
+
+class TestConcurrency:
+    """Verify transaction fencing prevents duplicate claims."""
+
+    def test_concurrent_legacy_migration_rebuilds_once(
+        self,
+        db_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE task_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                fire_time TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                posted_message_id TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                provider TEXT DEFAULT '',
+                UNIQUE(task_id, fire_time)
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        real_table_columns = migrations._table_columns
+        unlocked_reads = threading.Barrier(2)
+
+        def _synchronize_unlocked_reads(
+            read_conn: sqlite3.Connection,
+            table: str = "task_runs",
+        ) -> set[str]:
+            columns = real_table_columns(read_conn, table)
+            if "attempt" not in columns and not read_conn.in_transaction:
+                unlocked_reads.wait(timeout=5)
+            return columns
+
+        real_migrate = migrations._migrate_legacy_claim_table
+        migration_count = 0
+        count_lock = threading.Lock()
+
+        def _count_migration(
+            migration_conn: sqlite3.Connection,
+            columns: set[str],
+        ) -> None:
+            nonlocal migration_count
+            with count_lock:
+                migration_count += 1
+            real_migrate(migration_conn, columns)
+
+        monkeypatch.setattr(migrations, "_table_columns", _synchronize_unlocked_reads)
+        monkeypatch.setattr(migrations, "_migrate_legacy_claim_table", _count_migration)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            claims = list(
+                pool.map(
+                    lambda _: try_claim("task1", "2026-01-01T09:00", db_path=db_path),
+                    range(2),
+                )
+            )
+
+        assert migration_count == 1
+        assert sum(claim is not None for claim in claims) == 1
+        claim = next(claim for claim in claims if claim is not None)
+        assert complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+
+    def test_concurrent_reclaimers_only_one_wins(self, db_path: Path) -> None:
+        _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+        barrier = threading.Barrier(3)
+
+        def _reclaim() -> ExecutionClaim | None:
+            barrier.wait()
+            return try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_reclaim) for _ in range(2)]
+            barrier.wait()
+            claims = [future.result() for future in futures]
+
+        assert sum(claim is not None for claim in claims) == 1
+        assert [run.status for run in get_runs("task1", db_path=db_path)] == [
+            TaskStatus.RUNNING,
+            TaskStatus.ABANDONED,
+        ]
+
+
+class TestPerTargetOutcomes:
+    """Fan-out run history keeps one row per destination, in plan order."""
+
+    def test_target_outcomes_round_trip_in_the_order_written(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        outcomes = (
+            DeliveryOutcome(
+                provider=Provider.INTERACTIVE_SHELL, ok=True, message_id="local:1", attempts=1
+            ),
+            DeliveryOutcome(
+                provider=Provider.SLACK,
+                chat_id="C123",
+                ok=False,
+                error="webhook missing",
+                attempts=3,
+            ),
+        )
+        complete_run(
+            claim,
+            status=TaskStatus.SUCCESS,
+            targets=outcomes,
+            db_path=db_path,
+        )
+
+        assert get_runs("task1", db_path=db_path)[0].targets == outcomes
+
+    def test_runs_without_target_outcomes_read_back_empty(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+
+        assert get_runs("task1", db_path=db_path)[0].targets == ()
+
+    def test_database_created_before_the_targets_column_is_migrated(self, db_path: Path) -> None:
+        """An existing scheduler.db must gain the column instead of erroring."""
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE task_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                fire_time TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                posted_message_id TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                provider TEXT DEFAULT '',
+                UNIQUE(task_id, fire_time)
+            )
+        """)
+        conn.execute(
+            "INSERT INTO task_runs (task_id, fire_time, started_at, status) VALUES (?, ?, ?, ?)",
+            ("legacy", "2026-01-01T08:00", "2026-01-01T08:00:00+00:00", TaskStatus.SUCCESS.value),
+        )
+        conn.execute(
+            "INSERT INTO task_runs (task_id, fire_time, started_at, status) VALUES (?, ?, ?, ?)",
+            ("stale", "2020-01-01T08:00", "2020-01-01T08:00:00+00:00", TaskStatus.RUNNING.value),
+        )
+        conn.commit()
+        conn.close()
+
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        complete_run(
+            claim,
+            status=TaskStatus.SUCCESS,
+            targets=(DeliveryOutcome(provider=Provider.SLACK, ok=True, message_id="ts_1"),),
+            db_path=db_path,
+        )
+
+        assert get_runs("legacy", db_path=db_path)[0].targets == ()
+        assert get_runs("task1", db_path=db_path)[0].targets[0].message_id == "ts_1"
+        reclaimed = try_claim("stale", "2020-01-01T08:00", db_path=db_path)
+        assert reclaimed is not None
+        assert reclaimed.attempt == 2
+
+    def test_a_concurrent_migration_landing_first_does_not_raise(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reproduces the race two processes hit on a legacy database.
+
+        Both check the column, see it missing, and only then does one of them
+        commit its ``ALTER TABLE`` — so the other's own pre-check was already
+        stale by the time it runs its own ``ALTER TABLE``. Forcing only the
+        pre-check to lie (report "missing" when it is not) reproduces that
+        stale window deterministically; a raw sequential call can't, since the
+        second call's pre-check would correctly see the already-migrated
+        schema and skip the write entirely.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE task_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                fire_time TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                posted_message_id TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                provider TEXT DEFAULT '',
+                UNIQUE(task_id, fire_time)
+            )
+        """)
+        # A concurrent connection's migration already landed by the time this
+        # connection's own ALTER TABLE runs.
+        conn.execute("ALTER TABLE task_runs ADD COLUMN targets TEXT DEFAULT ''")
+        conn.commit()
+
+        real_has_column = migrations._has_targets_column
+        calls = {"count": 0}
+
+        def _lie_on_first_call(check_conn: sqlite3.Connection) -> bool:
+            calls["count"] += 1
+            # Pre-check: stale, as it genuinely was at that moment. The
+            # post-failure recheck must see the truth or this test proves
+            # nothing about the recovery path.
+            return False if calls["count"] == 1 else real_has_column(check_conn)
+
+        monkeypatch.setattr(migrations, "_has_targets_column", _lie_on_first_call)
+
+        migrations._add_missing_columns(conn)  # must not raise
+        assert calls["count"] == 2
+
+    def test_a_winner_committing_after_our_timeout_is_picked_up_on_retry(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The window a single post-timeout recheck cannot see.
+
+        Our ``ALTER TABLE`` times out while the competing migration is still
+        uncommitted, so the schema recheck right after the failure genuinely
+        finds nothing. The winner commits a moment later; the next attempt
+        re-reads the schema, sees the column, and returns without a second
+        write or a raised error.
+        """
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE task_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                fire_time TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                posted_message_id TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                provider TEXT DEFAULT '',
+                UNIQUE(task_id, fire_time)
+            )
+        """)
+        conn.commit()
+
+        # False for the pre-check and the post-timeout recheck (the winner has
+        # not committed yet), then True once it lands during the retry delay.
+        checks = {"count": 0}
+
+        def _column_appears_on_the_retry(_conn: sqlite3.Connection) -> bool:
+            checks["count"] += 1
+            return checks["count"] > 2
+
+        monkeypatch.setattr(migrations, "_has_targets_column", _column_appears_on_the_retry)
+
+        migrations._add_missing_columns(_AlterFailsConnection(conn))  # must not raise
+
+        # Pre-check, post-timeout recheck, then the retry's own pre-check.
+        assert checks["count"] == 3
+
+    def test_a_genuine_alter_failure_still_raises(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A writer stuck past the budget surfaces the real error rather than
+        retrying forever."""
+        monkeypatch.setattr(migrations, "_MIGRATION_TIMEOUT_SECONDS", 0.2)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("""
+            CREATE TABLE task_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                fire_time TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                posted_message_id TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                provider TEXT DEFAULT '',
+                UNIQUE(task_id, fire_time)
+            )
+        """)
+        conn.commit()
+
+        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+            migrations._add_missing_columns(_AlterFailsConnection(conn))
+
+
+class TestLatestTargetedRun:
+    """``--failed-only`` must not be widened by a run that recorded no targets."""
+
+    def _finish(
+        self,
+        db_path: Path,
+        fire_time: str,
+        *,
+        targets: tuple[DeliveryOutcome, ...],
+        status: TaskStatus = TaskStatus.SUCCESS,
+    ) -> None:
+        claim = _claimed(db_path, "task1", fire_time)
+        complete_run(claim, status=status, targets=targets, db_path=db_path)
+
+    def test_a_later_run_without_targets_does_not_shadow_the_partial_failure(
+        self, db_path: Path
+    ) -> None:
+        """The bug: a retry matching nothing (or a build failure) records no
+        outcomes, and treating that as "no history" sends everywhere again."""
+        partial = (
+            DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True, message_id="ts_1"),
+            DeliveryOutcome(provider=Provider.TELEGRAM, chat_id="-100", ok=False, error="no token"),
+        )
+        self._finish(db_path, "2026-01-01T09:00", targets=partial)
+        # A --failed-only retry that matched no destination, recorded after it.
+        self._finish(db_path, "2026-01-01T09:05", targets=(), status=TaskStatus.FAILED)
+
+        run = get_latest_targeted_run("task1", db_path=db_path)
+
+        assert run is not None
+        assert run.targets == partial
+
+    def test_no_run_with_targets_returns_none(self, db_path: Path) -> None:
+        self._finish(db_path, "2026-01-01T09:00", targets=(), status=TaskStatus.FAILED)
+
+        assert get_latest_targeted_run("task1", db_path=db_path) is None
+
+    def test_the_newest_targeted_run_wins(self, db_path: Path) -> None:
+        older = (DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=False, error="old"),)
+        newer = (DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True, message_id="ok"),)
+        self._finish(db_path, "2026-01-01T09:00", targets=older)
+        self._finish(db_path, "2026-01-01T09:05", targets=newer)
+
+        run = get_latest_targeted_run("task1", db_path=db_path)
+
+        assert run is not None
+        assert run.targets == newer
+
+    def test_an_unreadable_later_run_does_not_shadow_the_partial_failure(
+        self, db_path: Path
+    ) -> None:
+        """A corrupt outcomes column is non-empty in SQL but decodes to nothing.
+
+        Letting it win would hand ``--failed-only`` an empty filter, so the
+        retry would deliver nowhere instead of to the destinations that failed.
+        """
+        partial = (
+            DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True, message_id="ts_1"),
+            DeliveryOutcome(provider=Provider.TELEGRAM, chat_id="-100", ok=False, error="no token"),
+        )
+        self._finish(db_path, "2026-01-01T09:00", targets=partial)
+        self._finish(db_path, "2026-01-01T09:05", targets=(), status=TaskStatus.FAILED)
+        # Corrupt the newer row's history behind the encoder's back.
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE task_runs SET targets = ? WHERE task_id = ? AND fire_time = ?",
+            ("{not json", "task1", "2026-01-01T09:05"),
+        )
+        conn.commit()
+        conn.close()
+
+        run = get_latest_targeted_run("task1", db_path=db_path)
+
+        assert run is not None
+        assert run.targets == partial
+
+    def test_only_unreadable_history_returns_none(self, db_path: Path) -> None:
+        self._finish(db_path, "2026-01-01T09:00", targets=(), status=TaskStatus.FAILED)
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("UPDATE task_runs SET targets = ? WHERE task_id = ?", ("[[[", "task1"))
+        conn.commit()
+        conn.close()
+
+        assert get_latest_targeted_run("task1", db_path=db_path) is None
+
+
+@pytest.mark.parametrize("scope", [None, frozenset(), frozenset({(Provider.SLACK, "C123")})])
+def test_reclaim_preserves_original_delivery_scope(
+    db_path: Path, scope: frozenset[tuple[Provider, str]] | None
+) -> None:
+    first = try_claim("task", "tick", db_path=db_path, target_filter=scope)
+    assert first is not None
+    _expire_claim(db_path, "task", "tick")
+    reclaimed = try_claim(
+        "task", "tick", db_path=db_path, target_filter=frozenset({(Provider.TELEGRAM, "other")})
+    )
+    assert reclaimed is not None
+    assert reclaimed.target_filter == scope
+
+
+def test_scope_migration_preserves_claims_and_refuses_unknown_delivery(db_path: Path) -> None:
+    claim = _claimed(db_path, "task", "tick")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE task_runs DROP COLUMN target_filter")
+        conn.execute("ALTER TABLE task_runs DROP COLUMN work_outcome")
+    _expire_claim(db_path, "task", "tick")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: get_runs("task", db_path=db_path), range(4)))
+    assert all(len(runs) == 1 for runs in results)
+    assert all(runs[0].work_status == "unknown" for runs in results)
+    reclaimed = try_claim("task", "tick", db_path=db_path)
+    assert reclaimed is not None
+    assert reclaimed.target_filter == frozenset()
+    assert not complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+
+
+@pytest.mark.parametrize("raw", ['{"provider":"slack"}', '[["unknown", "chat"]]', "broken"])
+def test_malformed_scope_cannot_widen_recovery(db_path: Path, raw: str) -> None:
+    _claimed(db_path, "task", "tick")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE task_runs SET target_filter = ?", (raw,))
+    _expire_claim(db_path, "task", "tick")
+    reclaimed = try_claim("task", "tick", db_path=db_path)
+    assert reclaimed is not None
+    assert reclaimed.target_filter == frozenset()
+
+
+@pytest.mark.parametrize("column", ["target_filter", "work_outcome"])
+def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path, column: str) -> None:
+    class FailScopeMigration(sqlite3.Connection):
+        def execute(self, sql: str, parameters: object = (), /) -> sqlite3.Cursor:
+            if sql.startswith(f"ALTER TABLE task_runs ADD COLUMN {column}"):
+                raise sqlite3.OperationalError("injected migration failure")
+            return super().execute(sql, parameters)
+
+    _claimed(db_path, "task", "tick")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE task_runs DROP COLUMN target_filter")
+        conn.execute("ALTER TABLE task_runs DROP COLUMN targets")
+        conn.execute("ALTER TABLE task_runs DROP COLUMN work_outcome")
+    conn = sqlite3.connect(db_path, factory=FailScopeMigration)
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="injected migration failure"):
+            migrations.apply_migrations(conn)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
+        assert "targets" not in columns
+        assert "target_filter" not in columns
+        assert "work_outcome" not in columns
+        assert conn.execute("SELECT COUNT(*) FROM task_runs").fetchone()[0] == 1
+    finally:
+        conn.close()
+    assert len(get_runs("task", db_path=db_path)) == 1
+
+
+def test_expired_claim_eligibility_handles_empty_and_large_sets(db_path: Path) -> None:
+    _claimed(db_path, "eligible", "tick")
+    _expire_claim(db_path, "eligible", "tick")
+    assert get_recoverable_runs(db_path=db_path, eligible_task_ids=set()) == []
+    eligible = {f"task-{index}" for index in range(2000)} | {"eligible"}
+    assert get_recoverable_runs(db_path=db_path, eligible_task_ids=eligible) == [
+        RecoverableRun(task_id="eligible", fire_time="tick")
+    ]
+
+
+def test_pending_tick_is_recoverable_without_a_submission_owner(db_path: Path) -> None:
+    assert try_queue_run("task", "2026-01-01T09:00Z", db_path=db_path)
+    assert not try_queue_run("task", "2026-01-01T09:00Z", db_path=db_path)
+    assert get_runs("task", db_path=db_path)[0].status is TaskStatus.PENDING
+    # Reopening storage is sufficient: no host id, timeout, or in-memory mailbox is needed.
+    assert get_recoverable_runs(db_path=db_path) == [RecoverableRun("task", "2026-01-01T09:00Z")]
+    claim = _claimed(db_path, "task", "2026-01-01T09:00Z")
+    assert claim.attempt == 1
+    assert claim.target_filter is None
+    assert get_runs("task", db_path=db_path)[0].status is TaskStatus.RUNNING
+
+
+def test_competing_hosts_claim_only_one_tick_per_task(db_path: Path) -> None:
+    fire_times = ["2026-01-01T09:00Z", "2026-01-01T10:00Z"]
+    for fire_time in fire_times:
+        assert try_queue_run("task", fire_time, db_path=db_path)
+    ready = threading.Barrier(2)
+
+    def claim_tick(fire_time: str) -> ExecutionClaim | None:
+        ready.wait(timeout=10)
+        return try_claim("task", fire_time, db_path=db_path)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(claim_tick, fire_times))
+    winners = [claim for claim in claims if claim is not None]
+    assert len(winners) == 1
+    pending = next(
+        run for run in get_runs("task", db_path=db_path) if run.status is TaskStatus.PENDING
+    )
+    # Busy-task backlog is filtered before the scan limit, not allowed to starve other tasks.
+    assert try_queue_run("other", "2026-01-01T09:00Z", db_path=db_path)
+    assert get_recoverable_runs(limit=1, db_path=db_path) == [
+        RecoverableRun("other", "2026-01-01T09:00Z")
+    ]
+    assert complete_run(winners[0], status=TaskStatus.SUCCESS, db_path=db_path)
+    assert try_claim("task", pending.fire_time, db_path=db_path) is not None
+
+
+def test_pending_claim_keeps_explicit_delivery_scope_through_recovery(db_path: Path) -> None:
+    scope = frozenset({(Provider.SLACK, "C123")})
+    assert try_queue_run("task", "tick", db_path=db_path)
+    claim = try_claim("task", "tick", db_path=db_path, target_filter=scope)
+    assert claim is not None
+    assert claim.target_filter == scope
+    _expire_claim(db_path, "task", "tick")
+    recovered = _claimed(db_path, "task", "tick")
+    assert recovered.target_filter == scope
+
+
+def test_recovery_query_matches_the_pre_index_semantics(db_path: Path) -> None:
+    now = datetime.now(UTC).isoformat()
+    started = datetime(2026, 1, 1, tzinfo=UTC)
+    with database.connection(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO task_runs "
+            "(task_id, fire_time, attempt, started_at, status, lease_expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                ("pending-old", "tick", 1, started.isoformat(), TaskStatus.PENDING.value, ""),
+                (
+                    "pending-new",
+                    "tick",
+                    1,
+                    (started + timedelta(minutes=1)).isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "expired",
+                    "tick",
+                    1,
+                    (started + timedelta(minutes=2)).isoformat(),
+                    TaskStatus.RUNNING.value,
+                    "2020-01-01T00:00:00+00:00",
+                ),
+                (
+                    "superseded",
+                    "tick",
+                    1,
+                    (started + timedelta(minutes=3)).isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "superseded",
+                    "tick",
+                    2,
+                    (started + timedelta(minutes=4)).isoformat(),
+                    TaskStatus.SUCCESS.value,
+                    "",
+                ),
+                (
+                    "owned",
+                    "pending-tick",
+                    1,
+                    (started + timedelta(minutes=5)).isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "owned",
+                    "running-tick",
+                    1,
+                    (started + timedelta(minutes=6)).isoformat(),
+                    TaskStatus.RUNNING.value,
+                    "2099-01-01T00:00:00+00:00",
+                ),
+            ),
+        )
+        expected = conn.execute(
+            _RECOVERY_REFERENCE_QUERY,
+            _recovery_query_arguments(now, limit=100),
+        ).fetchall()
+        conn.commit()
+
+    actual = get_recoverable_runs(limit=100, db_path=db_path)
+
+    assert [(run.task_id, run.fire_time) for run in actual] == expected
+
+
+def test_recovery_query_uses_partial_indexes_without_scanning_completed_history(
+    db_path: Path,
+) -> None:
+    started = datetime(2026, 1, 1, tzinfo=UTC)
+    with database.connection(db_path) as conn:
+        completed = tuple(
+            (
+                f"completed-{index}",
+                "tick",
+                (started + timedelta(seconds=index)).isoformat(),
+                TaskStatus.SUCCESS.value,
+            )
+            for index in range(10_000)
+        )
+        conn.executemany(
+            "INSERT INTO task_runs (task_id, fire_time, started_at, status) VALUES (?, ?, ?, ?)",
+            completed,
+        )
+        conn.executemany(
+            "INSERT INTO task_runs "
+            "(task_id, fire_time, started_at, status, lease_expires_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                (
+                    "pending",
+                    "tick",
+                    started.isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "expired",
+                    "tick",
+                    (started + timedelta(seconds=1)).isoformat(),
+                    TaskStatus.RUNNING.value,
+                    "2020-01-01T00:00:00+00:00",
+                ),
+            ),
+        )
+        details = [
+            str(row[3])
+            for row in conn.execute(
+                f"EXPLAIN QUERY PLAN {_RECOVERABLE_RUNS_QUERY}",
+                _recovery_query_arguments(datetime.now(UTC).isoformat(), limit=100),
+            )
+        ]
+        conn.commit()
+
+    assert any("idx_task_runs_recovery_pending_order" in detail for detail in details)
+    assert any("idx_task_runs_recovery_expired" in detail for detail in details)
+    assert any("idx_task_runs_live_owner" in detail for detail in details)
+    assert not any(
+        detail.startswith("SCAN task_runs") and "USING" not in detail for detail in details
+    )
+
+
+def test_missing_recovery_indexes_are_added_once_under_concurrent_startup(db_path: Path) -> None:
+    with database.connection(db_path) as conn:
+        for index_name in migrations._RECOVERY_INDEX_NAMES:
+            conn.execute(f"DROP INDEX {index_name}")
+        conn.commit()
+
+    ready = threading.Barrier(3)
+
+    def _migrate() -> None:
+        with sqlite3.connect(db_path, timeout=5) as conn:
+            ready.wait(timeout=5)
+            migrations.apply_migrations(conn)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_migrate) for _ in range(2)]
+        ready.wait(timeout=5)
+        for future in futures:
+            future.result()
+
+    with sqlite3.connect(db_path) as conn:
+        assert _recovery_index_names(conn) >= migrations._RECOVERY_INDEX_NAMES
+
+
+def test_recovery_index_migration_retries_a_lock_longer_than_busy_timeout(db_path: Path) -> None:
+    """A losing startup waits for an in-flight index build to finish."""
+    with database.connection(db_path) as conn:
+        for index_name in migrations._RECOVERY_INDEX_NAMES:
+            conn.execute(f"DROP INDEX {index_name}")
+        conn.commit()
+
+    holder = sqlite3.connect(db_path)
+    holder.execute("BEGIN IMMEDIATE")
+    started = threading.Event()
+
+    def _migrate_after_lock() -> None:
+        with sqlite3.connect(db_path, timeout=0.001) as conn:
+            conn.execute("PRAGMA busy_timeout = 1")
+            started.set()
+            migrations.apply_migrations(conn)
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_migrate_after_lock)
+            assert started.wait(timeout=5)
+            # This exceeds the contender's 1ms SQLite busy timeout, forcing
+            # the migration-level retry that covers a slow index build.
+            time.sleep(0.05)
+            holder.commit()
+            future.result(timeout=5)
+    finally:
+        if holder.in_transaction:
+            holder.rollback()
+        holder.close()
+
+    with sqlite3.connect(db_path) as conn:
+        assert _recovery_index_names(conn) >= migrations._RECOVERY_INDEX_NAMES
+
+
+def test_only_an_unexpired_running_claim_counts_as_live(db_path: Path) -> None:
+    """A service restart is deferred on this answer, so dead and finished claims must not count."""
+    # No database yet: nothing runs, and the read does not create one.
+    assert has_live_claim(db_path) is False
+    assert not db_path.exists()
+
+    finished = _claimed(db_path, "task1", "2026-01-01T09:00")
+    assert has_live_claim(db_path) is True
+    complete_run(finished, status=TaskStatus.SUCCESS, db_path=db_path)
+    assert has_live_claim(db_path) is False
+
+    # A claimant that died stops counting once its lease lapses.
+    _claimed(db_path, "task2", "2026-01-01T09:00")
+    _expire_claim(db_path, "task2", "2026-01-01T09:00")
+    assert has_live_claim(db_path) is False

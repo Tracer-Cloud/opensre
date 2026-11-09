@@ -11,11 +11,15 @@ Covers:
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from integrations.kafka.tools.kafka_topic_health_tool import get_kafka_topic_health
+from integrations.kafka.tools.kafka_topic_health_tool import (
+    _map_get_kafka_topic_health,
+    get_kafka_topic_health,
+)
 from tests.tools.conftest import BaseToolContract
 
 # ---------------------------------------------------------------------------
@@ -98,7 +102,6 @@ def test_metadata() -> None:
     rt = get_kafka_topic_health.__opensre_registered_tool__
     assert rt.name == "get_kafka_topic_health"
     assert rt.source == "kafka"
-    assert "investigation" in rt.surfaces
     assert "chat" in rt.surfaces
 
 
@@ -303,3 +306,55 @@ class TestKafkaTopicHealthRun:
         # Confirm the integration was entered but never reached broker contact
         # (is_configured check returns early inside the integration).
         mock_fn.assert_called_once()
+
+
+class TestMapGetKafkaTopicHealth:
+    def test_records_entry_with_under_replicated_count(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_topic_health(evidence, _TOPIC_HEALTH_RESPONSE, {})
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_kafka_topic_health"
+        assert entries[0]["summary"] == "2 topic(s) surveyed, 1 under-replicated partition(s)"
+
+    def test_records_entry_without_under_replicated_suffix_when_all_healthy(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_topic_health(
+            evidence,
+            {
+                "available": True,
+                "topics": [
+                    {
+                        "name": "events",
+                        "partition_count": 1,
+                        "partitions": [{"id": 0, "under_replicated": False}],
+                    }
+                ],
+            },
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "1 topic(s) surveyed"
+
+    def test_records_nothing_when_no_topics(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_topic_health(
+            evidence,
+            {"available": True, "broker_count": 3, "topics_returned": 0, "topics": []},
+            {},
+        )
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_kafka_topic_health(
+            evidence, {"source": "kafka", "available": False, "error": "Not configured."}, {}
+        )
+
+        assert "catalog_entries" not in evidence

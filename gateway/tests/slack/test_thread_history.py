@@ -14,14 +14,20 @@ def test_session_needs_seed_for_bare_yes() -> None:
     assert thread_history.session_needs_thread_seed("yes") is True
 
 
-def test_affirmative_always_reseeds_even_with_prior_offer() -> None:
-    # Re-seeding pulls the complete current thread, so a repeated affirmative
-    # resolves against the LATEST offer rather than stale session state.
-    assert thread_history.session_needs_thread_seed("yes") is True
+def test_skips_seed_when_session_already_has_history() -> None:
+    # Live session turns are the continuity source — do not re-fetch Slack.
+    assert (
+        thread_history.session_needs_thread_seed("yes", is_reply=True, has_session_history=True)
+        is False
+    )
+    assert (
+        thread_history.session_needs_thread_seed("do that", is_reply=True, has_session_history=True)
+        is False
+    )
 
 
-def test_any_threaded_reply_seeds_regardless_of_wording() -> None:
-    # "do that", "the first one", etc. must seed without a phrase list.
+def test_empty_session_threaded_reply_still_seeds() -> None:
+    # After a redeploy the session file is empty; any threaded reply must seed.
     assert thread_history.session_needs_thread_seed("do that", is_reply=True) is True
     assert thread_history.session_needs_thread_seed("the first one", is_reply=True) is True
 
@@ -130,7 +136,9 @@ def test_seed_session_writes_cli_agent_messages(monkeypatch: pytest.MonkeyPatch)
     assert session.cli_agent_messages[1][1] == "Want me to: list titles?"
 
 
-def test_slack_reseed_replaces_stale_session_history(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_seed_does_not_clobber_existing_session_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Once the session holds turns, Slack must not replace them — the in-process
+    # transcript is authoritative until the next empty-session seed.
     latest = [("assistant", "Want me to: use the latest option?")]
     monkeypatch.setattr(thread_history, "messages_from_slack_thread", lambda **_k: latest)
     session = SessionCore()
@@ -138,9 +146,9 @@ def test_slack_reseed_replaces_stale_session_history(monkeypatch: pytest.MonkeyP
 
     assert (
         thread_history.seed_session_from_slack_thread(session, channel_id="C1", thread_ts="1.0")
-        == 1
+        == 0
     )
-    assert session.cli_agent_messages == latest
+    assert session.cli_agent_messages == [("assistant", "stale offer")]
 
 
 def test_empty_session_yes_after_thread_seed_expands_dual_offer(

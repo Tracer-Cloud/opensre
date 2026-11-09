@@ -22,7 +22,7 @@ from core.llm.transports.litellm.frozen_tiktoken_bootstrap import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_RELEASE_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "release.yml"
+_SPEC_FILE = _REPO_ROOT / "opensre.spec"
 
 
 @pytest.fixture(autouse=True)
@@ -69,14 +69,14 @@ def test_frozen_build_bootstrap_resolves_encoding(monkeypatch: pytest.MonkeyPatc
     assert encoding.name == "cl100k_base"
 
 
-def test_release_workflow_bundles_tiktoken_plugin() -> None:
+def test_release_spec_bundles_tiktoken_plugin() -> None:
     """The release build must hidden-import tiktoken's plugin module.
 
-    Ties the bootstrap's direct-import target to the PyInstaller build command
+    Ties the bootstrap's direct-import target to the PyInstaller specification
     so renaming or dropping the hidden-import fails fast instead of only
     surfacing as a release-time binary crash.
     """
-    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    spec = _SPEC_FILE.read_text(encoding="utf-8")
 
-    assert "tiktoken_ext.openai_public" in workflow
-    assert "tiktoken_ext" in workflow
+    assert '"tiktoken_ext.openai_public"' in spec
+    assert '"tiktoken_ext"' in spec

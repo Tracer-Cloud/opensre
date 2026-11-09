@@ -1,4 +1,4 @@
-"""Tests for platform.observability.errors.boundary helpers."""
+"""Tests for infrastructure.observability.errors.boundary helpers."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from platform.observability.errors.boundary import (
+from infrastructure.observability.errors.boundary import (
     report_and_reraise,
     report_exception,
 )
@@ -30,7 +30,7 @@ class TestReportException:
     def test_logs_and_captures(self) -> None:
         mock_log = _mock_logger()
         exc = ValueError("test error")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_exception(exc, logger=mock_log, message="Something failed")
         mock_log.error.assert_called_once()
         mock_cap.assert_called_once_with(exc, extra=None)
@@ -38,7 +38,7 @@ class TestReportException:
     def test_warning_severity(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("warn")
-        with patch("platform.observability.errors.boundary.capture_exception"):
+        with patch("infrastructure.observability.errors.boundary.capture_exception"):
             report_exception(exc, logger=mock_log, message="m", severity="warning")
         mock_log.warning.assert_called_once()
         mock_log.error.assert_not_called()
@@ -46,7 +46,7 @@ class TestReportException:
     def test_info_severity_skips_sentry(self) -> None:
         mock_log = _mock_logger()
         exc = OSError("expected fallback")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_exception(exc, logger=mock_log, message="handled", severity="info")
         mock_log.info.assert_called_once()
         mock_cap.assert_not_called()
@@ -54,7 +54,7 @@ class TestReportException:
     def test_tags_are_prefixed(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("boom")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_exception(
                 exc,
                 logger=mock_log,
@@ -69,7 +69,7 @@ class TestReportException:
     def test_extras_are_merged(self) -> None:
         mock_log = _mock_logger()
         exc = RuntimeError("boom")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_exception(
                 exc,
                 logger=mock_log,
@@ -85,7 +85,7 @@ class TestReportException:
     def test_no_tags_or_extras_passes_none(self) -> None:
         mock_log = _mock_logger()
         exc = ValueError("plain")
-        with patch("platform.observability.errors.boundary.capture_exception") as mock_cap:
+        with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap:
             report_exception(exc, logger=mock_log, message="msg")
         mock_cap.assert_called_once_with(exc, extra=None)
 
@@ -94,7 +94,7 @@ class TestReportAndReraise:
     def test_propagates_exception(self) -> None:
         mock_log = _mock_logger()
         with (
-            patch("platform.observability.errors.boundary.capture_exception") as mock_cap,
+            patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap,
             pytest.raises(RuntimeError, match="propagated"),
             report_and_reraise(logger=mock_log, message="reraised"),
         ):
@@ -105,7 +105,7 @@ class TestReportAndReraise:
         mock_log = _mock_logger()
         result: list[int] = []
         with (
-            patch("platform.observability.errors.boundary.capture_exception") as mock_cap,
+            patch("infrastructure.observability.errors.boundary.capture_exception") as mock_cap,
             report_and_reraise(logger=mock_log, message="no error"),
         ):
             result.append(42)
@@ -115,7 +115,7 @@ class TestReportAndReraise:
     def test_logs_before_reraising(self) -> None:
         mock_log = _mock_logger()
         with (
-            patch("platform.observability.errors.boundary.capture_exception"),
+            patch("infrastructure.observability.errors.boundary.capture_exception"),
             pytest.raises(ValueError),
             report_and_reraise(logger=mock_log, message="logged"),
         ):

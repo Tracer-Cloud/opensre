@@ -1,9 +1,0 @@
-expected_incidents:
-  - rule: "error_severity"
-    severity: "high"
-    logger: "agent.auxiliary_client"
-
-expected_incident_count:
-  warning_burst: "==0"
-  error_severity: "==1"
-  traceback: "==0"

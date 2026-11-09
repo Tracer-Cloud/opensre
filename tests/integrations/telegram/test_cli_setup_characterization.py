@@ -74,7 +74,7 @@ def telegram(monkeypatch: pytest.MonkeyPatch) -> _Telegram:
         telegram_setup,
         "TELEGRAM_SETUP",
         dataclasses.replace(
-            telegram_setup.TELEGRAM_SETUP, verify=_fake_verify, resolve=_fake_resolve
+            telegram_setup.TELEGRAM_SETUP, guide=None, verify=_fake_verify, resolve=_fake_resolve
         ),
     )
     monkeypatch.setattr(
@@ -145,15 +145,24 @@ def test_typed_channel_name_is_stored_as_the_resolved_numeric_id(
     assert telegram.store[0][1]["credentials"]["default_chat_id"] == _CHAT_ID
 
 
-def test_blank_chat_id_is_rejected(monkeypatch: pytest.MonkeyPatch, telegram: _Telegram) -> None:
-    """Token-only setup used to be allowed; it produces an undeliverable integration."""
-    _prompts(monkeypatch, telegram, _TOKEN, "")
+def test_blank_chat_id_is_asked_again_not_accepted(
+    monkeypatch: pytest.MonkeyPatch, telegram: _Telegram
+) -> None:
+    """Token-only setup used to be allowed; it produces an undeliverable integration.
 
-    with pytest.raises(SystemExit):
-        cli._setup_telegram()
+    A blank chat id is refused at the prompt and asked again — never saved,
+    never a fatal exit that throws the user out of setup.
+    """
+    # Arrange — blank chat id first, then a real one on the re-ask
+    _prompts(monkeypatch, telegram, _TOKEN, "", _CHAT_REFERENCE)
 
-    assert telegram.verified == []
-    assert telegram.store == []
+    # Act
+    cli._setup_telegram()
+
+    # Assert — the chat id was asked twice; nothing verified/saved until it was real
+    labels = [label for label, _secret in telegram.asked]
+    assert labels.count("Default chat ID or @channelname") == 2
+    assert telegram.verified and telegram.store
 
 
 def test_unreachable_chat_exits_without_saving(
@@ -169,19 +178,20 @@ def test_unreachable_chat_exits_without_saving(
     assert (telegram.store, telegram.keyring, telegram.env) == ([], [], [])
 
 
-def test_blank_token_exits_before_the_next_prompt(
+def test_blank_token_is_asked_again_before_the_next_prompt(
     monkeypatch: pytest.MonkeyPatch, telegram: _Telegram
 ) -> None:
-    """Fail on the field that is blank, not after working through the rest."""
-    _prompts(monkeypatch, telegram, "")
+    """Catch the blank field where it happens — re-ask it — not after the rest."""
+    # Arrange — blank token, then the real token, then the chat id
+    _prompts(monkeypatch, telegram, "", _TOKEN, _CHAT_REFERENCE)
 
-    with pytest.raises(SystemExit):
-        cli._setup_telegram()
+    # Act
+    cli._setup_telegram()
 
-    # Only the token was asked for — the chat id prompt is never reached.
-    assert [label for label, _secret in telegram.asked] == ["Telegram bot token"]
-    assert telegram.verified == []
-    assert telegram.store == []
+    # Assert — the token prompt ran twice before the chat id prompt was ever reached
+    labels = [label for label, _secret in telegram.asked]
+    assert labels[:2] == ["Telegram bot token", "Telegram bot token"]
+    assert telegram.verified and telegram.store
 
 
 def test_failed_verification_exits_without_saving(

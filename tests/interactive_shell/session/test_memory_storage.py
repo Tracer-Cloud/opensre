@@ -86,15 +86,3 @@ def test_append_tool_call_reopens_finalized_session() -> None:
     records = storage.read(session.session_id)
     assert any(r["type"] == "tool_call" for r in records)
     assert any(r["type"] == "tool_result" for r in records)
-
-
-def test_append_investigation_result_returns_id() -> None:
-    storage = InMemorySessionStore()
-    session = _session(storage)
-    storage.open_session(session)
-    inv_id = storage.append_investigation_result(
-        session.session_id, {"root_cause": "leak", "problem_md": "report"}, trigger="t"
-    )
-    inv = next(r for r in storage.read(session.session_id) if r["type"] == "investigation_result")
-    assert inv["investigation_id"] == inv_id
-    assert inv["root_cause"] == "leak"

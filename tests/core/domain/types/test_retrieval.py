@@ -246,7 +246,7 @@ class TestToolMetadataRetrieval:
 
     def test_tool_metadata_default_retrieval_controls(self) -> None:
         """ToolMetadata defaults to no retrieval controls."""
-        from core.tool_framework.metadata import ToolMetadata
+        from core.tool.contracts import ToolMetadata
 
         metadata = ToolMetadata(
             name="test_tool",
@@ -258,7 +258,7 @@ class TestToolMetadataRetrieval:
 
     def test_tool_metadata_with_retrieval_controls(self) -> None:
         """ToolMetadata with explicit retrieval controls."""
-        from core.tool_framework.metadata import ToolMetadata
+        from core.tool.contracts import ToolMetadata
 
         controls = RetrievalControls(time_bounds=True, limit=True)
         metadata = ToolMetadata(
@@ -281,7 +281,7 @@ class TestBaseToolRetrieval:
         from typing import Any, ClassVar
 
         from core.domain.types.evidence import EvidenceSource
-        from core.tool_framework.base import BaseTool
+        from core.tool.contracts import BaseTool
 
         class SimpleTool(BaseTool):
             name: ClassVar[str] = "simple_tool"
@@ -301,7 +301,7 @@ class TestBaseToolRetrieval:
         from typing import Any, ClassVar
 
         from core.domain.types.evidence import EvidenceSource
-        from core.tool_framework.base import BaseTool
+        from core.tool.contracts import BaseTool
 
         class ControlledTool(BaseTool):
             name: ClassVar[str] = "controlled_tool"
@@ -327,7 +327,7 @@ class TestBaseToolRetrieval:
         from typing import Any, ClassVar
 
         from core.domain.types.evidence import EvidenceSource
-        from core.tool_framework.base import BaseTool
+        from core.tool.contracts import BaseTool
 
         class ParentTool(BaseTool):
             name: ClassVar[str] = "parent"

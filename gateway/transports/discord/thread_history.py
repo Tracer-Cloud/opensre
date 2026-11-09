@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from core.agent_harness.session import SessionCore
+from core.agent_harness import SessionCore
 from gateway.core.session import seed_session_history
 
 logger = logging.getLogger(__name__)

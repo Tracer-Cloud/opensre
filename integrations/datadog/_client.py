@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations.datadog.client import DatadogAsyncClient, DatadogClient, DatadogConfig
 
 _DEFAULT_SITE = "datadoghq.com"

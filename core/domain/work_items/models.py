@@ -7,12 +7,15 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Final, TypedDict
 
 MAX_TITLE_CHARS = 240
 MAX_PROJECT_CHARS = 80
 MAX_OWNER_CHARS = 80
 MAX_NOTES_CHARS = 4_000
+DATETIME_TEXT_MAX: Final[int] = 64
+CHANNEL_PROVIDER_MAX: Final[int] = 40
+CHANNEL_CHAT_ID_MAX: Final[int] = 200
 
 
 class WorkItemStatus(StrEnum):
@@ -51,13 +54,31 @@ class WorkItemChannelTarget:
         }
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any] | None) -> WorkItemChannelTarget:
+    def from_mapping(cls, data: Mapping[str, object] | None) -> WorkItemChannelTarget:
         if data is None:
             return cls()
         return cls(
-            provider=_clean_short_text(data.get("provider", ""), max_chars=40).lower(),
-            chat_id=_clean_short_text(data.get("chat_id", ""), max_chars=200),
+            provider=_clean_short_text(
+                data.get("provider", ""), max_chars=CHANNEL_PROVIDER_MAX
+            ).lower(),
+            chat_id=_clean_short_text(data.get("chat_id", ""), max_chars=CHANNEL_CHAT_ID_MAX),
         )
+
+
+class WorkItemUpdates(TypedDict, total=False):
+    """Validated field patch accepted by :func:`update_work_item_fields`."""
+
+    title: str
+    status: str | WorkItemStatus
+    priority: str | WorkItemPriority
+    project: str
+    owner: str
+    notes: str
+    due_at: str
+    remind_at: str
+    last_reminded_at: str
+    channel: WorkItemChannelTarget | Mapping[str, str]
+    channel_targets: Sequence[WorkItemChannelTarget | Mapping[str, str]]
 
 
 @dataclass(frozen=True)
@@ -90,7 +111,7 @@ class WorkItem:
     def is_active(self) -> bool:
         return self.status is not WorkItemStatus.COMPLETED
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "id": self.id,
             "title": self.title,
@@ -112,16 +133,24 @@ class WorkItem:
         }
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> WorkItem:
+    def from_mapping(cls, data: Mapping[str, object]) -> WorkItem:
         now = now_iso()
         title = _clean_title(data.get("title") or data.get("text") or "")
         if not title:
             raise ValueError("work item title cannot be empty")
-        item_id = _clean_short_text(data.get("id", ""), max_chars=64) or _generate_work_item_id()
-        created_at = _clean_short_text(data.get("created_at", ""), max_chars=64) or now
-        updated_at = _clean_short_text(data.get("updated_at", ""), max_chars=64) or created_at
+        item_id = (
+            _clean_short_text(data.get("id", ""), max_chars=DATETIME_TEXT_MAX)
+            or _generate_work_item_id()
+        )
+        created_at = (
+            _clean_short_text(data.get("created_at", ""), max_chars=DATETIME_TEXT_MAX) or now
+        )
+        updated_at = (
+            _clean_short_text(data.get("updated_at", ""), max_chars=DATETIME_TEXT_MAX) or created_at
+        )
+        raw_channel = data.get("channel")
         channel = WorkItemChannelTarget.from_mapping(
-            data.get("channel") if isinstance(data.get("channel"), Mapping) else None
+            raw_channel if isinstance(raw_channel, Mapping) else None
         )
         channel_targets = _parse_channel_targets(data.get("channel_targets"))
         if not channel_targets and channel.provider:
@@ -135,16 +164,20 @@ class WorkItem:
             project=_clean_short_text(data.get("project", ""), max_chars=MAX_PROJECT_CHARS),
             owner=_clean_short_text(data.get("owner", ""), max_chars=MAX_OWNER_CHARS),
             notes=_clean_notes(data.get("notes", "")),
-            due_at=_clean_short_text(data.get("due_at", ""), max_chars=64),
-            remind_at=_clean_short_text(data.get("remind_at", ""), max_chars=64),
+            due_at=_clean_short_text(data.get("due_at", ""), max_chars=DATETIME_TEXT_MAX),
+            remind_at=_clean_short_text(data.get("remind_at", ""), max_chars=DATETIME_TEXT_MAX),
             channel=primary_channel,
             channel_targets=channel_targets,
             source=_clean_short_text(data.get("source", ""), max_chars=80),
             created_by=_clean_short_text(data.get("created_by", ""), max_chars=120),
             created_at=created_at,
             updated_at=updated_at,
-            completed_at=_clean_short_text(data.get("completed_at", ""), max_chars=64),
-            last_reminded_at=_clean_short_text(data.get("last_reminded_at", ""), max_chars=64),
+            completed_at=_clean_short_text(
+                data.get("completed_at", ""), max_chars=DATETIME_TEXT_MAX
+            ),
+            last_reminded_at=_clean_short_text(
+                data.get("last_reminded_at", ""), max_chars=DATETIME_TEXT_MAX
+            ),
         )
 
 
@@ -184,8 +217,8 @@ def make_work_item(
         project=_clean_short_text(project, max_chars=MAX_PROJECT_CHARS),
         owner=_clean_short_text(owner, max_chars=MAX_OWNER_CHARS),
         notes=_clean_notes(notes),
-        due_at=_clean_short_text(due_at, max_chars=64),
-        remind_at=_clean_short_text(remind_at, max_chars=64),
+        due_at=_clean_short_text(due_at, max_chars=DATETIME_TEXT_MAX),
+        remind_at=_clean_short_text(remind_at, max_chars=DATETIME_TEXT_MAX),
         channel=primary_channel,
         channel_targets=normalized_targets,
         source=_clean_short_text(source, max_chars=80),
@@ -195,60 +228,72 @@ def make_work_item(
     )
 
 
-def update_work_item_fields(item: WorkItem, changes: Mapping[str, Any]) -> WorkItem:
+def update_work_item_fields(item: WorkItem, changes: WorkItemUpdates) -> WorkItem:
     """Return *item* with validated field updates applied."""
-    updates: dict[str, Any] = {"updated_at": now_iso()}
+    title = item.title
     if "title" in changes:
         title = _clean_title(changes["title"])
         if not title:
             raise ValueError("work item title cannot be empty")
-        updates["title"] = title
+
+    status = item.status
+    completed_at = item.completed_at
     if "status" in changes:
         status = parse_status(changes["status"])
-        updates["status"] = status
-        updates["completed_at"] = now_iso() if status is WorkItemStatus.COMPLETED else ""
-    if "priority" in changes:
-        updates["priority"] = parse_priority(changes["priority"])
-    if "project" in changes:
-        updates["project"] = _clean_short_text(changes["project"], max_chars=MAX_PROJECT_CHARS)
-    if "owner" in changes:
-        updates["owner"] = _clean_short_text(changes["owner"], max_chars=MAX_OWNER_CHARS)
-    if "notes" in changes:
-        updates["notes"] = _clean_notes(changes["notes"])
-    if "due_at" in changes:
-        updates["due_at"] = _clean_short_text(changes["due_at"], max_chars=64)
-    if "remind_at" in changes:
-        updates["remind_at"] = _clean_short_text(changes["remind_at"], max_chars=64)
-    if "last_reminded_at" in changes:
-        updates["last_reminded_at"] = _clean_short_text(changes["last_reminded_at"], max_chars=64)
+        completed_at = now_iso() if status is WorkItemStatus.COMPLETED else ""
+
+    priority = parse_priority(changes["priority"]) if "priority" in changes else item.priority
+    project = (
+        _clean_short_text(changes["project"], max_chars=MAX_PROJECT_CHARS)
+        if "project" in changes
+        else item.project
+    )
+    owner = (
+        _clean_short_text(changes["owner"], max_chars=MAX_OWNER_CHARS)
+        if "owner" in changes
+        else item.owner
+    )
+    notes = _clean_notes(changes["notes"]) if "notes" in changes else item.notes
+    due_at = (
+        _clean_short_text(changes["due_at"], max_chars=DATETIME_TEXT_MAX)
+        if "due_at" in changes
+        else item.due_at
+    )
+    remind_at = (
+        _clean_short_text(changes["remind_at"], max_chars=DATETIME_TEXT_MAX)
+        if "remind_at" in changes
+        else item.remind_at
+    )
+    last_reminded_at = (
+        _clean_short_text(changes["last_reminded_at"], max_chars=DATETIME_TEXT_MAX)
+        if "last_reminded_at" in changes
+        else item.last_reminded_at
+    )
+
+    channel = item.channel
+    channel_targets = item.channel_targets
     if "channel" in changes:
-        raw_channel = changes["channel"]
-        if isinstance(raw_channel, WorkItemChannelTarget):
-            updates["channel"] = raw_channel
-        elif isinstance(raw_channel, Mapping):
-            updates["channel"] = WorkItemChannelTarget.from_mapping(raw_channel)
-        else:
-            raise ValueError("channel must be a mapping")
+        channel = _coerce_channel(changes["channel"])
     if "channel_targets" in changes:
-        raw_targets = changes["channel_targets"]
-        if isinstance(raw_targets, Sequence) and not isinstance(raw_targets, str):
-            normalized_targets = dedupe_channel_targets(
-                [
-                    target
-                    if isinstance(target, WorkItemChannelTarget)
-                    else WorkItemChannelTarget.from_mapping(target)
-                    if isinstance(target, Mapping)
-                    else WorkItemChannelTarget()
-                    for target in raw_targets
-                ]
-            )
-            updates["channel_targets"] = normalized_targets
-            updates["channel"] = (
-                normalized_targets[0] if normalized_targets else WorkItemChannelTarget()
-            )
-        else:
-            raise ValueError("channel_targets must be a list")
-    return replace(item, **updates)
+        channel_targets = _coerce_channel_targets(changes["channel_targets"])
+        channel = channel_targets[0] if channel_targets else WorkItemChannelTarget()
+
+    return replace(
+        item,
+        title=title,
+        status=status,
+        priority=priority,
+        project=project,
+        owner=owner,
+        notes=notes,
+        due_at=due_at,
+        remind_at=remind_at,
+        last_reminded_at=last_reminded_at,
+        channel=channel,
+        channel_targets=channel_targets,
+        updated_at=now_iso(),
+        completed_at=completed_at,
+    )
 
 
 def mark_work_item_completed(item: WorkItem) -> WorkItem:
@@ -267,14 +312,14 @@ def mark_work_item_reminded(item: WorkItem) -> WorkItem:
     return replace(item, updated_at=now_iso(), last_reminded_at=now_iso())
 
 
-def parse_status(value: Any) -> WorkItemStatus:
+def parse_status(value: object) -> WorkItemStatus:
     try:
         return WorkItemStatus(str(value).strip().lower())
     except ValueError as exc:
         raise ValueError(f"invalid work item status: {value!r}") from exc
 
 
-def parse_priority(value: Any) -> WorkItemPriority:
+def parse_priority(value: object) -> WorkItemPriority:
     try:
         return WorkItemPriority(str(value).strip().lower())
     except ValueError as exc:
@@ -287,8 +332,8 @@ def dedupe_channel_targets(
     seen: set[tuple[str, str]] = set()
     unique: list[WorkItemChannelTarget] = []
     for target in targets:
-        provider = _clean_short_text(target.provider, max_chars=40).lower()
-        chat_id = _clean_short_text(target.chat_id, max_chars=200)
+        provider = _clean_short_text(target.provider, max_chars=CHANNEL_PROVIDER_MAX).lower()
+        chat_id = _clean_short_text(target.chat_id, max_chars=CHANNEL_CHAT_ID_MAX)
         if not provider:
             continue
         key = (provider, chat_id)
@@ -299,7 +344,30 @@ def dedupe_channel_targets(
     return tuple(unique)
 
 
-def _parse_channel_targets(value: Any) -> tuple[WorkItemChannelTarget, ...]:
+def _coerce_channel(value: object) -> WorkItemChannelTarget:
+    if isinstance(value, WorkItemChannelTarget):
+        return value
+    if isinstance(value, Mapping):
+        return WorkItemChannelTarget.from_mapping(value)
+    raise ValueError("channel must be a mapping")
+
+
+def _coerce_channel_targets(value: object) -> tuple[WorkItemChannelTarget, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, str):
+        raise ValueError("channel_targets must be a list")
+    return dedupe_channel_targets(
+        [
+            target
+            if isinstance(target, WorkItemChannelTarget)
+            else WorkItemChannelTarget.from_mapping(target)
+            if isinstance(target, Mapping)
+            else WorkItemChannelTarget()
+            for target in value
+        ]
+    )
+
+
+def _parse_channel_targets(value: object) -> tuple[WorkItemChannelTarget, ...]:
     if not isinstance(value, Sequence) or isinstance(value, str):
         return ()
     targets: list[WorkItemChannelTarget] = []
@@ -315,19 +383,22 @@ def _generate_work_item_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _clean_title(value: Any) -> str:
+def _clean_title(value: object) -> str:
     return " ".join(str(value or "").split())[:MAX_TITLE_CHARS]
 
 
-def _clean_notes(value: Any) -> str:
+def _clean_notes(value: object) -> str:
     return str(value or "").strip()[:MAX_NOTES_CHARS]
 
 
-def _clean_short_text(value: Any, *, max_chars: int) -> str:
+def _clean_short_text(value: object, *, max_chars: int) -> str:
     return " ".join(str(value or "").split())[:max_chars]
 
 
 __all__ = [
+    "CHANNEL_CHAT_ID_MAX",
+    "CHANNEL_PROVIDER_MAX",
+    "DATETIME_TEXT_MAX",
     "MAX_NOTES_CHARS",
     "MAX_OWNER_CHARS",
     "MAX_PROJECT_CHARS",
@@ -338,6 +409,7 @@ __all__ = [
     "WorkItemChannelTarget",
     "WorkItemPriority",
     "WorkItemStatus",
+    "WorkItemUpdates",
     "dedupe_channel_targets",
     "make_work_item",
     "mark_work_item_completed",

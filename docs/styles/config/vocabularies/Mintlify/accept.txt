@@ -124,6 +124,7 @@ pg_stat_statements
 prefetch
 replayable
 Supabase
+Neon
 Trendshift
 Trello
 repos
@@ -144,7 +145,6 @@ FastAPI
 Groq
 Ollama
 Ollama's
-Opsgenie
 Postgres
 SuperGrok
 Toolcall
@@ -161,7 +161,6 @@ URIs
 URI
 hostnames
 hostname
-# Hermes / incident operations terms
 cron
 cooldown
 correlator
@@ -222,3 +221,6 @@ submenu
 substring
 unencrypted
 venv
+# New Relic integration docs terms
+NerdGraph
+NRQL

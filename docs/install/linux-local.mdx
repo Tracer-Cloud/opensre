@@ -1,0 +1,56 @@
+---
+title: "Linux"
+description: "Install OpenSRE on a local Linux machine and ask your first question."
+---
+
+Install OpenSRE on Linux (laptop, desktop, or a local VM), sign in to your account, then ask the agent your first question.
+
+## 1. Install
+
+```bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
+```
+
+You don't need `sudo`. The installer puts `opensre` in `~/.local/bin` (or `/usr/local/bin` when run as root) and adds that directory to your shell rc file.
+
+- **Same terminal:** where passwordless `sudo` is available (EC2 and most cloud images), the installer also links `opensre` into `/usr/local/bin` so it runs right away. Otherwise run the `source` command it prints, or open a new terminal.
+- **GitHub CLI (`gh`):** OpenSRE's GitHub chat tools use `gh`. If it's missing, the installer downloads GitHub's official, checksum-verified build next to `opensre`. If that fails, it prints the install commands for your package manager. On Ubuntu and Debian, a plain `apt install gh` fails until GitHub's apt repository is added. Set `OPENSRE_SKIP_GH_INSTALL=1` to skip this step.
+- **`--install-dir <path>`:** installs only into that directory: no `/usr/local/bin` link.
+
+### Binary compatibility
+
+Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. Use a supported Linux distribution or the [Docker guide](/install/docker).
+
+## 2. Set things up
+
+```bash
+opensre
+```
+
+Create an OpenSRE account or sign in to activate the hosted model. On a server or over SSH, open the printed link in a browser on any device and paste the code it shows; see [Sign in over SSH or on a server](/getting-started/quickstart#sign-in-over-ssh-or-on-a-server). The first prompt offers a demo; pick the CI/CD analysis of a repository on this machine, or choose **E** to skip it. Add tools later, when you need them:
+
+```bash
+opensre integrations setup <service>
+```
+
+Then verify connected tools:
+
+```bash
+opensre integrations verify
+```
+
+## 3. Ask the agent
+
+Chat with it in the shell:
+
+```bash
+opensre
+```
+
+Ask: *why is checkout latency spiking?*
+
+## Next
+
+- [Quickstart](/getting-started/quickstart) — full walkthrough with screenshots
+- [Install locally](/install/install-local) — shared VM / on-prem notes
+- [Integrations overview](/integrations) — tool catalog

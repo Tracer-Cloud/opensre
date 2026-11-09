@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from platform.masking.policy import ALL_KINDS, IdentifierKind, MaskingPolicy
+from infrastructure.safety.masking.policy import ALL_KINDS, IdentifierKind, MaskingPolicy
 
 
 def test_identifier_kind_strenum_membership() -> None:

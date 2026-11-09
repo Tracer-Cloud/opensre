@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from infrastructure.terminal.theme import SECONDARY
 from integrations.sentry import get_sentry_auth_recommendations
 from integrations.sentry.setup import SENTRY_SETUP
 from integrations.sentry_mcp.setup import SENTRY_MCP_SETUP
-from platform.terminal.theme import SECONDARY
 from surfaces.cli.wizard.configurators.spec_configurator import configure_from_spec
 
 

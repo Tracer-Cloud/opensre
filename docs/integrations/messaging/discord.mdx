@@ -1,0 +1,117 @@
+---
+title: "Discord"
+description: "Two-way OpenSRE chat in Discord DMs, channels, and threads."
+---
+
+## Overview
+
+OpenSRE's Discord integration supports **two-way gateway chat** (DMs, @mentions, active threads). The gateway connects over Discord's Gateway WebSocket with `discord.py` — you do **not** need a public `/discord/interactions` URL for normal operation.
+
+There are no registered Discord tool packages today — Discord is delivery + gateway chat.
+
+## Prerequisites
+
+- A Discord server where you can add applications (**Manage Server**).
+- An OpenSRE host running `opensre gateway start` (local or deployed).
+- Discord **Privileged Gateway Intent: Message Content** enabled for the bot (required to read @mentions and thread replies in servers).
+
+## Setup
+
+### Option 1: CLI setup
+
+```bash
+opensre integrations setup discord
+```
+
+### Option 2: Environment variables
+
+| Variable | Description |
+| --- | --- |
+| `DISCORD_BOT_TOKEN` | Bot token (**required**) |
+| `DISCORD_APPLICATION_ID` | Application ID from the Developer Portal |
+| `DISCORD_PUBLIC_KEY` | Stored for integrations; not required for gateway chat |
+| `DISCORD_DEFAULT_CHANNEL_ID` | Optional fallback channel for outbound-only delivery |
+| `DISCORD_ALLOWED_USERS` | Comma-separated Discord user snowflakes allowed to chat |
+| `DISCORD_ALLOW_OPEN_GUILD` | Set to `1` to allow any member in server channels (dogfood only). DMs still require the allowlist |
+| `DISCORD_SILO_GUILD_IDS` | Comma-separated server ids allowed to use this deployment's organization. Unset serves every server the bot is in |
+
+Discord turns are billed and stored against the organization in `ORGANIZATION_ID`. Without it every turn is refused — the bot appears online and silently does nothing, and the reason is only in the gateway log.
+
+Set `DISCORD_SILO_GUILD_IDS` on any deployment holding real credentials. Leaving it unset means any server that adds the bot inherits that organization's integrations.
+
+Approving a write action always requires `DISCORD_ALLOWED_USERS`. `DISCORD_ALLOW_OPEN_GUILD` opens chat, never approvals, so with no allowlist every Approve/Deny click is ignored.
+
+Allow yourself explicitly:
+
+```bash
+opensre messaging allow -p discord -u <your_discord_user_id>
+```
+
+Start the gateway:
+
+```bash
+opensre gateway start
+```
+
+When configured, status includes `discord: connected via gateway`.
+
+## Credentials
+
+### Create a Discord application and bot
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**.
+2. Open the **Bot** tab:
+   - Copy the **Token** (`DISCORD_BOT_TOKEN`).
+   - Enable **Message Content Intent** under **Privileged Gateway Intents**.
+3. On **General Information**, copy **Application ID** and **Public Key** (still used by setup and optional HTTP tooling).
+
+### Invite the bot with the right permissions
+
+In **OAuth2 → URL Generator**, select the `bot` scope, then bot permissions:
+
+- **View Channels**
+- **Read Message History**
+- **Send Messages**
+- **Send Messages in Threads**
+- **Embed Links**
+- **Add Reactions**
+
+Open the generated URL and add the bot to your server.
+
+## Chatting with the agent
+
+No Discord-specific tools are registered. **DM** the bot, **@mention** it in a channel, or reply in a **thread** where it is already engaged.
+
+Gateway turns use the same agent session model as Slack and Telegram: `/new`, `/help`, and `/pair <code>` work in Discord text.
+
+Each member gets their own conversation, even in a shared channel: your history and `/new` never affect a teammate's. Integrations you connect are shared by the whole organization.
+
+Pairing:
+
+```bash
+opensre messaging pair -p discord
+# then send /pair <code> to the bot
+```
+
+## Verify
+
+```bash
+opensre integrations verify discord
+```
+
+Verification checks the bot token against Discord `/users/@me` only.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Bot online but ignores channel messages** | Enable **Message Content Intent** and restart the gateway. Ensure your user id is on the allowlist (`opensre messaging status --platform discord` or `DISCORD_ALLOWED_USERS`). |
+| **Gateway shows Discord not configured** | Set `DISCORD_BOT_TOKEN` and at least one allowed user (or `DISCORD_ALLOW_OPEN_GUILD=1`). |
+| **Bot online but silent turns** | Set `ORGANIZATION_ID` — without it every turn is refused. |
+
+## Security
+
+- Prefer a dedicated Discord application for OpenSRE.
+- Keep `DISCORD_ALLOWED_USERS` set in production; treat `DISCORD_ALLOW_OPEN_GUILD=1` as dogfood only.
+- Set `DISCORD_SILO_GUILD_IDS` on deployments with real credentials.
+- Store the bot token in the store / keyring / secret manager — not in source control.

@@ -13,6 +13,7 @@ from gateway.transports.telegram.settings import (
     GatewaySettings,
     choose_authorized_users,
     choose_bot_token,
+    current_connected_chat_user_ids,
     load_gateway_settings,
     load_telegram_credentials,
     store_allowed_users,
@@ -172,6 +173,22 @@ def test_choose_authorized_users_prefers_store() -> None:
 def test_choose_authorized_users_falls_back_to_env() -> None:
     env = GatewayEnv(allowed_users=["1", "2"])
     assert choose_authorized_users(env, {}) == ["1", "2"]
+
+
+def test_choose_authorized_users_does_not_cache_connected_chat() -> None:
+    assert choose_authorized_users(GatewayEnv(), {"default_chat_id": "123456789"}) == []
+
+
+def test_current_connected_chat_follows_the_store() -> None:
+    with patch(_STORE_PATH, return_value={"credentials": {"default_chat_id": "123456789"}}):
+        assert current_connected_chat_user_ids() == ["123456789"]
+    # Hosted gateways hydrate the web-app connection under ``chat_id``.
+    with patch(_STORE_PATH, return_value={"credentials": {"chat_id": "555000111"}}):
+        assert current_connected_chat_user_ids() == ["555000111"]
+    with patch(_STORE_PATH, return_value={"credentials": {}}):
+        assert current_connected_chat_user_ids() == []
+    with patch(_STORE_PATH, side_effect=RuntimeError("boom")):
+        assert current_connected_chat_user_ids() == []
 
 
 def test_choose_authorized_users_empty_warns(

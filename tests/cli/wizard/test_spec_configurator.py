@@ -59,12 +59,12 @@ def run(monkeypatch: pytest.MonkeyPatch) -> _Run:
         state.asked.append(
             {"label": label, "default": default, "secret": secret, "allow_empty": allow_empty}
         )
-        # Mirror the real _prompt_value: a blank answer falls back to the default.
+        # Mirror the real prompt_value: a blank answer falls back to the default.
         return state.answers.get(label, "") or default
 
-    monkeypatch.setattr(spec_configurator, "_prompt_value", _fake_prompt_value)
-    monkeypatch.setattr(spec_configurator, "_integration_defaults", lambda _s: ({}, state.stored))
-    monkeypatch.setattr(spec_configurator, "_render_integration_result", lambda *_a: None)
+    monkeypatch.setattr(spec_configurator, "prompt_value", _fake_prompt_value)
+    monkeypatch.setattr(spec_configurator, "integration_defaults", lambda _s: ({}, state.stored))
+    monkeypatch.setattr(spec_configurator, "render_integration_result", lambda *_a: None)
     monkeypatch.setattr(setup_flow, "upsert_integration", lambda *_a: None)
     monkeypatch.setattr(setup_flow, "sync_env_secret", lambda *_a: None)
     monkeypatch.setattr(setup_flow, "sync_env_values", lambda *_a, **_kw: _ENV_PATH)
@@ -150,3 +150,99 @@ def test_failed_verification_re_asks_instead_of_leaving_the_wizard(run: _Run) ->
     assert title == "Demo"
     # Three fields asked twice: the first round failed, the second succeeded.
     assert len(run.asked) == 6
+
+
+_MODED_SPEC = setup_flow.IntegrationSetupSpec(
+    service="demo-moded",
+    # Mode-gated fields are optional at the spec level (as every real moded
+    # spec declares them): the un-chosen mode's fields are cleared, not asked.
+    fields=(
+        setup_flow.SetupField(
+            name="token", label="Demo token", env_var="DEMO_TOKEN", required=False
+        ),
+        setup_flow.SetupField(name="user", label="Demo user", env_var="DEMO_USER", required=False),
+        setup_flow.SetupField(
+            name="password", label="Demo password", env_var="DEMO_PASSWORD", required=False
+        ),
+    ),
+    mode_prompt="Auth method:",
+    modes=(
+        setup_flow.SetupMode(
+            value="token", label="Token", fields=("token",), required_fields=("token",)
+        ),
+        setup_flow.SetupMode(value="basic", label="Basic", fields=("user", "password")),
+    ),
+    verify=lambda _source, _config: {"status": "passed", "detail": "ok"},
+)
+
+
+def test_mode_gate_can_steer_to_a_different_mode_before_fields_are_asked(
+    run: _Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A vendor may swap the picked mode when its prerequisite is missing."""
+    # Arrange — user picks "token"; the gate finds it unusable and steers to "basic"
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "token")
+    gated_with: list[str] = []
+
+    def steer_to_basic(mode: str) -> str:
+        gated_with.append(mode)
+        return "basic"
+
+    run.answers = {"Demo user": "u", "Demo password": "p"}
+
+    # Act
+    spec_configurator.configure_from_spec(_MODED_SPEC, title="Demo", on_mode_chosen=steer_to_basic)
+
+    # Assert — the gate saw the picked mode; only the steered mode's fields were asked
+    assert gated_with == ["token"]
+    asked = [entry["label"] for entry in run.asked]
+    assert asked == ["Demo user", "Demo password"]
+
+
+def test_without_a_mode_gate_the_picked_mode_is_used_unchanged(
+    run: _Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "token")
+    run.answers = {"Demo token": "t"}
+
+    # Act
+    spec_configurator.configure_from_spec(_MODED_SPEC, title="Demo")
+
+    # Assert
+    assert [entry["label"] for entry in run.asked] == ["Demo token"]
+
+
+def test_a_field_required_by_the_chosen_mode_may_not_be_left_empty(
+    run: _Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Optional at spec level (unset in other modes), required within this mode.
+
+    AWS's role ARN: blank must be refused at the prompt, not surface later as a
+    config-model "requires either role_arn or credentials" validation error.
+    """
+    # Arrange — user picks "token"; the spec says token is required in that mode
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "token")
+    run.answers = {"Demo token": "t"}
+
+    # Act
+    spec_configurator.configure_from_spec(_MODED_SPEC, title="Demo")
+
+    # Assert — the token prompt does not allow an empty answer
+    token_prompt = next(entry for entry in run.asked if entry["label"] == "Demo token")
+    assert token_prompt["allow_empty"] is False
+
+
+def test_the_same_field_stays_optional_when_another_mode_is_chosen(
+    run: _Run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange — "basic" is chosen; its fields are optional at every level
+    monkeypatch.setattr(spec_configurator, "choose", lambda *_a, **_k: "basic")
+    run.answers = {"Demo user": "u", "Demo password": "p"}
+
+    # Act
+    spec_configurator.configure_from_spec(_MODED_SPEC, title="Demo")
+
+    # Assert
+    asked = {entry["label"]: entry["allow_empty"] for entry in run.asked}
+    assert asked == {"Demo user": True, "Demo password": True}

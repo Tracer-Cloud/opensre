@@ -1,4 +1,0 @@
-scenario_id: "002-gateway-systemd-crash-loop"
-title: "Gateway crash loop on missing legacy_bridge import (systemd Result=exit-code)"
-source: "gateway troubleshooting docs (Hermes gateway runner)"
-log_file: "errors.log"

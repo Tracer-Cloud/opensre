@@ -1,4 +1,4 @@
-"""Telegram delivery helper - posts investigation findings to Telegram Bot API."""
+"""Telegram delivery helper - posts messages to the Telegram Bot API."""
 
 from __future__ import annotations
 
@@ -8,16 +8,20 @@ import re
 from http import HTTPStatus
 from typing import Any
 
-from platform.common.truncation import truncate
-from platform.notifications.delivery_transport import post_json
-from platform.notifications.limits import MAX_MESSAGE_SIZE
-from platform.notifications.redaction import redact_token
+from infrastructure.delivery.notifications.delivery_transport import post_json
+from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
+from infrastructure.delivery.notifications.redaction import redact_token
+from infrastructure.text.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
 _MESSAGE_LIMIT = MAX_MESSAGE_SIZE
 _BOT_TOKEN_RE = re.compile(r"(bot)[^/]+(/)")
-_SIMPLE_TAG_NAMES = frozenset({"b", "i", "u", "code"})
+# Every Telegram ``parse_mode=HTML`` element that wraps content, so a cut taken
+# while one is open leaves markup the Bot API rejects. Mirrors the supported set
+# documented in ``integrations.telegram.markdown``; ``<pre>`` in particular is
+# what ``render_markdown_as_telegram_html`` emits for fenced code blocks.
+_BALANCED_TAG_NAMES = frozenset({"a", "b", "code", "i", "pre", "s", "u"})
 
 
 def _strip_trailing_incomplete_tag(chunk: str) -> str:
@@ -42,8 +46,21 @@ def _strip_trailing_partial_entity(chunk: str) -> str:
     return chunk[:amp].rstrip()
 
 
+def _parse_tag(raw_tag: str) -> tuple[str, bool]:
+    """Return ``(element_name, is_closing)`` for *raw_tag*, angle brackets included.
+
+    The name is lowercased, and empty when the tag carries none. ``<>`` and
+    ``< >`` occur in ordinary report text (a SQL ``<>`` predicate, say), so they
+    must fall through as plain text rather than being read as an element.
+    """
+    inner = raw_tag[1:-1].strip()
+    is_closing = inner.startswith("/")
+    parts = inner.removeprefix("/").split(maxsplit=1)
+    return (parts[0].lower() if parts else ""), is_closing
+
+
 def _balance_telegram_markup_tags(fragment: str) -> str:
-    """Append closing tags for open ``b``/``i``/``u``/``code``/``a`` elements at end of *fragment*."""
+    """Append closing tags for Telegram elements still open at the end of *fragment*."""
     stack: list[str] = []
     pos = 0
     while pos < len(fragment):
@@ -53,24 +70,15 @@ def _balance_telegram_markup_tags(fragment: str) -> str:
         end = fragment.find(">", pos)
         if end == -1:
             break
-        raw = fragment[pos : end + 1]
-        low = raw.lower()
-        if low.startswith("<a ") and not low.startswith("</"):
-            stack.append("a")
-        elif low == "</a>":
-            if stack and stack[-1] == "a":
-                stack.pop()
-        elif low.startswith("</"):
-            name = low[2:-1].strip().lower()
-            if name in _SIMPLE_TAG_NAMES and stack and stack[-1] == name:
-                stack.pop()
-        elif not low.startswith("<a ") and low[1] != "/":
-            name = low[1:-1].strip().lower().split()[0]
-            if name in _SIMPLE_TAG_NAMES:
+        name, is_closing = _parse_tag(fragment[pos : end + 1])
+        if name in _BALANCED_TAG_NAMES:
+            if not is_closing:
                 stack.append(name)
+            elif stack and stack[-1] == name:
+                stack.pop()
         pos = end + 1
 
-    return fragment + "".join(f"</{t}>" for t in reversed(stack))
+    return fragment + "".join(f"</{tag}>" for tag in reversed(stack))
 
 
 def truncate_for_telegram_html(text: str, max_len: int, suffix: str = "…") -> str:
@@ -128,9 +136,13 @@ def post_telegram_message(
     parse_mode: str = "",
     reply_to_message_id: str = "",
     reply_markup: dict[str, Any] | None = None,
+    *,
+    link_previews: bool = True,
 ) -> tuple[bool, str, str]:
     """Call Telegram Bot API sendMessage endpoint.
 
+    ``link_previews=False`` posts without the preview card Telegram adds for
+    the first link (a report lists many links; previews bury it).
     Returns (success, error, message_id).
     """
     logger.debug("[telegram] post message params chat_id: %s", chat_id)
@@ -139,6 +151,8 @@ def post_telegram_message(
         payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
+    if not link_previews:
+        payload["link_preview_options"] = {"is_disabled": True}
     if reply_to_message_id and reply_to_message_id != "0":
         with contextlib.suppress(ValueError, TypeError):
             payload["reply_to_message_id"] = int(reply_to_message_id)
@@ -158,8 +172,9 @@ def post_telegram_message(
             )
         else:
             error_message = response.text or f"HTTP {response.status_code}"
-        logger.warning("[telegram] post message failed: %s", error_message)
-        return False, error_message, ""
+        safe_error = redact_token(error_message, bot_token)
+        logger.warning("[telegram] post message failed: %s", safe_error)
+        return False, safe_error, ""
     result = response.data.get("result", {})
     message_id = str(result.get("message_id") or "") if isinstance(result, dict) else ""
     return True, "", message_id

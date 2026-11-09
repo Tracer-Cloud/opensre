@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from gateway.core.runtime.approvals import APPROVE_ACTION_ID
+from gateway.core.middleware.approvals import APPROVE_ACTION_ID
 from gateway.transports.discord.approvals import handle_component_interaction
 
 

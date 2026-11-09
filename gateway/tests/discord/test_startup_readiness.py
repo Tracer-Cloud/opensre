@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from gateway.core.runtime.errors import GatewayTransportFailedError
+from gateway.core.lifecycle.errors import GatewayTransportFailedError
 from gateway.transports.discord import startup
 from gateway.transports.discord.settings import DiscordGatewaySettings
 

@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
+from infrastructure.errors import OpenSREError
 from integrations.rocketchat.credentials import (
     RocketChatCredentials,
     load_credentials_from_env,
 )
-from platform.common.errors import OpenSREError
 
 _ROCKETCHAT_ENV_VARS = (
     "ROCKETCHAT_SERVER_URL",
@@ -33,7 +33,7 @@ def _isolate_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for env_var in _ROCKETCHAT_ENV_VARS:
         monkeypatch.delenv(env_var, raising=False)
     monkeypatch.setattr(
-        "platform.scheduler.credentials._get_integration_credential",
+        "infrastructure.scheduling.scheduler.credentials._get_integration_credential",
         lambda *_: "",
     )
     monkeypatch.setattr(

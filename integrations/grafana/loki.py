@@ -59,8 +59,8 @@ class LokiMixin:
         end_ns = int(time.time() * 1e9)
         start_ns = end_ns - (time_range_minutes * 60 * int(1e9))
 
-        if limit > _MAX_LOKI_LOG_LINES:
-            limit = _MAX_LOKI_LOG_LINES + 1
+        requested_limit = limit
+        limit = min(limit, _MAX_LOKI_LOG_LINES)
 
         params: dict[str, str] = {
             "query": query,
@@ -95,6 +95,9 @@ class LokiMixin:
 
                 if truncated:
                     break
+
+            if requested_limit > _MAX_LOKI_LOG_LINES and len(logs) == _MAX_LOKI_LOG_LINES:
+                truncated = True
 
             return {
                 "success": True,

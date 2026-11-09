@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from config.config import LLMSettings
 from config.llm_auth.provider_catalog import PROVIDER_SPECS
 from config.llm_models import PROVIDER_MODEL_DEFAULTS, model_config_for
+from config.llm_settings import LLMSettings
 
 
 def test_provider_model_defaults_cover_tiered_provider_specs() -> None:
@@ -15,9 +15,14 @@ def test_provider_model_defaults_cover_tiered_provider_specs() -> None:
         defaults = PROVIDER_MODEL_DEFAULTS[spec.value]
         assert defaults.provider == spec.value
         assert defaults.settings_key
-        assert defaults.reasoning
-        assert defaults.classification
-        assert defaults.toolcall
+        if defaults.requires_explicit_models:
+            assert not defaults.reasoning
+            assert not defaults.classification
+            assert not defaults.toolcall
+        else:
+            assert defaults.reasoning
+            assert defaults.classification
+            assert defaults.toolcall
 
 
 def test_provider_model_defaults_settings_keys_match_llm_settings() -> None:

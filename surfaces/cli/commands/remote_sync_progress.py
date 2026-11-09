@@ -6,9 +6,9 @@ from typing import Any
 
 import click
 
-from platform.filestorage.engine import SyncProgress
-from platform.filestorage.enums import SyncDirection
-from platform.filestorage.messages import direction_label, sanitize_terminal_text
+from infrastructure.filestorage.engine import SyncProgress
+from infrastructure.filestorage.enums import SyncDirection
+from infrastructure.filestorage.messages import direction_label, sanitize_terminal_text
 
 
 class CliProgress:

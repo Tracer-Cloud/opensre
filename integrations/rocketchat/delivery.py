@@ -1,20 +1,16 @@
-"""Rocket.Chat delivery helper - posts investigation findings via the REST API."""
+"""Rocket.Chat delivery helper - posts messages via the REST API."""
 
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 from typing import Any
 
-from platform.common.truncation import truncate
-from platform.notifications.delivery_errors import extract_http_error
-from platform.notifications.delivery_transport import post_json
-from platform.notifications.limits import MAX_MESSAGE_SIZE
-from platform.notifications.redaction import redact_token
+from infrastructure.delivery.notifications.delivery_errors import extract_http_error
+from infrastructure.delivery.notifications.delivery_transport import post_json
+from infrastructure.delivery.notifications.redaction import redact_token
 
 logger = logging.getLogger(__name__)
-
-_ATTACHMENT_TEXT_LIMIT = MAX_MESSAGE_SIZE
-_REPORT_COLOR = "#E74C3C"
 
 
 def _rocketchat_auth_headers(auth_token: str, user_id: str) -> dict[str, str]:
@@ -48,7 +44,7 @@ def post_rocketchat_message(
         safe_error = redact_token(response.error, auth_token)
         logger.warning("[rocketchat] post message exception: %s", safe_error)
         return False, safe_error, ""
-    if response.status_code != 200 or response.data.get("success") is not True:
+    if response.status_code != HTTPStatus.OK or response.data.get("success") is not True:
         error_message = extract_http_error(response.data, response.status_code, response.text)
         safe_error = redact_token(error_message, auth_token)
         logger.warning("[rocketchat] post message failed: %s", safe_error)
@@ -76,38 +72,9 @@ def post_rocketchat_webhook(
         safe_error = redact_token(response.error, webhook_url)
         logger.warning("[rocketchat] webhook post exception: %s", safe_error)
         return False, safe_error
-    if response.status_code != 200 or response.data.get("success") is not True:
+    if response.status_code != HTTPStatus.OK or response.data.get("success") is not True:
         error_message = extract_http_error(response.data, response.status_code, response.text)
         safe_error = redact_token(error_message, webhook_url)
         logger.warning("[rocketchat] webhook post failed: %s", safe_error)
         return False, safe_error
     return True, ""
-
-
-def send_rocketchat_report(report: str, rocketchat_ctx: dict[str, Any]) -> tuple[bool, str]:
-    """Deliver an investigation report via webhook when configured, else PAT."""
-    attachment = {
-        "title": "Investigation Complete",
-        "text": truncate(report, _ATTACHMENT_TEXT_LIMIT, suffix="…"),
-        "color": _REPORT_COLOR,
-    }
-    webhook_url: str = str(rocketchat_ctx.get("webhook_url") or "")
-    if webhook_url:
-        posted, error = post_rocketchat_webhook(
-            webhook_url, "OpenSRE Investigation", attachments=[attachment]
-        )
-        return (True, "") if posted else (False, error)
-
-    server_url: str = str(rocketchat_ctx.get("server_url") or "")
-    channel: str = str(rocketchat_ctx.get("channel") or "")
-    auth_token: str = str(rocketchat_ctx.get("auth_token") or "")
-    user_id: str = str(rocketchat_ctx.get("user_id") or "")
-    posted, error, _ = post_rocketchat_message(
-        server_url,
-        channel,
-        "OpenSRE Investigation",
-        auth_token,
-        user_id,
-        attachments=[attachment],
-    )
-    return (True, "") if posted else (False, error)

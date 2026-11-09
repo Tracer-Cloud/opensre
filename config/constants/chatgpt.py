@@ -1,0 +1,10 @@
+"""ChatGPT public-client OAuth and plan-usage endpoints."""
+
+CHATGPT_ISSUER = "https://auth.openai.com"
+CHATGPT_AUTHORIZE_URL = f"{CHATGPT_ISSUER}/api/accounts/authorize"
+CHATGPT_TOKEN_URL = f"{CHATGPT_ISSUER}/api/accounts/oauth/token"
+CHATGPT_DISCOVERY_URL = f"{CHATGPT_ISSUER}/.well-known/openid-configuration"
+CHATGPT_RESOURCE = "https://api.openai.com/v1"
+CHATGPT_DYNAMIC_CLIENT = "dynamic_agent_client"
+CHATGPT_SCOPES = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
+CHATGPT_CALLBACK_PATH = "/auth/callback"

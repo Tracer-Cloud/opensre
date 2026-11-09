@@ -1,54 +1,37 @@
 """Serve the gateway web app in a background thread.
 
-One shared FastAPI app (:mod:`gateway.web.webapp`), one port per host process: the
-gateway daemon serves it on ``PORT`` and the interactive shell serves it on the
-configured alert-listener address. ``port=0`` binds an ephemeral free port.
+The threaded-server mechanism lives in :mod:`infrastructure.asgi_server`; this module
+binds it to the gateway's own app (:mod:`gateway.web.webapp`). The daemon serves
+it on ``PORT``; ``port=0`` binds an ephemeral free port.
 """
 
 from __future__ import annotations
 
-import threading
-import time
-from dataclasses import dataclass
+from infrastructure.asgi_server import AsgiServerHandle, serve_asgi_in_thread
 
-import uvicorn
+#: The gateway web app's handle type — an alias so existing callers keep their name.
+WebAppServerHandle = AsgiServerHandle
 
 
-@dataclass
-class WebAppServerHandle:
-    server: uvicorn.Server
-    thread: threading.Thread
-    bound_host: str
-    bound_port: int
+def serve_webapp_foreground() -> None:
+    """Serve the health and alert app on ``PORT`` until the process is signaled."""
+    import os
 
-    @property
-    def bound_address(self) -> str:
-        return f"{self.bound_host}:{self.bound_port}"
+    import uvicorn
 
-    def stop(self, *, timeout: float = 5.0) -> None:
-        self.server.should_exit = True
-        self.thread.join(timeout=timeout)
+    from gateway.web.webapp import app
+
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 def serve_webapp_in_thread(
     *, host: str = "127.0.0.1", port: int = 0, startup_timeout: float = 10.0
-) -> WebAppServerHandle:
-    """Start uvicorn serving :mod:`gateway.web.webapp` and wait until it is bound."""
+) -> AsgiServerHandle:
+    """Serve :mod:`gateway.web.webapp` in a thread and wait until it is bound."""
     from gateway.web.webapp import app
 
-    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_config=None))
-    thread = threading.Thread(target=server.run, name="gateway-web", daemon=True)
-    thread.start()
-
-    deadline = time.monotonic() + startup_timeout
-    while time.monotonic() < deadline:
-        if server.started and server.servers:
-            bound = server.servers[0].sockets[0].getsockname()
-            return WebAppServerHandle(server, thread, str(bound[0]), int(bound[1]))
-        if not thread.is_alive():
-            break
-        time.sleep(0.05)
-    raise RuntimeError(f"web app on {host}:{port} failed to start")
+    return serve_asgi_in_thread(app, host=host, port=port, startup_timeout=startup_timeout)
 
 
-__all__ = ["WebAppServerHandle", "serve_webapp_in_thread"]
+__all__ = ["WebAppServerHandle", "serve_webapp_foreground", "serve_webapp_in_thread"]

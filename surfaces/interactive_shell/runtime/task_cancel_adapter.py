@@ -11,22 +11,10 @@ from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared.execution_policy import ExecutionPolicyResult
+from tools.interactive_shell.shared.host_contracts import ExecutionGate
 
 
-class TaskCancelPorts(Protocol):
-    def execution_allowed(
-        self,
-        *,
-        policy: ExecutionPolicyResult,
-        session: Session,
-        console: Console,
-        action_summary: str,
-        confirm_fn: Callable[[str], str] | None,
-        is_tty: bool | None,
-        action_already_listed: bool,
-    ) -> bool:
-        raise NotImplementedError
-
+class TaskCancelPorts(ExecutionGate, Protocol):
     def dispatch_cancel(
         self,
         command: str,

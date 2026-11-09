@@ -1,7 +1,7 @@
 """Socket-level guard: no wizard test may open a real outbound connection.
 
 The onboarding wizard validates LLM credentials with a *live* provider request
-(``validate_provider_credentials``, ``surfaces/cli/wizard/validation.py``). Every
+(``validate_provider_credentials``, ``surfaces/shared/llm_setup/validation.py``). Every
 wizard test that walks the API-key path must therefore stub that call out. The
 danger is that a *mis-patched* stub fails open rather than closed:
 

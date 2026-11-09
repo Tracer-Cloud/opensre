@@ -18,12 +18,12 @@ from config.constants.tenancy import (
     INTEGRATIONS_SECRET_ARN_ENV,
     INTEGRATIONS_STORE_PATH_ENV,
 )
-from gateway.core.runtime.credential_hydration import (
+from gateway.core.lifecycle.controller import GatewayController
+from gateway.core.lifecycle.credential_hydration import (
     CredentialHydrationConfig,
     GatewayCredentialHydrator,
 )
-from gateway.core.runtime.errors import GatewayConfigurationError
-from gateway.core.runtime.manager import GatewayManager
+from gateway.core.lifecycle.errors import GatewayConfigurationError
 from integrations import store
 from integrations.credentials_api import IntegrationStoreV2
 
@@ -80,7 +80,7 @@ def test_hydrates_exact_secret_and_atomically_writes_private_v2_store(
     path = tmp_path / "home" / ".opensre" / "integrations.json"
     monkeypatch.setattr(store, "STORE_PATH", path)
     monkeypatch.setattr(
-        "gateway.core.runtime.credential_hydration.CredentialsApiClient",
+        "gateway.core.lifecycle.credential_hydration.CredentialsApiClient",
         _ApiClient,
     )
     secrets = _Secrets(json.dumps({"credentials_api_token": "bootstrap-token"}))
@@ -255,6 +255,7 @@ def test_environment_configures_the_integrations_secret(
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org-a")
     monkeypatch.setenv(CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV, "arn:bootstrap")
     monkeypatch.setenv(INTEGRATIONS_SECRET_ARN_ENV, "arn:integrations")
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, "/tmp/opensre/integrations.json")
     monkeypatch.delenv(CREDENTIALS_API_URL_ENV, raising=False)
 
     config = CredentialHydrationConfig.from_environment()
@@ -262,6 +263,23 @@ def test_environment_configures_the_integrations_secret(
     assert config is not None
     assert config.integrations_secret_arn == "arn:integrations"
     assert config.credentials_api_url is None
+
+
+def test_the_secret_route_needs_an_explicit_store_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transports read the store unscoped and turns read it under the organization's
+    scope; without an explicit path those are two files, so the silo must not start."""
+    # Arrange
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org-a")
+    monkeypatch.setenv(CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV, "arn:bootstrap")
+    monkeypatch.setenv(INTEGRATIONS_SECRET_ARN_ENV, "arn:integrations")
+    monkeypatch.delenv(CREDENTIALS_API_URL_ENV, raising=False)
+    monkeypatch.delenv(INTEGRATIONS_STORE_PATH_ENV, raising=False)
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="explicit integrations store path"):
+        CredentialHydrationConfig.from_environment()
 
 
 def test_partial_environment_configuration_is_rejected(
@@ -291,7 +309,7 @@ def test_manager_fails_closed_with_generic_error() -> None:
         # The fake only needs hydrate(); cast keeps the factory signature honest.
         return cast(GatewayCredentialHydrator, BrokenHydrator())
 
-    manager = GatewayManager(credential_hydrator_factory=_broken_hydrator)
+    manager = GatewayController(credential_hydrator_factory=_broken_hydrator)
 
     with pytest.raises(GatewayConfigurationError, match="hydration failed"):
         manager._load_credentials(logging.getLogger("test"))
@@ -323,7 +341,7 @@ def test_integrations_secret_wins_when_both_routes_are_configured(
     # Arrange: both routes configured, each yielding a distinguishable service.
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "integrations.json")
     monkeypatch.setattr(
-        "gateway.core.runtime.credential_hydration.CredentialsApiClient",
+        "gateway.core.lifecycle.credential_hydration.CredentialsApiClient",
         _ApiClient,
     )
     bootstrap_arn = "arn:aws:secretsmanager:region:account:secret:bootstrap"

@@ -15,8 +15,29 @@ from typing import Any
 from pydantic import Field, field_validator
 
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_validation_failure
+from integrations.clickhouse.telemetry import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
+
+__all__ = [
+    "ClickHouseConfig",
+    "ClickHouseValidationResult",
+    "ClickHouseEvidenceConfig",
+    "ClickHouseEvidenceReader",
+    "DEFAULT_CLICKHOUSE_PORT",
+    "DEFAULT_CLICKHOUSE_DATABASE",
+    "DEFAULT_CLICKHOUSE_USER",
+    "DEFAULT_CLICKHOUSE_TIMEOUT_SECONDS",
+    "DEFAULT_CLICKHOUSE_MAX_RESULTS",
+    "clickhouse_is_available",
+    "clickhouse_extract_params",
+    "build_clickhouse_config",
+    "clickhouse_config_from_env",
+    "validate_clickhouse_config",
+    "get_query_activity",
+    "get_system_health",
+    "get_table_stats",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -166,8 +187,9 @@ def get_query_activity(
 ) -> dict[str, Any]:
     """Retrieve recent query activity from system.query_log.
 
-    Read-only: queries system.query_log for recent completed queries.
-    Results capped at config.max_results.
+    Read-only: queries system.query_log for recent completed and failed
+    queries, excluding QueryStart records whose duration and result are not
+    yet known. Results capped at config.max_results.
     """
     if not config.is_configured:
         return tool_unavailable("clickhouse", "Not configured.")
@@ -188,7 +210,7 @@ def get_query_activity(
                 "  memory_usage, "
                 "  event_time "
                 "FROM system.query_log "
-                "WHERE type = 'QueryFinish' "
+                "WHERE type != 'QueryStart' "
                 "ORDER BY event_time DESC "
                 "LIMIT %(limit)s",
                 parameters={"limit": effective_limit},

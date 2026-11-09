@@ -62,7 +62,7 @@ def test_verify_smtp_reports_validation_errors() -> None:
 def test_classify_validation_failure_reports_without_secret_value() -> None:
     secret = "smtp-secret-password"
 
-    with patch("integrations._validation_helpers.report_exception") as mock_report:
+    with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_report:
         result = classify(
             {
                 "host": "smtp.example.com",

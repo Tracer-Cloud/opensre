@@ -12,9 +12,9 @@ from rich.console import Console
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.tools.action_tools import get_action_tool
-from gateway.core.runtime.turn_handler import GatewayTurnHandler
+from infrastructure.turn_host.turn_runner import TurnRunner
 from tests.core.agent.orchestration.cross_surface_parity_harness import (
-    RecordingGatewaySink,
+    RecordingTurnOutput,
     headless_slash_ports,
 )
 
@@ -23,10 +23,10 @@ def _gateway_console() -> Console:
     return Console(file=io.StringIO(), force_terminal=False, highlight=False, width=100)
 
 
-def _run_gateway_slash(message: str) -> RecordingGatewaySink:
+def _run_gateway_slash(message: str) -> RecordingTurnOutput:
     session = SessionCore(store=InMemorySessionStore())
-    sink = RecordingGatewaySink()
-    handler = GatewayTurnHandler(
+    sink = RecordingTurnOutput()
+    handler = TurnRunner(
         console=_gateway_console(),
         slash_ports_factory=headless_slash_ports,
     )
@@ -35,7 +35,7 @@ def _run_gateway_slash(message: str) -> RecordingGatewaySink:
 
 
 def test_gateway_registers_slash_invoke_tool() -> None:
-    """Harness adapters wired at gateway boot must expose slash_invoke to action turns."""
+    """Harness adapters registered at gateway boot must expose slash_invoke to action turns."""
     slash = get_action_tool("slash_invoke")
     assert slash is not None
     assert slash.name == "slash_invoke"
@@ -47,39 +47,6 @@ def test_gateway_status_slash_is_not_swallowed() -> None:
     assert sink.finalized is not None
     assert "I didn't have anything to add for that." not in sink.finalized
     assert "interactions" in sink.finalized.lower()
-
-
-def test_gateway_investigate_slash_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Literal /investigate <template> must run the investigation slash handler."""
-
-    def _fake_run_sample_alert_for_session(**_kwargs: object) -> dict[str, object]:
-        return {"status": "completed", "summary": "parity investigation ok"}
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.investigation_adapter.run_sample_alert_for_session",
-        _fake_run_sample_alert_for_session,
-    )
-
-    sink = _run_gateway_slash("/investigate generic")
-    assert sink.finalized is not None
-    assert "I didn't have anything to add for that." not in sink.finalized
-    assert "generic" in sink.finalized.lower()
-
-
-def test_gateway_investigate_discord_alert_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Discord maps slash alert text to /investigate alert:<text>."""
-
-    def _fake_run_investigation_for_session(**_kwargs: object) -> dict[str, object]:
-        return {"status": "completed", "summary": "discord alert ok"}
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.investigation_adapter.run_investigation_for_session",
-        _fake_run_investigation_for_session,
-    )
-
-    sink = _run_gateway_slash("/investigate alert:High error rate on checkout")
-    assert sink.finalized is not None
-    assert "failed" not in (sink.finalized or "").lower()
 
 
 def test_gateway_onboard_slash_returns_headless_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,13 +88,15 @@ def test_gateway_integrations_setup_returns_headless_guidance(
         _fake_run_cli_command,
     )
 
+    monkeypatch.setenv("OPENSRE_WEBAPP_URL", "https://app.opensre.com")
     sink = _run_gateway_slash("/integrations setup grafana")
     assert recorded == []
     assert sink.finalized is not None
-    assert "grafana" in sink.finalized.lower()
+    assert "Configure Grafana" in sink.finalized
+    assert "https://app.opensre.com/integrations/grafana" in sink.finalized
+    assert "uv run" not in sink.finalized
     assert "succeeded" not in sink.finalized.lower()
     assert "timed out" not in sink.finalized.lower()
-    assert "uv run opensre integrations setup grafana" in sink.finalized
     assert "Launching" not in (sink.finalized or "")
 
 
@@ -136,7 +105,7 @@ def test_gateway_integrations_setup_returns_headless_guidance_even_with_tty(
 ) -> None:
     """Gateway SessionCore returns headless guidance even when stdin is a TTY (e.g. tmux)."""
     monkeypatch.setattr(
-        "surfaces.interactive_shell.ui.components.choice_menu.repl_tty_interactive",
+        "surfaces.shared.terminal.components.choice_menu.repl_tty_interactive",
         lambda: True,
     )
     recorded: list[list[str]] = []
@@ -176,9 +145,8 @@ def test_gateway_manager_registers_harness_adapters(monkeypatch: pytest.MonkeyPa
     reset_process_runtime_for_tests()
     # Registration happens in bootstrap.process via GATEWAY_PROFILE.
     monkeypatch.setattr("bootstrap.process.install_harness_adapters", _record("adapters"))
-    monkeypatch.setattr("bootstrap.process.install_scheduler_runners", _record("runners"))
     monkeypatch.setattr(
-        "platform.observability.errors.sentry.init_sentry",
+        "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(
@@ -186,28 +154,28 @@ def test_gateway_manager_registers_harness_adapters(monkeypatch: pytest.MonkeyPa
         lambda: None,
     )
     monkeypatch.setattr(
-        "platform.sandbox.capabilities.boot_capability_warnings",
+        "infrastructure.safety.sandbox.capabilities.boot_capability_warnings",
         lambda: [],
     )
-    from gateway.channels import ChannelsHandle
+    from gateway.startup import StartedGateway
 
     monkeypatch.setattr(
-        "gateway.core.runtime.manager.gateway_channels.start_channels",
-        lambda **_kwargs: ChannelsHandle(),
+        "gateway.core.lifecycle.controller.gateway_startup.start_gateway",
+        lambda **_kwargs: StartedGateway(),
     )
     # Keep this test focused on adapter registration (life-cycle tests cover scheduler).
     monkeypatch.setattr(
-        "gateway.core.runtime.manager.GatewayManager.start_scheduler",
+        "gateway.core.lifecycle.controller.GatewayController.start_scheduler",
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "gateway.core.runtime.manager.GatewayManager._publish_status",
+        "gateway.core.lifecycle.controller.GatewayController._publish_status",
         lambda *_args, **_kwargs: None,
     )
 
-    from gateway.core.runtime.manager import GatewayManager
+    from gateway.core.lifecycle.controller import GatewayController
 
-    GatewayManager().start_gateway(wait=False)
+    GatewayController().start_gateway(wait=False)
 
     # GATEWAY_PROFILE registers adapters at boot; scheduler runners come later,
     # when the scheduler stage starts.

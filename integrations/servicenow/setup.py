@@ -15,9 +15,9 @@ from config.constants.servicenow import (
     SERVICENOW_PASSWORD_ENV,
     SERVICENOW_USERNAME_ENV,
 )
+from infrastructure.text.url_validation import validate_https_or_loopback_http_url
 from integrations.servicenow.verifier import verify_servicenow
 from integrations.setup_flow import IntegrationSetupSpec, ResolvedCredentials, SetupField
-from platform.common.url_validation import validate_https_or_loopback_http_url
 
 INSTANCE_URL_FIELD = "instance_url"
 USERNAME_FIELD = "username"

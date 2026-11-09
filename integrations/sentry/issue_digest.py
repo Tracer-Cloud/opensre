@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from integrations.sentry.issue_clustering import (
-    cluster_name_for_issue,
     structural_cluster_key_for_issue,
     structural_cluster_label,
 )
@@ -248,7 +247,6 @@ __all__ = [
     "build_scope_metadata",
     "business_impact_score",
     "classify_issue",
-    "cluster_name_for_issue",
     "scope_summary_for_digest",
     "slim_issue",
     "stats_period_label",

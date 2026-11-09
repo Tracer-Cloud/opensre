@@ -4,9 +4,9 @@ from unittest.mock import patch
 
 import pytest
 
+from gateway.core.middleware.identity_policy import persist_policy_if_needed
 from gateway.transports.slack.processing.security import (
     enforce_inbound_slack_message_security,
-    persist_policy_if_needed,
 )
 from integrations.messaging_security import MessagingIdentityPolicy
 
@@ -16,8 +16,8 @@ _SECURITY = "gateway.transports.slack.processing.security"
 @pytest.fixture
 def mock_integration_store():
     with (
-        patch(f"{_SECURITY}.get_integration", return_value=None),
-        patch(f"{_SECURITY}.upsert_instance") as upsert,
+        patch("gateway.core.middleware.identity_policy.get_integration", return_value=None),
+        patch("gateway.core.middleware.identity_policy.upsert_instance") as upsert,
     ):
         yield upsert
 
@@ -90,7 +90,7 @@ def test_pair_attempt_persists_policy(mock_integration_store) -> None:
     )
     with (
         patch(
-            f"{_SECURITY}._load_policy",
+            f"{_SECURITY}.load_identity_policy",
             return_value=(None, policy),
         ),
         patch(
@@ -105,7 +105,7 @@ def test_pair_attempt_persists_policy(mock_integration_store) -> None:
             env_allowed_user_ids=[],
         )
     assert decision.persist_policy is True
-    persist_policy_if_needed(decision)
+    persist_policy_if_needed("slack", decision)
     mock_integration_store.assert_called_once()
 
 
@@ -117,7 +117,7 @@ def test_pair_under_open_workspace_keeps_stored_pairing_state() -> None:
         pairing_secret_hash="abc",
     )
     with (
-        patch(f"{_SECURITY}._load_policy", return_value=(None, stored)),
+        patch(f"{_SECURITY}.load_identity_policy", return_value=(None, stored)),
         patch(f"{_SECURITY}.complete_pairing", return_value=(True, "Pairing successful!")) as pair,
     ):
         decision = enforce_inbound_slack_message_security(

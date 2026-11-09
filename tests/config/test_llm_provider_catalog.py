@@ -6,7 +6,7 @@ from config.llm_auth.provider_catalog import (
     PROVIDER_SPECS,
 )
 from integrations.llm_cli.registry import CLI_PROVIDER_REGISTRY
-from surfaces.cli.wizard.config import SUPPORTED_PROVIDERS
+from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
 
 
 def test_provider_catalog_values_are_unique() -> None:

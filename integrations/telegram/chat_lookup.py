@@ -22,7 +22,7 @@ from typing import Any
 
 import requests
 
-from platform.notifications.redaction import redact_token
+from infrastructure.delivery.notifications.redaction import redact_token
 
 _GET_CHAT_TIMEOUT_SECONDS = 10
 

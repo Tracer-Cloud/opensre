@@ -47,3 +47,19 @@ def test_repl_boot_import_stays_lazy() -> None:
         "importing surfaces.interactive_shell.main eagerly pulled modules that "
         f"must load lazily: {loaded}"
     )
+
+
+def test_loading_the_tool_registry_leaves_the_kubernetes_sdk_unloaded() -> None:
+    """The first menu waits for the registry; the EKS and Kubernetes tools put the SDK (~0.7s) on it."""
+    check = (
+        "import sys; from surfaces.cli.app import cli; from surfaces.cli import startup; "
+        "startup.run(cli, []); "
+        "from core.agent_harness.tools import registered_single_turn_tool_names; "
+        "registered_single_turn_tool_names(); "
+        "print('kubernetes' in sys.modules)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", check], check=True, capture_output=True, text=True
+    )
+
+    assert result.stdout.split()[-1] == "False"

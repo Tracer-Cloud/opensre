@@ -1,7 +1,0 @@
-2026-05-11 18:21:14,949 INFO [20260511_180601_82f04a] agent.run_agent: API call #5: model=Qwen3.6-35B-A3B-Uncensored-Heretic-MLX-4bit provider=custom in=65101 out=202 total=65303 latency=7.5s cache=63488/65101 (98%)
-2026-05-11 18:21:22,698 INFO [20260511_180601_82f04a] tools.tool_result_storage: Inline-truncating large tool result: mcp_firecrawl_firecrawl_search (279549 chars, no sandbox write)
-2026-05-11 18:21:22,833 ERROR agent.run_agent: Streaming failed before delivery: Error code: 400 - {'error': {'message': 'Prompt too long: 65798 tokens exceeds max context window of 65536 tokens', 'type': 'invalid_request_error'}}
-2026-05-11 18:23:35,967 INFO [20260511_180601_82f04a] agent.run_agent: context compression done: session=20260511_182335_35b1a4 messages=14->14 tokens=~71,173
-2026-05-11 18:23:36,092 ERROR agent.run_agent: Streaming failed before delivery: Error code: 400 - {'error': {'message': 'Prompt too long: 78723 tokens exceeds max context window of 65536 tokens', 'type': 'invalid_request_error'}}
-2026-05-11 18:23:56,763 ERROR agent.run_agent: Streaming failed before delivery: Error code: 400 - {'error': {'message': 'Prompt too long: 78748 tokens exceeds max context window of 65536 tokens', 'type': 'invalid_request_error'}}
-2026-05-11 18:24:16,535 ERROR agent.run_agent: Streaming failed before delivery: Error code: 400 - {'error': {'message': 'Prompt too long: 78786 tokens exceeds max context window of 65536 tokens', 'type': 'invalid_request_error'}}

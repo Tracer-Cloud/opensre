@@ -31,14 +31,14 @@ from integrations.git import (
     push_branch,
     short_head,
 )
-from integrations.github.client import resolve_github_token
-from integrations.github.pull_requests import (
+from integrations.github import (
     ERR_GITHUB_TOKEN as GH_PR_ERR_GITHUB_TOKEN,
 )
-from integrations.github.pull_requests import (
+from integrations.github import (
     GitHubPullRequestError,
     PullRequest,
     open_pull_request,
+    resolve_github_token,
 )
 from tools.cross_vendor.fix_sentry_issue.errors import (
     ERR_GITHUB_TOKEN,
@@ -176,7 +176,12 @@ def ship_fix(
     # leaves the user's changes on that branch, so tag it onto the error for the
     # caller to surface for manual recovery instead of reporting an empty branch.
     try:
-        commit_paths(workspace, changed, _commit_message(issue_id, sentry_url, result.summary))
+        commit_paths(
+            workspace,
+            changed,
+            _commit_message(issue_id, sentry_url, result.summary),
+            analytics_workflow="sentry_fix",
+        )
         push_branch(workspace, branch, base_default=base, token=token or None)
         pr = open_pull_request(
             workspace,

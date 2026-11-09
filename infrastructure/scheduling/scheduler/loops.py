@@ -1,0 +1,893 @@
+"""Loop-friendly view, creation, and starter definitions for scheduled tasks."""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
+from config.constants.scheduler import WEEKDAY_CRON_FIELD
+from config.scope_handoff import acting_scope
+from core.agent_harness import pin_recurring_skill
+from infrastructure.scheduling.scheduler.credentials import (
+    resolve_slack_credentials,
+    resolve_slack_default_chat_id,
+    resolve_telegram_credentials,
+    resolve_telegram_default_chat_id,
+)
+from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_CHANNELS_PARAM,
+    LOOP_CREATED_BY_PARAM,
+    LOOP_DESCRIPTION_PARAM,
+    LOOP_EMAIL_ACCOUNT_PARAM,
+    LOOP_EMAIL_TO_PARAM,
+    LOOP_GROUP_ID_PARAM,
+    LOOP_MIGRATION_NOTICE_PARAM,
+    LOOP_MODE_AGENT,
+    LOOP_MODE_PARAM,
+    LOOP_MODE_REPORT,
+    LOOP_MODES,
+    LOOP_PRIVATE_PARAM,
+    LOOP_PROMPT_PARAM,
+    LOOP_REPORT_ARGS_PARAM,
+    LOOP_REPORT_PARAM,
+    LOOP_SHELL_CREATOR,
+    LOOP_SLACK_CHAT_ID_PARAM,
+    LOOP_SLUG_PARAM,
+    LOOP_SOURCE_PARAM,
+    LOOP_STATUS_ACTIVE,
+    LOOP_STATUS_DRAFT,
+    LOOP_STATUS_PAUSED,
+    LOOP_TELEGRAM_CHAT_ID_PARAM,
+    LOOP_TIME_PARAM,
+)
+from infrastructure.scheduling.scheduler.loop_owner import loop_is_private, loop_owner
+from infrastructure.scheduling.scheduler.loop_prompt import (
+    current_loop_description,
+    current_loop_prompt,
+)
+from infrastructure.scheduling.scheduler.operation_log import (
+    record_scheduler_loop_operation,
+    record_scheduler_task_operation,
+)
+from infrastructure.scheduling.scheduler.runner import compute_next_run
+from infrastructure.scheduling.scheduler.storage import (
+    add_task,
+    list_tasks,
+    patch_scheduler_skill_definition,
+    patch_task_definitions,
+    remove_task,
+)
+from infrastructure.scheduling.scheduler.task_visibility import visible_to_current_scope
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+
+_ONBOARDING_LOOP_SOURCE = "onboarding"
+_MANUAL_LOOP_SOURCE = "manual"
+_LEGACY_MORNING_REPORT_PROMPT = (
+    "Summarize the reliability picture for the last 24 hours: notable "
+    "alerts, error spikes, and anything on-call should know this morning."
+)
+_TIME_RE = re.compile(
+    r"^(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<meridiem>am|pm)?$",
+    re.IGNORECASE,
+)
+
+SUPPORTED_MANUAL_LOOP_CHANNELS: tuple[Provider, ...] = (
+    Provider.TELEGRAM,
+    Provider.SLACK,
+    Provider.EMAIL,
+    Provider.INTERACTIVE_SHELL,
+)
+#: An email loop's account: the owner's SMTP record or Gmail (Pipedream) account.
+_EMAIL_ACCOUNT_KINDS = ("smtp", "gmail")
+_EMAIL_ADDRESS = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
+_MAX_EMAIL_RECIPIENTS = 20
+
+
+@dataclass(frozen=True, slots=True)
+class StarterLoop:
+    """A draft loop created during onboarding as a practical template."""
+
+    slug: str
+    name: str
+    description: str
+    kind: TaskKind
+    cron: str
+    timezone: str
+    window_hours: int
+    prompt: str = ""
+    skill_name: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ManualLoop:
+    """The persisted task plus display metadata for a newly created loop."""
+
+    task: ScheduledTask
+    channels: tuple[Provider, ...]
+    next_run: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LoopSummary:
+    """Display-ready scheduled loop details."""
+
+    id: str
+    task_ids: tuple[str, ...]
+    name: str
+    description: str
+    prompt: str
+    kind: TaskKind
+    cron: str
+    timezone: str
+    provider: Provider
+    chat_id: str
+    channels: tuple[str, ...]
+    enabled: bool
+    window_hours: int
+    last_run: str | None
+    next_run: str | None
+    schedule_error: str = ""
+    mode: str = LOOP_MODE_REPORT
+    #: The member who created it ("" when a process did).
+    owner: str = ""
+    #: The owner's own loop: it runs as them and only they see or change it.
+    private: bool = False
+
+    @property
+    def status(self) -> str:
+        """Active while enabled; a disabled loop that has run is paused, one that never ran a draft."""
+        if self.enabled:
+            return LOOP_STATUS_ACTIVE
+        return LOOP_STATUS_PAUSED if self.last_run else LOOP_STATUS_DRAFT
+
+    @property
+    def time(self) -> str:
+        """Human-readable execution time for simple cron schedules."""
+        return loop_time_label(self.cron)
+
+
+@dataclass(frozen=True, slots=True)
+class LoopMutation:
+    """Result of changing one loop group."""
+
+    summary: LoopSummary
+    task_ids: tuple[str, ...]
+
+    @property
+    def task_count(self) -> int:
+        return len(self.task_ids)
+
+
+STARTER_LOOPS: tuple[StarterLoop, ...] = (
+    StarterLoop(
+        slug="morning-report",
+        name="Morning report",
+        description="Weekday weather and news briefing.",
+        kind=TaskKind.RECURRING_SKILL,
+        cron=f"0 8 * * {WEEKDAY_CRON_FIELD}",
+        timezone="UTC",
+        window_hours=24,
+        skill_name="delivering-morning-briefings",
+    ),
+    StarterLoop(
+        slug="weekly-alert-audit",
+        name="Weekly alert audit",
+        description="Monday review of noisy and actionable alert patterns.",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="0 9 * * mon",
+        timezone="UTC",
+        window_hours=168,
+        prompt=(
+            "Review alert activity over the last week: which alerts were noisy, "
+            "which were actionable, and what tuning would reduce noise."
+        ),
+    ),
+    StarterLoop(
+        slug="pr-sweep",
+        name="PR sweep",
+        description="Weekday standup digest for stale, blocked, or ready pull requests.",
+        kind=TaskKind.GITHUB_PR_SWEEP,
+        cron=f"0 9 * * {WEEKDAY_CRON_FIELD}",
+        timezone="UTC",
+        window_hours=24,
+    ),
+)
+
+_KIND_LABELS: dict[TaskKind, str] = {
+    TaskKind.MANUAL_LOOP: "Manual loop",
+    TaskKind.SENTRY_MORNING_DIGEST: "Sentry morning digest",
+    TaskKind.SENTRY_UPTIME_WATCH: "Sentry uptime watch",
+    TaskKind.GITHUB_PR_SWEEP: "GitHub PR sweep",
+    TaskKind.RECURRING_SKILL: "Recurring skill",
+}
+
+
+def loop_name(task: ScheduledTask) -> str:
+    """Return the human label for a scheduled task."""
+    if task.name.strip():
+        return task.name.strip()
+    slug = task.params.get(LOOP_SLUG_PARAM, "").strip()
+    if slug:
+        return slug.replace("-", " ").title()
+    return _KIND_LABELS.get(task.kind, task.kind.value.replace("_", " ").title())
+
+
+def loop_description(task: ScheduledTask) -> str:
+    """Return optional loop description metadata."""
+    return current_loop_description(task.params)
+
+
+def loop_channels(task: ScheduledTask) -> tuple[Provider, ...]:
+    """Return the providers a loop task delivers to."""
+    raw = task.params.get(LOOP_CHANNELS_PARAM, "").strip()
+    if not raw:
+        return (task.provider,)
+
+    providers: list[Provider] = []
+    seen: set[Provider] = set()
+    for part in raw.split(","):
+        value = part.strip().lower()
+        if not value:
+            continue
+        try:
+            provider = Provider(value)
+        except ValueError:
+            continue
+        if provider not in seen:
+            providers.append(provider)
+            seen.add(provider)
+    return tuple(providers) or (task.provider,)
+
+
+def loop_time_label(cron: str) -> str:
+    """Return ``HH:MM`` when ``cron`` has a fixed hour/minute schedule."""
+    parts = cron.split()
+    if len(parts) != 5:
+        return ""
+    minute, hour = parts[0], parts[1]
+    if not (minute.isdigit() and hour.isdigit()):
+        return ""
+    return f"{int(hour):02d}:{int(minute):02d}"
+
+
+def cron_for_time(time_text: str, *, weekdays: bool = False) -> str:
+    """Build a daily or weekday cron expression from a human time string."""
+    hour, minute = parse_loop_time(time_text)
+    day_of_week = WEEKDAY_CRON_FIELD if weekdays else "*"
+    return f"{minute} {hour} * * {day_of_week}"
+
+
+def parse_loop_time(time_text: str) -> tuple[int, int]:
+    """Parse ``HH:MM``/``8am`` style input into ``(hour, minute)``."""
+    text = time_text.strip().lower()
+    match = _TIME_RE.fullmatch(text)
+    if match is None:
+        raise ValueError("time must look like 08:30, 8, 8am, or 8:30pm")
+
+    hour = int(match.group("hour"))
+    minute = int(match.group("minute") or "0")
+    meridiem = match.group("meridiem")
+
+    if minute > 59:
+        raise ValueError("minute must be between 00 and 59")
+    if meridiem:
+        if hour < 1 or hour > 12:
+            raise ValueError("12-hour time must use an hour between 1 and 12")
+        if meridiem == "am":
+            hour = 0 if hour == 12 else hour
+        else:
+            hour = 12 if hour == 12 else hour + 12
+    elif hour > 23:
+        raise ValueError("24-hour time must use an hour between 0 and 23")
+    return hour, minute
+
+
+def default_loop_channels() -> tuple[Provider, ...]:
+    """Return every currently reachable default loop delivery channel."""
+    channels: list[Provider] = []
+    telegram_creds = resolve_telegram_credentials({})
+    if telegram_creds.get("bot_token") and resolve_telegram_default_chat_id({}):
+        channels.append(Provider.TELEGRAM)
+
+    slack_creds = resolve_slack_credentials({})
+    if slack_creds.get("webhook_url") or (
+        slack_creds.get("access_token") and resolve_slack_default_chat_id({})
+    ):
+        channels.append(Provider.SLACK)
+
+    channels.append(Provider.INTERACTIVE_SHELL)
+    return tuple(channels)
+
+
+def normalize_loop_channels(
+    requested_channels: Sequence[str] | None,
+    *,
+    telegram_chat_id: str = "",
+    slack_chat_id: str = "",
+    email_to: str = "",
+    email_account: str = "",
+) -> tuple[Provider, ...]:
+    """Normalize requested loop channels, defaulting to all reachable handles."""
+    if not requested_channels:
+        channels = default_loop_channels()
+    else:
+        expanded = _expand_channel_values(requested_channels)
+        if "all" in expanded:
+            channels = default_loop_channels()
+        else:
+            channels = tuple(_provider_from_channel(value) for value in expanded)
+
+    channels = _dedupe_providers(channels)
+    for channel in channels:
+        _validate_channel_ready(
+            channel,
+            telegram_chat_id=telegram_chat_id,
+            slack_chat_id=slack_chat_id,
+            email_to=email_to,
+            email_account=email_account,
+        )
+    return channels
+
+
+def create_manual_loop(
+    *,
+    name: str,
+    prompt: str,
+    time_text: str = "",
+    timezone: str = "UTC",
+    weekdays: bool = False,
+    cron: str = "",
+    channels: Sequence[str] | None = None,
+    telegram_chat_id: str = "",
+    slack_chat_id: str = "",
+    email_to: str = "",
+    email_account: str = "",
+    window_hours: int = 24,
+    store_path: Path | None = None,
+    report: str = "",
+    report_args: Mapping[str, str] | None = None,
+    mode: str = LOOP_MODE_REPORT,
+    extra_params: Mapping[str, str] | None = None,
+    private: bool | None = None,
+) -> ManualLoop:
+    """Create an active recurring prompt loop.
+
+    ``report`` names a deterministic report builder the runner uses instead
+    of a model turn; ``prompt`` then documents the loop and is the fallback
+    when the builder is not installed. ``mode`` selects the tick framing:
+    ``report`` produces a report body only, ``agent`` lets the tick act with
+    the tools the prompt names. ``extra_params`` (e.g. the webapp request a
+    loop was created from) is stored with the loop and never overrides it.
+    ``private`` makes it the creating member's own loop (see ``loop_owner``);
+    ``None`` leaves it shared.
+    """
+    loop_prompt = prompt.strip()
+    if not loop_prompt:
+        raise ValueError("prompt is required")
+    if window_hours < 1:
+        raise ValueError("window_hours must be at least 1")
+    loop_mode = mode.strip() or LOOP_MODE_REPORT
+    if loop_mode not in LOOP_MODES:
+        raise ValueError(f"mode must be one of {', '.join(LOOP_MODES)}")
+
+    cron_expr = " ".join(cron.split())
+    if not cron_expr:
+        if not time_text.strip():
+            raise ValueError("time is required unless --cron is provided")
+        cron_expr = cron_for_time(time_text, weekdays=weekdays)
+    if report.strip() != CI_REPAIR_REPORT_BUILDER:
+        cron_expr = cap_cron_at_most_hourly(cron_expr, timezone.strip() or "UTC")
+
+    channel_providers = normalize_loop_channels(
+        channels,
+        telegram_chat_id=telegram_chat_id,
+        slack_chat_id=slack_chat_id,
+        email_to=email_to,
+        email_account=email_account,
+    )
+    loop_id = uuid.uuid4().hex[:12]
+    params = {
+        **dict(extra_params or {}),
+        LOOP_GROUP_ID_PARAM: loop_id,
+        LOOP_SOURCE_PARAM: _MANUAL_LOOP_SOURCE,
+        LOOP_PROMPT_PARAM: loop_prompt,
+        LOOP_DESCRIPTION_PARAM: _description_from_prompt(loop_prompt),
+        LOOP_CHANNELS_PARAM: ",".join(provider.value for provider in channel_providers),
+    }
+    if acting_scope() is None:
+        # In an organization's turn the store records the member who acted instead.
+        params[LOOP_CREATED_BY_PARAM] = LOOP_SHELL_CREATOR
+    if private is not None:
+        params[LOOP_PRIVATE_PARAM] = "true" if private else "false"
+    time_label = loop_time_label(cron_expr)
+    if time_label:
+        params[LOOP_TIME_PARAM] = time_label
+    if loop_mode == LOOP_MODE_AGENT:
+        params[LOOP_MODE_PARAM] = loop_mode
+    if report.strip():
+        params[LOOP_REPORT_PARAM] = report.strip()
+        params[LOOP_REPORT_ARGS_PARAM] = json.dumps(dict(report_args or {}), sort_keys=True)
+    if telegram_chat_id.strip():
+        params[LOOP_TELEGRAM_CHAT_ID_PARAM] = telegram_chat_id.strip()
+    if slack_chat_id.strip():
+        params[LOOP_SLACK_CHAT_ID_PARAM] = slack_chat_id.strip()
+    if Provider.EMAIL in channel_providers:
+        params[LOOP_EMAIL_TO_PARAM] = ",".join(email_recipients(email_to))
+        params[LOOP_EMAIL_ACCOUNT_PARAM] = email_account.strip()
+
+    task = ScheduledTask(
+        id=loop_id,
+        name=name.strip() or _name_from_prompt(loop_prompt),
+        kind=TaskKind.MANUAL_LOOP,
+        cron=cron_expr,
+        timezone=timezone.strip() or "UTC",
+        provider=Provider.INTERACTIVE_SHELL,
+        window_hours=window_hours,
+        enabled=True,
+        params=params,
+    )
+    task.next_run = compute_next_run(task)
+    stored_task = add_task(task, store_path)
+    deduplicated = stored_task.id != task.id
+    record_scheduler_task_operation(
+        "scheduled_loop_reused" if deduplicated else "scheduled_loop_created",
+        stored_task,
+        channels=channel_providers,
+        extra={
+            "requested_task_id": task.id,
+            "deduplicated": deduplicated,
+        },
+    )
+    return ManualLoop(
+        task=stored_task,
+        channels=channel_providers,
+        next_run=stored_task.next_run or task.next_run,
+    )
+
+
+def summarize_loop(
+    task: ScheduledTask,
+    *,
+    now: datetime | None = None,
+) -> LoopSummary:
+    """Build a display summary for one scheduled task."""
+    return _summarize_group((task,), now=now)
+
+
+def summarize_loops(
+    tasks: Sequence[ScheduledTask],
+    *,
+    include_disabled: bool = True,
+    now: datetime | None = None,
+) -> list[LoopSummary]:
+    """Group already-loaded tasks into loops, sorted with active loops first."""
+    task_groups: dict[str, list[ScheduledTask]] = {}
+    for task in tasks:
+        if not include_disabled and not task.enabled:
+            continue
+        task_groups.setdefault(_loop_group_id(task), []).append(task)
+
+    summaries = [_summarize_group(tuple(group), now=now) for group in task_groups.values()]
+    return sorted(
+        summaries,
+        key=lambda loop: (not loop.enabled, loop.name.casefold(), loop.id),
+    )
+
+
+def list_loop_summaries(
+    *,
+    include_disabled: bool = True,
+    store_path: Path | None = None,
+    now: datetime | None = None,
+    read_only: bool = False,
+    include_private: bool = False,
+) -> list[LoopSummary]:
+    """Return the loops the current scope may see, sorted with active loops first.
+
+    The store is process-wide: a turn bound to an organization sees only that
+    organization's loops, so a name or id never resolves to, or lists, another's,
+    and another member's private loops only with ``include_private`` (the web
+    app sync).
+    """
+    tasks = list_tasks(store_path, read_only=True) if read_only else list_tasks(store_path)
+    visible = [
+        task for task in tasks if visible_to_current_scope(task, include_private=include_private)
+    ]
+    return summarize_loops(visible, include_disabled=include_disabled, now=now)
+
+
+def resolve_loop_summary(
+    identifier: str,
+    *,
+    include_disabled: bool = True,
+    store_path: Path | None = None,
+    now: datetime | None = None,
+    read_only: bool = False,
+    include_private: bool = False,
+) -> tuple[LoopSummary | None, str]:
+    """Resolve a loop by id prefix, task id prefix, or exact name."""
+    query = identifier.strip()
+    if not query:
+        return None, "loop id or name is required"
+
+    lowered = query.casefold()
+    matches = [
+        loop
+        for loop in list_loop_summaries(
+            include_disabled=include_disabled,
+            store_path=store_path,
+            now=now,
+            read_only=read_only,
+            include_private=include_private,
+        )
+        if loop.id.startswith(query)
+        or lowered == loop.name.casefold()
+        or any(task_id.startswith(query) for task_id in loop.task_ids)
+    ]
+    if not matches:
+        return None, f"loop {query!r} not found"
+    if len(matches) > 1:
+        options = ", ".join(loop.id for loop in matches[:5])
+        return None, f"loop id {query!r} is ambiguous: {options}"
+    return matches[0], ""
+
+
+def set_loop_enabled(
+    identifier: str,
+    *,
+    enabled: bool,
+    store_path: Path | None = None,
+    now: datetime | None = None,
+    include_private: bool = False,
+) -> tuple[LoopMutation | None, str]:
+    """Enable or disable all tasks that belong to one loop."""
+    loop, error = resolve_loop_summary(
+        identifier, store_path=store_path, now=now, include_private=include_private
+    )
+    if loop is None:
+        return None, error
+
+    def _enabled_patch(current: ScheduledTask) -> Mapping[str, object]:
+        return {"enabled": enabled, "next_run": compute_next_run(current, now) if enabled else None}
+
+    try:
+        updated = patch_task_definitions(
+            loop.task_ids, _enabled_patch, store_path, group_id=loop.id
+        )
+    except ValueError as exc:
+        return None, str(exc)
+    if updated is None:
+        return None, f"loop {loop.id!r} has no persisted tasks"
+    [refreshed_loop] = summarize_loops(updated, now=now)
+    mutation = LoopMutation(summary=refreshed_loop, task_ids=tuple(task.id for task in updated))
+    record_scheduler_loop_operation(
+        "scheduled_loop_started" if enabled else "scheduled_loop_stopped",
+        mutation.summary,
+        task_ids=mutation.task_ids,
+    )
+    return mutation, ""
+
+
+def delete_loop(
+    identifier: str,
+    *,
+    store_path: Path | None = None,
+    now: datetime | None = None,
+    include_private: bool = False,
+) -> tuple[LoopMutation | None, str]:
+    """Delete all tasks that belong to one loop."""
+    loop, error = resolve_loop_summary(
+        identifier, store_path=store_path, now=now, include_private=include_private
+    )
+    if loop is None:
+        return None, error
+
+    removed: list[str] = []
+    for task_id in loop.task_ids:
+        if not remove_task(task_id, store_path):
+            return None, f"loop task {task_id!r} could not be removed"
+        removed.append(task_id)
+    mutation = LoopMutation(summary=loop, task_ids=tuple(removed))
+    record_scheduler_loop_operation(
+        "scheduled_loop_deleted",
+        loop,
+        task_ids=mutation.task_ids,
+    )
+    return mutation, ""
+
+
+def seed_starter_loops(store_path: Path | None = None) -> list[ScheduledTask]:
+    """Create onboarding starter loops once.
+
+    Starter loops are drafts: they show concrete cron examples without silently
+    posting to a user's chat destination. Users can create an active loop with
+    ``/loops add`` or the natural-language schedule flow.
+    """
+    existing_by_slug = {
+        task.params.get(LOOP_SLUG_PARAM, "").strip(): task
+        for task in list_tasks(store_path)
+        if task.params.get(LOOP_SOURCE_PARAM) == _ONBOARDING_LOOP_SOURCE
+    }
+    added: list[ScheduledTask] = []
+    for starter in STARTER_LOOPS:
+        existing = existing_by_slug.get(starter.slug)
+        if existing is not None:
+            upgraded = _upgrade_legacy_skill_starter(existing, starter, store_path=store_path)
+            if upgraded is not None:
+                added.append(upgraded)
+            continue
+        params = {
+            LOOP_SLUG_PARAM: starter.slug,
+            LOOP_SOURCE_PARAM: _ONBOARDING_LOOP_SOURCE,
+            LOOP_DESCRIPTION_PARAM: starter.description,
+            LOOP_CHANNELS_PARAM: Provider.INTERACTIVE_SHELL.value,
+        }
+        if starter.prompt:
+            params[LOOP_PROMPT_PARAM] = starter.prompt
+        skill_name = ""
+        skill_revision = ""
+        if starter.skill_name:
+            skill_name, skill_revision = pin_recurring_skill(starter.skill_name)
+        task = ScheduledTask(
+            name=starter.name,
+            kind=starter.kind,
+            cron=starter.cron,
+            timezone=starter.timezone,
+            provider=Provider.INTERACTIVE_SHELL,
+            window_hours=starter.window_hours,
+            enabled=False,
+            params=params,
+            skill_name=skill_name,
+            skill_revision=skill_revision,
+        )
+        stored_task = add_task(task, store_path)
+        record_scheduler_task_operation("scheduled_loop_seeded", stored_task)
+        added.append(stored_task)
+    return added
+
+
+def _upgrade_legacy_skill_starter(
+    task: ScheduledTask,
+    starter: StarterLoop,
+    *,
+    store_path: Path | None,
+) -> ScheduledTask | None:
+    """Upgrade only an untouched disabled onboarding prompt to its named skill."""
+    if not starter.skill_name:
+        return None
+
+    upgraded = False
+
+    def _upgrade_current(current: ScheduledTask) -> Mapping[str, object]:
+        nonlocal upgraded
+        if (
+            current.enabled
+            or current.kind is not TaskKind.MANUAL_LOOP
+            or current.params.get(LOOP_SOURCE_PARAM) != _ONBOARDING_LOOP_SOURCE
+            or current.params.get(LOOP_PROMPT_PARAM) != _LEGACY_MORNING_REPORT_PROMPT
+            or current.skill_name
+        ):
+            return {}
+        skill_name, skill_revision = pin_recurring_skill(starter.skill_name)
+        params = dict(current.params)
+        params.pop(LOOP_PROMPT_PARAM, None)
+        params[LOOP_DESCRIPTION_PARAM] = starter.description
+        upgraded = True
+        return {
+            "kind": TaskKind.RECURRING_SKILL,
+            "skill_name": skill_name,
+            "skill_revision": skill_revision,
+            "skill_inputs": {},
+            "params": params,
+        }
+
+    stored = patch_scheduler_skill_definition(task.id, _upgrade_current, store_path)
+    if stored is None or not upgraded:
+        return None
+    record_scheduler_task_operation(
+        "scheduled_loop_upgraded",
+        stored,
+        extra={"from_kind": TaskKind.MANUAL_LOOP.value},
+    )
+    return stored
+
+
+def _summarize_group(
+    tasks: tuple[ScheduledTask, ...],
+    *,
+    now: datetime | None,
+) -> LoopSummary:
+    representative = sorted(tasks, key=lambda task: (task.created_at, task.id))[0]
+    next_runs: list[str] = []
+    schedule_errors = [
+        notice
+        for task in tasks
+        if (notice := task.params.get(LOOP_MIGRATION_NOTICE_PARAM, "").strip())
+    ]
+    for task in tasks:
+        try:
+            computed_next_run = compute_next_run(task, now)
+        except ValueError as exc:
+            schedule_errors.append(str(exc))
+        else:
+            if computed_next_run:
+                next_runs.append(computed_next_run)
+
+    channels: list[str] = []
+    seen_channels: set[str] = set()
+    for task in tasks:
+        for provider in loop_channels(task):
+            if provider.value not in seen_channels:
+                channels.append(provider.value)
+                seen_channels.add(provider.value)
+
+    last_runs = [task.last_run for task in tasks if task.last_run]
+    return LoopSummary(
+        id=_loop_group_id(representative),
+        task_ids=tuple(task.id for task in tasks),
+        name=loop_name(representative),
+        description=loop_description(representative),
+        prompt=current_loop_prompt(representative.params),
+        kind=representative.kind,
+        cron=representative.cron,
+        timezone=representative.timezone,
+        provider=representative.provider,
+        chat_id=representative.chat_id,
+        channels=tuple(channels) or (representative.provider.value,),
+        enabled=any(task.enabled for task in tasks),
+        window_hours=representative.window_hours,
+        last_run=max(last_runs) if last_runs else None,
+        next_run=min(next_runs) if next_runs else representative.next_run,
+        schedule_error="; ".join(schedule_errors),
+        mode=representative.params.get(LOOP_MODE_PARAM, "").strip() or LOOP_MODE_REPORT,
+        owner=loop_owner(representative),
+        private=loop_is_private(representative),
+    )
+
+
+def _loop_group_id(task: ScheduledTask) -> str:
+    return task.params.get(LOOP_GROUP_ID_PARAM, "").strip() or task.id
+
+
+def _description_from_prompt(prompt: str) -> str:
+    compact = " ".join(prompt.split())
+    return compact[:120]
+
+
+def _name_from_prompt(prompt: str) -> str:
+    compact = " ".join(prompt.split())
+    if not compact:
+        return "Manual loop"
+    return compact[:48].rstrip(" .,")
+
+
+def _expand_channel_values(values: Sequence[str]) -> tuple[str, ...]:
+    expanded: list[str] = []
+    for value in values:
+        expanded.extend(part.strip().lower() for part in value.split(",") if part.strip())
+    return tuple(expanded)
+
+
+def _provider_from_channel(value: str) -> Provider:
+    normalized = value.replace("-", "_")
+    aliases = {
+        "interactive": Provider.INTERACTIVE_SHELL,
+        "shell": Provider.INTERACTIVE_SHELL,
+        "local": Provider.INTERACTIVE_SHELL,
+        Provider.INTERACTIVE_SHELL.value: Provider.INTERACTIVE_SHELL,
+    }
+    provider = aliases.get(normalized)
+    if provider is not None:
+        return provider
+    try:
+        provider = Provider(normalized)
+    except ValueError as exc:
+        allowed = ", ".join(provider.value for provider in SUPPORTED_MANUAL_LOOP_CHANNELS)
+        raise ValueError(f"unsupported loop channel {value!r}; use all, {allowed}") from exc
+    if provider not in SUPPORTED_MANUAL_LOOP_CHANNELS:
+        allowed = ", ".join(provider.value for provider in SUPPORTED_MANUAL_LOOP_CHANNELS)
+        raise ValueError(f"unsupported loop channel {value!r}; use all, {allowed}")
+    return provider
+
+
+def _dedupe_providers(providers: Sequence[Provider]) -> tuple[Provider, ...]:
+    deduped: list[Provider] = []
+    seen: set[Provider] = set()
+    for provider in providers:
+        if provider not in seen:
+            deduped.append(provider)
+            seen.add(provider)
+    return tuple(deduped)
+
+
+def email_recipients(raw: str) -> list[str]:
+    """The distinct addresses in a comma, semicolon or space separated list."""
+    seen: dict[str, str] = {}
+    for part in re.split(r"[,;\s]+", raw or ""):
+        address = part.strip()
+        if address and address.lower() not in seen:
+            seen[address.lower()] = address
+    return list(seen.values())
+
+
+def _validate_email_channel(email_to: str, email_account: str) -> None:
+    recipients = email_recipients(email_to)
+    if not recipients:
+        raise ValueError("email loop delivery needs at least one recipient address")
+    if len(recipients) > _MAX_EMAIL_RECIPIENTS:
+        raise ValueError(f"email loop delivery takes at most {_MAX_EMAIL_RECIPIENTS} recipients")
+    invalid = [address for address in recipients if not _EMAIL_ADDRESS.match(address)]
+    if invalid:
+        raise ValueError(f"not an email address: {invalid[0]}")
+    kind, _, account = email_account.strip().partition(":")
+    if kind not in _EMAIL_ACCOUNT_KINDS or not account.strip():
+        raise ValueError("email loop delivery needs the mailbox to send from (smtp:… or gmail:…)")
+
+
+def _validate_channel_ready(
+    provider: Provider,
+    *,
+    telegram_chat_id: str,
+    slack_chat_id: str,
+    email_to: str = "",
+    email_account: str = "",
+) -> None:
+    if provider == Provider.INTERACTIVE_SHELL:
+        return
+    if provider == Provider.EMAIL:
+        _validate_email_channel(email_to, email_account)
+        return
+    if provider == Provider.TELEGRAM:
+        bot_token = resolve_telegram_credentials({}).get("bot_token", "")
+        chat_id = telegram_chat_id.strip() or resolve_telegram_default_chat_id({})
+        if bot_token and chat_id:
+            return
+        raise ValueError(
+            "telegram loop delivery needs TELEGRAM_BOT_TOKEN and "
+            "TELEGRAM_DEFAULT_CHAT_ID, or pass --telegram-chat-id"
+        )
+    if provider == Provider.SLACK:
+        creds = resolve_slack_credentials({})
+        if creds.get("webhook_url") or (
+            creds.get("access_token")
+            and (slack_chat_id.strip() or resolve_slack_default_chat_id({}))
+        ):
+            return
+        raise ValueError(
+            "slack loop delivery needs SLACK_WEBHOOK_URL, or SLACK_BOT_TOKEN with "
+            "SLACK_DEFAULT_CHAT_ID / --slack-chat-id"
+        )
+
+
+__all__ = [
+    "LoopMutation",
+    "email_recipients",
+    "LoopSummary",
+    "ManualLoop",
+    "STARTER_LOOPS",
+    "SUPPORTED_MANUAL_LOOP_CHANNELS",
+    "StarterLoop",
+    "create_manual_loop",
+    "cron_for_time",
+    "default_loop_channels",
+    "delete_loop",
+    "list_loop_summaries",
+    "summarize_loops",
+    "loop_channels",
+    "loop_description",
+    "loop_name",
+    "loop_time_label",
+    "normalize_loop_channels",
+    "parse_loop_time",
+    "resolve_loop_summary",
+    "seed_starter_loops",
+    "set_loop_enabled",
+    "summarize_loop",
+]

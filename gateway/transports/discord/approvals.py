@@ -1,7 +1,7 @@
 """Discord button approval prompt for write tools.
 
 The transport-neutral half — broker, button identifiers, harness hooks — lives
-in :mod:`gateway.core.runtime.approvals`. This module renders the Discord side:
+in :mod:`gateway.core.middleware.approvals`. This module renders the Discord side:
 message components on the prompt, and click routing back to the broker.
 """
 
@@ -13,7 +13,7 @@ from typing import Any
 
 import discord
 
-from gateway.core.runtime.approvals import (
+from gateway.core.middleware.approvals import (
     APPROVE_ACTION_ID,
     DENY_ACTION_ID,
     MAX_APPROVAL_WAIT_SECONDS,

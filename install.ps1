@@ -1,13 +1,23 @@
+[CmdletBinding(DefaultParameterSetName = "untagged")]
 param(
     [ValidateSet("release", "main")]
     [string]$Channel = $(if ($env:OPENSRE_INSTALL_CHANNEL) { $env:OPENSRE_INSTALL_CHANNEL } else { "main" }),
-    [switch]$SkipMain
+    [switch]$SkipMain,
+    [Parameter(ParameterSetName = "landing_page")]
+    [switch]$lp,
+    [Parameter(ParameterSetName = "github")]
+    [switch]$gh,
+    [Parameter(ParameterSetName = "documentation")]
+    [switch]$dc
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:OpenSreProgressStep = 0
 $script:OpenSreChannelExplicit = $PSBoundParameters.ContainsKey("Channel") -or [bool]$env:OPENSRE_INSTALL_CHANNEL
+$script:OpenSreInstallOrigin = if ($lp) { "landing_page" } elseif ($gh) { "github" } elseif ($dc) { "documentation" } else { "" }
+$script:OpenSreGitHubMetadataToken = [string]$env:OPENSRE_INSTALL_GITHUB_TOKEN
+Remove-Item Env:OPENSRE_INSTALL_GITHUB_TOKEN -ErrorAction SilentlyContinue
 
 function Test-OpenSreVerboseInstall {
     $value = [string]$env:OPENSRE_INSTALL_VERBOSE
@@ -109,6 +119,11 @@ function Get-OpenSreFriendlyProgressLabel {
         $Label -like "*Fetching latest release version*" -or
         $Label -like "*Fetching release metadata*") {
         return "fetching metadata"
+    }
+
+    # More specific than ``*Preparing opensre*`` below (install warm-up step).
+    if ($Label -like "*first launch*") {
+        return "preparing first launch"
     }
 
     if ($Label -like "*Preparing opensre*") {
@@ -430,7 +445,7 @@ function Invoke-OpenSreWithRetry {
         [scriptblock]$Operation,
         [Parameter(Mandatory = $true)]
         [string]$Description,
-        [int]$MaxAttempts = 3
+        [int]$MaxAttempts = 6
     )
 
     $attempt = 1
@@ -441,7 +456,9 @@ function Invoke-OpenSreWithRetry {
         }
         catch {
             $statusCode = Get-OpenSreHttpStatusCodeFromError -ErrorRecord $_
-            if ($null -ne $statusCode -and $statusCode -ge 400 -and $statusCode -lt 500) {
+            # 403 and 429 are GitHub rate limits from shared CI addresses.
+            # Other 4xx responses are final.
+            if ($null -ne $statusCode -and $statusCode -ge 400 -and $statusCode -lt 500 -and $statusCode -ne 403 -and $statusCode -ne 429) {
                 throw "Failed to $Description. $($_.Exception.Message)"
             }
 
@@ -449,8 +466,13 @@ function Invoke-OpenSreWithRetry {
                 throw "Failed to $Description after $attempt attempts. $($_.Exception.Message)"
             }
 
+            $wait = $attempt
+            if ($statusCode -eq 403 -or $statusCode -eq 429) {
+                $wait = [Math]::Min(30, [int][Math]::Pow(2, $attempt))
+            }
+
             Write-Warning "Attempt $attempt to $Description failed: $($_.Exception.Message). Retrying..."
-            Start-Sleep -Seconds $attempt
+            Start-Sleep -Seconds $wait
             $attempt += 1
         }
     }
@@ -521,6 +543,10 @@ function Invoke-OpenSreRestMethod {
     $params = @{
         Uri = $Uri
         Headers = Get-OpenSreRequestHeaders
+    }
+
+    if ($script:OpenSreGitHubMetadataToken -and $Uri.StartsWith("https://api.github.com/", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $params.Headers["Authorization"] = "Bearer $script:OpenSreGitHubMetadataToken"
     }
 
     $command = Get-Command Invoke-RestMethod -ErrorAction Stop
@@ -938,6 +964,33 @@ function Get-OpenSreBinaryVersionInfo {
     }
 }
 
+function Invoke-OpenSreFirstLaunchWarmup {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryPath
+    )
+
+    # Windows Defender / Smart App Control often scan a freshly installed
+    # onedir tree on first execution. ``--version`` is a fast path and loads
+    # little of the bundle; ``_package-smoke`` imports the tool registry,
+    # verifiers and skills so that cost lands under the installer instead of
+    # the user's first real ``opensre``. (POSIX ``install.sh`` only warms on
+    # Darwin for codesign-cache reasons.) Best-effort: binary already passed
+    # ``--version``, so a smoke failure warns rather than aborts the install.
+    Write-OpenSreLine -Message "Preparing OpenSRE for first launch" -Color "Cyan"
+    try {
+        $null = & $BinaryPath _package-smoke 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-OpenSreLine -Message "  OK Preparing OpenSRE for first launch" -Color "Green"
+            return
+        }
+    }
+    catch {
+        # Fall through to the warning below.
+    }
+    Write-Warning "First-launch warm-up did not complete; the first opensre may start slowly."
+}
+
 function Ensure-OpenSreGithubCli {
     # Soft dependency for github_cli chat tools. Never fails the OpenSRE install.
     if (Get-Command gh -ErrorAction SilentlyContinue) {
@@ -961,7 +1014,7 @@ function Ensure-OpenSreGithubCli {
             }
         }
         catch {
-            # Soft dependency — fall through to the manual hint.
+            # Soft dependency - fall through to the manual hint.
         }
     }
 
@@ -971,6 +1024,15 @@ function Ensure-OpenSreGithubCli {
 function Test-OpenSreAutoLaunchEnabled {
     $value = [string]$env:OPENSRE_AUTO_LAUNCH
     return -not ($value -eq "0" -or $value -eq "false" -or $value -eq "FALSE" -or $value -eq "no" -or $value -eq "NO" -or $value -eq "off" -or $value -eq "OFF")
+}
+
+function Get-OpenSreCommandName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryName
+    )
+
+    return [System.IO.Path]::GetFileNameWithoutExtension($BinaryName)
 }
 
 function Start-OpenSreOnboardingAfterInstall {
@@ -1001,14 +1063,112 @@ function Start-OpenSreOnboardingAfterInstall {
         return
     }
 
-    Write-Host "Launching $DisplayName onboard..."
-    & $BinaryPath onboard
+    Write-Host "Launching $DisplayName setup..."
+    & $BinaryPath setup
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Onboarding exited before completion. Run '$DisplayName onboard' to retry."
+        Write-Warning "Setup exited before completion. Run '$DisplayName setup' to retry."
+    }
+}
+
+function Send-OpenSreInstallAnalytics {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryPath,
+        [Parameter(Mandatory = $true)]
+        [string]$Channel,
+        [AllowEmptyString()]
+        [string]$Version,
+        [ValidateSet("present", "absent", "unknown")]
+        [string]$InstallMarkerState = "unknown"
+    )
+
+    $previousSource = $env:OPENSRE_INSTALL_SOURCE
+    $previousOrigin = $env:OPENSRE_INSTALL_ORIGIN
+    $previousChannel = $env:OPENSRE_INSTALL_CHANNEL
+    $previousVersion = $env:OPENSRE_INSTALL_VERSION
+    $previousMarkerState = $env:OPENSRE_INSTALL_MARKER_STATE
+    try {
+        $env:OPENSRE_INSTALL_SOURCE = "powershell_installer"
+        $env:OPENSRE_INSTALL_ORIGIN = $script:OpenSreInstallOrigin
+        $env:OPENSRE_INSTALL_CHANNEL = $Channel
+        $env:OPENSRE_INSTALL_VERSION = $Version
+        $env:OPENSRE_INSTALL_MARKER_STATE = $InstallMarkerState
+        & $BinaryPath --record-install *> $null
+    }
+    catch {
+        # Analytics is best-effort and must never fail installation.
+    }
+    finally {
+        if ($null -eq $previousOrigin) {
+            Remove-Item Env:OPENSRE_INSTALL_ORIGIN -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_ORIGIN = $previousOrigin
+        }
+        if ($null -eq $previousSource) {
+            Remove-Item Env:OPENSRE_INSTALL_SOURCE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_SOURCE = $previousSource
+        }
+        if ($null -eq $previousChannel) {
+            Remove-Item Env:OPENSRE_INSTALL_CHANNEL -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_CHANNEL = $previousChannel
+        }
+        if ($null -eq $previousVersion) {
+            Remove-Item Env:OPENSRE_INSTALL_VERSION -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_VERSION = $previousVersion
+        }
+        if ($null -eq $previousMarkerState) {
+            Remove-Item Env:OPENSRE_INSTALL_MARKER_STATE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_MARKER_STATE = $previousMarkerState
+        }
+    }
+}
+
+function Expand-OpenSreHomePrefix {
+    param([string]$Path)
+    if ($Path -eq "~") { return $HOME }
+    if ($Path.StartsWith("~/") -or $Path.StartsWith("~\")) {
+        return Join-Path $HOME $Path.Substring(2)
+    }
+    return $Path
+}
+
+function Get-OpenSreInstallMarkerDir {
+    # Mirror the runtime's get_store_path(): an explicit wizard store path wins
+    # and the marker lives beside it; otherwise OPENSRE_HOME, then ~/.opensre.
+    $storePath = ([string]$env:OPENSRE_WIZARD_STORE_PATH).Trim()
+    if ($storePath) {
+        return Split-Path -Parent (Expand-OpenSreHomePrefix $storePath)
+    }
+    $stateDir = ([string]$env:OPENSRE_HOME).Trim()
+    if (-not $stateDir) { $stateDir = Join-Path $HOME ".opensre" }
+    return Expand-OpenSreHomePrefix $stateDir
+}
+
+function Get-OpenSreInstallMarkerState {
+    try {
+        $stateDir = Get-OpenSreInstallMarkerDir
+        if (-not $stateDir) { $stateDir = "." }
+        if (Test-Path -LiteralPath (Join-Path $stateDir "installed") -ErrorAction Stop) {
+            return "present"
+        }
+        return "absent"
+    }
+    catch {
+        return "unknown"
     }
 }
 
 function Install-OpenSre {
+    $installMarkerState = Get-OpenSreInstallMarkerState
     $repo = if ($env:OPENSRE_INSTALL_REPO) { $env:OPENSRE_INSTALL_REPO } else { "Tracer-Cloud/opensre" }
     $installDir = if ($env:OPENSRE_INSTALL_DIR) { $env:OPENSRE_INSTALL_DIR } else { Get-OpenSreDefaultInstallDir }
     $binaryName = "opensre.exe"
@@ -1125,6 +1285,8 @@ function Install-OpenSre {
         $binaryVersion = [string]$verifiedBinary.Version
         $version = [string]$verifiedBinary.InstallVersion
 
+        Invoke-OpenSreFirstLaunchWarmup -BinaryPath $binaryPath
+
         Invoke-OpenSreStep -Name "[6/6] Installing binary" -Detail (Join-Path $installDir $binaryName) -Operation {
             New-Item -ItemType Directory -Force -Path $installDir | Out-Null
             Copy-Item -LiteralPath $binaryPath -Destination (Join-Path $installDir $binaryName) -Force
@@ -1135,6 +1297,8 @@ function Install-OpenSre {
     }
 
     $installedBinaryPath = Join-Path $installDir $binaryName
+    $analyticsVersion = if ($binaryVersion) { $binaryVersion } elseif ($version) { $version } else { "main" }
+    Send-OpenSreInstallAnalytics -BinaryPath $installedBinaryPath -Channel $resolvedChannel -Version $analyticsVersion -InstallMarkerState $installMarkerState
     if ($resolvedChannel -eq "main") {
         if ($binaryVersion) {
             Write-Host "Installed opensre main build ($binaryVersion) to $installedBinaryPath"
@@ -1153,8 +1317,8 @@ function Install-OpenSre {
 
     Ensure-OpenSreGithubCli
 
-    $exe = $binaryName.TrimEnd(".exe")
-    $sep = "────────────────────────────────────────────"
+    $exe = Get-OpenSreCommandName -BinaryName $binaryName
+    $sep = ([string][char]0x2500) * 44
 
     Write-Host ""
     Write-Host $sep
@@ -1172,14 +1336,13 @@ function Install-OpenSre {
     Write-Host $sep
     Write-Host ""
     Write-Host "Next steps:"
-    Write-Host "  1. Run  $exe onboard"
-    Write-Host "     Set up your LLM provider and any observability integrations."
+    Write-Host "  1. Run  $exe setup"
+    Write-Host "     Sign in or create an OpenSRE account, then open the interactive shell."
     Write-Host ""
     Write-Host "  2. Run  $exe  (no subcommand)"
-    Write-Host "     From a normal interactive terminal this starts the interactive shell; type a"
-    Write-Host "     prompt or incident description to investigate."
+    Write-Host "     This starts the account gate first, then opens the interactive shell."
     Write-Host ""
-    Write-Host "  3. Optional — one-shot RCA from a file:"
+    Write-Host "  3. Optional - one-shot RCA from a file:"
     Write-Host "     $exe investigate -i path/to/alert.json"
     Write-Host ""
     Write-Host "Docs: https://www.opensre.com/docs"

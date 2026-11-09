@@ -8,13 +8,13 @@ from integrations.verification import register_validation_verifier
 
 
 def _build_bitbucket_config(raw: dict[str, Any]) -> Any:
-    from integrations.bitbucket import build_bitbucket_config
+    from integrations.bitbucket.config import build_bitbucket_config
 
     return build_bitbucket_config(raw)
 
 
 def _validate_bitbucket_config(config: Any) -> Any:
-    from integrations.bitbucket import validate_bitbucket_config
+    from integrations.bitbucket.client import validate_bitbucket_config
 
     return validate_bitbucket_config(config)
 

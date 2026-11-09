@@ -14,13 +14,14 @@ import tempfile
 import time as _time
 from typing import Any
 
-from config.config import get_environment
+from config.environment import get_environment
 from config.runtime_metadata.build_info import detect_build_info
 from config.runtime_metadata.contract import RUNTIME_INPUTS_KEY
 from config.runtime_metadata.probes import (
     capability_warning_facts,
     cloud_facts,
     disk_memory_facts,
+    host_os_facts,
     installed_tools,
     kubeconfig_path,
     local_tz_name,
@@ -44,6 +45,7 @@ def build_runtime_metadata() -> dict[str, Any]:
     - ``opensre_build`` — ``""`` in released wheels; ``dev, v0.1.YYYY.M.D @ SHA``
       in a git checkout so the LLM can quote the exact build in local dev.
     - ``runtime_env`` — ``OPENSRE_ENV`` env var, else the app environment name.
+    - ``os_family`` — host OS name (macOS/Linux/Windows).
     - ``tz_name`` — local timezone name (rarely changes mid-session).
     - ``python_version`` — interpreter version from :data:`sys.version_info`.
     - ``pid`` / ``ppid`` — this process and its parent from :mod:`os`.
@@ -52,9 +54,9 @@ def build_runtime_metadata() -> dict[str, Any]:
     - ``hostname`` — from ``/etc/hostname`` (the pod name in Kubernetes) or
       :func:`socket.gethostname`, never the ``hostname`` binary.
     - ``scratchpad_dir`` — the temp directory scripts may write to.
-    - ``cloud_provider`` / ``cloud_region`` — deploy-time env vars
-      (``CLOUD_PROVIDER`` / ``CLOUD_REGION``, AWS var fallback), never the
-      instance metadata service (IMDS).
+    - ``cloud_provider`` / ``cloud_region`` — deploy-time ``CLOUD_PROVIDER`` /
+      ``CLOUD_REGION`` only (``AWS_REGION`` alone does not imply AWS), never
+      the instance metadata service (IMDS).
 
     The exact key set is :data:`STATIC_FACT_KEYS` (contract-tested). Live
     values that must NOT be cached (current time, uptime, disk, memory) come
@@ -66,6 +68,7 @@ def build_runtime_metadata() -> dict[str, Any]:
         "opensre_version": get_opensre_version(),
         "opensre_build": detect_build_info(),
         "runtime_env": env_override or get_environment().value,
+        **host_os_facts(),
         "tz_name": local_tz_name(),
         "python_version": python_version_string(),
         "pid": os.getpid(),

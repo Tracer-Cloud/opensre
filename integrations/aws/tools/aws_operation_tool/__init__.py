@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.evidence import record_evidence_entry
+from core.tool_framework import tool
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 
 
@@ -13,9 +14,48 @@ def _aws_operation_never_auto_available(_sources: dict[str, dict]) -> bool:
     return False
 
 
+def _summarize_aws_result(result: Any) -> str:
+    """Describe an AWS operation payload by shape only.
+
+    Never echoes payload values: an operation may return role policies or secret
+    metadata, and the summary is rendered into the incident report.
+    """
+    if isinstance(result, dict):
+        if not result:
+            return "empty result"
+        return "1 top-level key" if len(result) == 1 else f"{len(result)} top-level keys"
+    if isinstance(result, list):
+        if not result:
+            return "empty result"
+        return "1 record" if len(result) == 1 else f"{len(result)} records"
+    if result is None:
+        return "empty result"
+    return f"{type(result).__name__} result"
+
+
+def _map_aws_operation(
+    evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]
+) -> None:
+    if not output.get("found"):
+        return
+
+    service = str(output.get("service") or "")
+    operation = str(output.get("operation") or "")
+    qualified = ".".join(part for part in (service, operation) if part) or "operation"
+    evidence["aws_operation"] = output.get("result")
+
+    record_evidence_entry(
+        evidence,
+        source="execute_aws_operation",
+        label=f"AWS {qualified}",
+        summary=_summarize_aws_result(output.get("result")),
+    )
+
+
 @tool(
     name="execute_aws_operation",
     source="aws_sdk",
+    evidence_mapper=_map_aws_operation,
     description="Execute any read-only AWS SDK operation for investigation.",
     use_cases=[
         "Checking ECS task status and health (ecs.describe_tasks)",

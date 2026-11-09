@@ -8,10 +8,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from config.constants.railway import RAILWAY_TOKEN_ENV
+from infrastructure.delivery.notifications.redaction import redact_token
 from integrations.config_models import RailwayIntegrationConfig
 from integrations.probes import ProbeResult
-from integrations.railway.models import DeploymentInfo, RailwayScope, RedeployInfo
-from platform.notifications.redaction import redact_token
+from integrations.railway.models import DeploymentInfo, RailwayScope
 
 _TIMEOUT_SECONDS = 10
 _ERROR_LIMIT = 500
@@ -61,8 +62,7 @@ class RailwayClient:
 
     def _redact_error(self, text: str) -> str:
         redacted = redact_token(text, self._config.token)
-        redacted = redact_token(redacted, os.getenv("RAILWAY_TOKEN", "").strip())
-        redacted = redact_token(redacted, os.getenv("RAILWAY_API_TOKEN", "").strip())
+        redacted = redact_token(redacted, os.getenv(RAILWAY_TOKEN_ENV, "").strip())
         return redacted[:_ERROR_LIMIT]
 
     def _run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -192,25 +192,3 @@ class RailwayClient:
                 error_type="deployment_unavailable",
             )
         return max(successful, key=lambda deployment: str(deployment.get("createdAt") or ""))
-
-    def redeploy(self, scope: RailwayScope) -> RedeployInfo:
-        args = [
-            "redeploy",
-            "--project",
-            scope.project,
-            "--service",
-            scope.service,
-            "--environment",
-            scope.environment,
-            "--yes",
-            "--json",
-        ]
-        data = self._json_output(self._run(args))
-        if not isinstance(data, dict):
-            raise RailwayOperationError("Railway returned an unexpected redeploy response.")
-        deployment_id = str(data.get("id") or "").strip()
-        if not deployment_id:
-            raise RailwayOperationError(
-                "Railway redeploy response did not include a deployment ID."
-            )
-        return RedeployInfo(deployment_id=deployment_id)

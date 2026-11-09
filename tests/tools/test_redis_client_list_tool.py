@@ -17,7 +17,7 @@ def test_metadata() -> None:
     rt = get_redis_client_list.__opensre_registered_tool__
     assert rt.name == "get_redis_client_list"
     assert rt.source == "redis"
-    assert "investigation" in rt.surfaces and "chat" in rt.surfaces
+    assert "chat" in rt.surfaces
 
 
 def test_run_happy_path() -> None:

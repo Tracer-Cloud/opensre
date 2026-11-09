@@ -9,41 +9,40 @@ from contextlib import suppress
 
 from config.constants.gateway import (
     CREDITS_DENIED_MESSAGE,
-    NEW_SESSION_MESSAGE,
     NO_ACTIVE_TURN_MESSAGE,
-    TURN_ERROR_MESSAGE,
     TURN_TIMEOUT_MESSAGE,
     UNAUTHORIZED_MESSAGE,
     USER_STOP_MESSAGE,
 )
 from config.principal import StorageScope
 from config.scope_context import bound_storage_scope
-from core.agent_harness.session import SessionCore
-from gateway.core.billing.credits_client import CreditsOutcome, consume_credits
-from gateway.core.runtime.active_turns import ActiveTurnRegistry, is_stop_command
-from gateway.core.runtime.approvals import ApprovalBroker, approval_tool_hooks
-from gateway.core.runtime.attention import GateDecision, ThreadAttentionGate
-from gateway.core.runtime.conversation_locks import ConversationLockRegistry
-from gateway.core.runtime.sink_protocol import GatewayAgentCallback
-from gateway.core.runtime.terminal_outcome import TerminalOutcomeArbiter
+from core.agent_harness import SessionCore
+from gateway.core.billing.turn_metering import bound_turn_metering
+from gateway.core.middleware.active_turns import ActiveTurnRegistry, is_stop_command
+from gateway.core.middleware.approvals import ApprovalBroker, approval_tool_hooks
+from gateway.core.middleware.attention import GateDecision, ThreadAttentionGate
+from gateway.core.middleware.conversation_locks import ConversationLockRegistry
+from gateway.core.middleware.inbound_decision import apply_inbound_decision
+from gateway.core.middleware.terminal_outcome import TerminalOutcomeArbiter
 from gateway.core.storage import SessionResolver
 from gateway.transports.discord.approvals import DiscordApprovalPrompter
 from gateway.transports.discord.client import add_reaction, remove_reaction, send_message
 from gateway.transports.discord.events import DiscordInboundMessage
-from gateway.transports.discord.output_sink import DiscordOutputSink
 from gateway.transports.discord.principal import PrincipalResolutionError, resolve_discord_scope
 from gateway.transports.discord.security import (
-    _ROTATE_SESSION,
     DiscordInboundDecision,
     enforce_inbound_discord_message_security,
-    persist_policy_if_needed,
 )
 from gateway.transports.discord.settings import DiscordGatewaySettings
 from gateway.transports.discord.thread_history import (
     seed_session_from_discord_thread,
     session_needs_thread_seed,
 )
-from platform.analytics.usage_context import SURFACE_DISCORD, bound_usage_context
+from gateway.transports.discord.turn_output import DiscordTurnOutput
+from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.turn_host.status_messages import turn_error_detail
+from infrastructure.turn_host.turn_callback import TurnCallback
+from integrations.messaging_security import MessagingPlatform
 
 # Discord's reaction API takes the literal Unicode emoji (URL-encoded), not a name.
 _WORKING_EMOJI = "\N{EYES}"
@@ -60,7 +59,7 @@ class DiscordTurnDispatcher:
         settings: DiscordGatewaySettings,
         bot_token: str,
         session_resolver: SessionResolver,
-        handler: GatewayAgentCallback,
+        handler: TurnCallback,
         logger: logging.Logger,
         bot_user_id: str = "",
         approvals: ApprovalBroker | None = None,
@@ -160,39 +159,24 @@ class DiscordTurnDispatcher:
         decision: DiscordInboundDecision,
         scope: StorageScope,
     ) -> SessionCore | None:
-        persist_policy_if_needed(decision)
-
         if not inbound.addressed and (not decision.allowed or decision.reply_text):
             return None
 
-        is_rotate = decision.reply_text == _ROTATE_SESSION
-        if decision.reply_text and not is_rotate:
-            self._post(inbound, decision.reply_text)
-            if not decision.allowed:
-                return None
+        def _send(text: str) -> None:
+            self._post(inbound, text)
 
-        if not decision.allowed and not is_rotate:
-            self._post(inbound, UNAUTHORIZED_MESSAGE)
-            return None
-
-        with self._resolver_lock:
-            if is_rotate:
-                session = self._session_resolver.rotate(
-                    user_id=inbound.conversation_key,
-                    chat_id=inbound.channel_id,
-                    principal=scope.principal,
-                    actor=scope.actor,
-                )
-                self._post(inbound, NEW_SESSION_MESSAGE)
-                if inbound.text.strip().lower() == "/new":
-                    return None
-                return session
-            return self._session_resolver.resolve(
-                user_id=inbound.conversation_key,
-                chat_id=inbound.channel_id,
-                principal=scope.principal,
-                actor=scope.actor,
-            )
+        return apply_inbound_decision(
+            decision,
+            platform=MessagingPlatform.DISCORD.value,
+            resolver=self._session_resolver,
+            scope=scope,
+            conversation_key=inbound.conversation_key,
+            chat_id=inbound.channel_id,
+            text=inbound.text,
+            send=_send,
+            unauthorized_reply=UNAUTHORIZED_MESSAGE,
+            resolver_lock=self._resolver_lock,
+        )
 
     def _run_turn(self, inbound: DiscordInboundMessage, scope: StorageScope) -> None:
         with self._conversation_locks.hold(inbound.conversation_key):
@@ -206,14 +190,6 @@ class DiscordTurnDispatcher:
             )
             session = self._apply_inbound_decision(inbound, decision, scope)
             if session is None:
-                return
-
-            if consume_credits(scope.principal.id, reason="discord_turn") is CreditsOutcome.DENIED:
-                self._logger.info(
-                    "[discord-gateway] turn denied: out of credits channel=%s",
-                    inbound.channel_id,
-                )
-                self._post(inbound, CREDITS_DENIED_MESSAGE)
                 return
 
             is_reply = not inbound.addressed
@@ -234,7 +210,7 @@ class DiscordTurnDispatcher:
                 emoji=_WORKING_EMOJI,
                 bot_token=self._bot_token,
             )
-            sink = DiscordOutputSink(
+            output = DiscordTurnOutput(
                 bot_token=self._bot_token,
                 channel_id=inbound.channel_id,
                 edit_interval_seconds=self._settings.status_update_interval_seconds,
@@ -247,11 +223,11 @@ class DiscordTurnDispatcher:
                 ),
             )
             terminal = TerminalOutcomeArbiter()
-            sink.turn_cancel = terminal.cancel_event
+            output.turn_cancel = terminal.cancel_event
 
             def _on_turn_timeout() -> None:
                 try:
-                    sink.finalize(TURN_TIMEOUT_MESSAGE)
+                    output.finalize(TURN_TIMEOUT_MESSAGE)
                 except Exception:
                     self._logger.debug("[discord-gateway] timeout finalize failed", exc_info=True)
                 remove_reaction(
@@ -271,9 +247,35 @@ class DiscordTurnDispatcher:
                 if not terminal.claim():
                     return
                 try:
-                    sink.finalize(USER_STOP_MESSAGE)
+                    output.finalize(USER_STOP_MESSAGE)
                 except Exception:
                     self._logger.debug("[discord-gateway] user-stop finalize failed", exc_info=True)
+                remove_reaction(
+                    channel_id=inbound.channel_id,
+                    message_id=inbound.message_id,
+                    emoji=_WORKING_EMOJI,
+                    bot_token=self._bot_token,
+                )
+                add_reaction(
+                    channel_id=inbound.channel_id,
+                    message_id=inbound.message_id,
+                    emoji=_FAILED_EMOJI,
+                    bot_token=self._bot_token,
+                )
+
+            def _on_credit_denied() -> None:
+                self._logger.info(
+                    "[discord-gateway] turn denied: out of credits channel=%s",
+                    inbound.channel_id,
+                )
+                if not terminal.claim():
+                    return
+                try:
+                    output.finalize(CREDITS_DENIED_MESSAGE)
+                except Exception:
+                    self._logger.debug(
+                        "[discord-gateway] credits-denied finalize failed", exc_info=True
+                    )
                 remove_reaction(
                     channel_id=inbound.channel_id,
                     message_id=inbound.message_id,
@@ -314,16 +316,22 @@ class DiscordTurnDispatcher:
                             on_user_stop=_on_user_stop,
                         ),
                         bound_usage_context(
-                            surface=SURFACE_DISCORD,
+                            surface=UsageSurface.DISCORD,
                             session_id=session.session_id,
                             user_id=inbound.user_id or None,
                         ),
+                        bound_turn_metering(
+                            organization_id=scope.principal.id,
+                            reason="discord_turn",
+                            idempotency_key=f"{UsageSurface.DISCORD.value}:{inbound.message_id}",
+                            on_denied=_on_credit_denied,
+                        ),
                     ):
-                        self._handler(agent_text, session, sink, self._logger)
-                except Exception:
+                        self._handler(agent_text, session, output, self._logger)
+                except Exception as exc:
                     if terminal.claim():
                         with suppress(Exception):
-                            sink.render_error(TURN_ERROR_MESSAGE)
+                            output.render_error(turn_error_detail(exc))
                         remove_reaction(
                             channel_id=inbound.channel_id,
                             message_id=inbound.message_id,

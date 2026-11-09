@@ -2,30 +2,30 @@
 
 from __future__ import annotations
 
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
+from infrastructure.evidence.evidence_compaction import (
+    compact_invocations,
+    compact_logs,
+    summarize_counts,
+)
 from integrations.aws.lambda_client import (
     get_invocation_logs_by_request_id,
     get_recent_invocations,
 )
-from platform.common.evidence_compaction import compact_invocations, compact_logs, summarize_counts
-
-
-def _lambda_available(sources: dict[str, dict]) -> bool:
-    return bool(sources.get("lambda", {}).get("function_name"))
-
-
-def _lambda_name(sources: dict[str, dict]) -> str:
-    return str(sources.get("lambda", {}).get("function_name", ""))
+from integrations.aws_lambda.availability import lambda_available, lambda_name
 
 
 def _extract_lambda_invocation_logs_params(sources: dict[str, dict]) -> dict:
-    return {"function_name": _lambda_name(sources), "filter_errors": False, "limit": 50}
+    return {"function_name": lambda_name(sources), "filter_errors": False, "limit": 50}
 
 
 @tool(
     name="get_lambda_invocation_logs",
     display_name="Lambda logs",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Get Lambda invocation logs from CloudWatch.",
     use_cases=[
         "Finding error messages and stack traces from Lambda executions",
@@ -44,7 +44,7 @@ def _extract_lambda_invocation_logs_params(sources: dict[str, dict]) -> dict:
         },
         "required": ["function_name"],
     },
-    is_available=_lambda_available,
+    is_available=lambda_available,
     extract_params=_extract_lambda_invocation_logs_params,
 )
 def get_lambda_invocation_logs(

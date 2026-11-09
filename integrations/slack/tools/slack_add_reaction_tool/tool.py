@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.base import BaseTool
-from core.tool_framework.metadata import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool import BaseTool, SideEffectLevel
+from core.tool_framework import tool
 from integrations.slack.tools.slack_read_messages_tool.constants import SOURCE
 from integrations.slack.tools.slack_read_messages_tool.validation import validate_channel_id
 from integrations.slack.web_client import (
@@ -118,5 +118,5 @@ class SlackAddReactionTool(BaseTool):
 
 slack_add_reaction = tool(
     SlackAddReactionTool(),
-    surfaces=("investigation", "chat", "action"),
+    surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
 )

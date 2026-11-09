@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from platform.filestorage.config import RemoteSyncConfig
-from platform.filestorage.engine import SyncProgress, SyncReport
-from platform.filestorage.enums import SyncDirection, SyncRootName
-from platform.filestorage.errors import RemoteSyncConfigError
-from platform.filestorage.operations import SyncRootStatus, SyncStatus
+from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.engine import SyncProgress, SyncReport
+from infrastructure.filestorage.enums import SyncDirection, SyncRootName
+from infrastructure.filestorage.errors import RemoteSyncConfigError
+from infrastructure.filestorage.operations import SyncRootStatus, SyncStatus
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.slash_adapter import headless_slash_ports
@@ -275,7 +275,7 @@ def test_help_section_includes_remote_sync() -> None:
     assert "/remote-sync" in {c.name for c in sections["Remote sync"]}
 
 
-def test_repl_and_headless_dispatch_same_command_object() -> None:
+def test_repl_and_headless_agent_same_command_object() -> None:
     """Gateway headless ports must not register a fork of /remote-sync."""
     from surfaces.interactive_shell.runtime.slash_adapter import repl_slash_ports
 
@@ -284,3 +284,135 @@ def test_repl_and_headless_dispatch_same_command_object() -> None:
     assert repl.command_exists("/remote-sync")
     assert headless.command_exists("/remote-sync")
     assert SLASH_COMMANDS["/remote-sync"].handler is not None
+
+
+@pytest.mark.parametrize(
+    ("flags", "missing"),
+    [
+        ("--provider vercel --bucket --prefix team/", "bucket"),
+        ("--provider aws --bucket real-bucket --region --profile prod", "region"),
+        ("--bucket --disabled", "bucket"),
+        ("--bucket real-bucket --profile", "profile"),
+    ],
+)
+def test_setup_missing_flag_value_never_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, flags: str, missing: str
+) -> None:
+    from config.constants import paths
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+    console, output = _capture()
+    dispatch_slash(f"/remote-sync setup {flags}", Session(), console)
+    assert f"--{missing} requires a value" in output.getvalue()
+    assert not (tmp_path / "config.yml").exists()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize("flags", ["--prefix=team/", "--disabled --enabled --prefix=team/"])
+def test_terminal_setup_uses_exclusive_form_and_saves_only_after_submit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, cancel: bool, flags: str
+) -> None:
+    from prompt_toolkit.application import Application, create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    from config.constants import paths
+    from config.local_settings import read_section
+    from infrastructure.filestorage.setup import RemoteSyncSetupRequest
+    from surfaces.interactive_shell.command_registry import input_collection, remote_sync_cmds
+    from surfaces.interactive_shell.runtime import input_policy
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.setattr(input_policy, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(input_collection, "repl_tty_interactive", lambda: True)
+
+    def collect(app: Application[RemoteSyncSetupRequest | None]) -> RemoteSyncSetupRequest | None:
+        assert not (tmp_path / "config.yml").exists()
+        with create_pipe_input() as pipe:
+            app.input, app.output = pipe, DummyOutput()
+            keys = "vercel\r\x1b[B\rteam-store\r" + ("\x03" if cancel else "\x13")
+            return app.run(pre_run=lambda: pipe.send_text(keys))
+
+    monkeypatch.setattr(remote_sync_cmds, "run_command_input", collect)
+    command = f"/remote-sync setup {flags}"
+    session = Session()
+    session.terminal.exclusive_stdin_active = input_policy.turn_needs_exclusive_stdin(
+        command, session
+    )
+    assert session.terminal.exclusive_stdin_active
+    console, output = _capture()
+    with create_app_session(output=DummyOutput()):
+        dispatch_slash(command, session, console, is_tty=True)
+    if cancel:
+        assert not (tmp_path / "config.yml").exists()
+        assert "saved" not in output.getvalue()
+    else:
+        assert read_section("remote_sync") == {
+            "provider": "vercel",
+            "bucket": "team-store",
+            "prefix": "team/",
+            "region": "",
+            "profile": "",
+            "enabled": True,
+        }
+
+
+def test_gateway_complete_flags_bypass_form_and_incomplete_flags_never_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.constants import paths
+    from config.local_settings import read_section
+    from surfaces.interactive_shell.command_registry import remote_sync_cmds
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+
+    def unexpected(_app: object) -> None:
+        raise AssertionError("Gateway must not open a terminal form")
+
+    monkeypatch.setattr(remote_sync_cmds, "run_command_input", unexpected)
+    ports = headless_slash_ports()
+    console, output = _capture()
+    ports.dispatch(
+        "/remote-sync setup", session=Session(), console=console, confirm_fn=None, is_tty=False
+    )
+    assert "setup needs --bucket" in output.getvalue()
+    assert not (tmp_path / "config.yml").exists()
+    ports.dispatch(
+        "/remote-sync setup --provider=vercel --bucket=team-store --prefix=",
+        session=Session(),
+        console=console,
+        confirm_fn=None,
+        is_tty=False,
+    )
+    assert read_section("remote_sync")["prefix"] == "opensre"
+    ports.dispatch(
+        "/remote-sync setup --disabled",
+        session=Session(),
+        console=console,
+        confirm_fn=None,
+        is_tty=False,
+    )
+    assert read_section("remote_sync")["enabled"] is False
+    assert read_section("remote_sync")["bucket"] == "team-store"
+
+
+@pytest.mark.parametrize(
+    ("args", "needs_input"),
+    [
+        (["setup"], True),
+        (["setup", "--provider=vercel", "--prefix=team/"], True),
+        (["setup", "--bucket=store"], False),
+        (["setup", "--disabled"], False),
+        (["setup", "--bucket", "--disabled"], False),
+        (["setup", "--disabled", "--enabled"], True),
+        (["setup", "--enabled", "--disabled"], False),
+        (["setup", "--bucket=store", "--disabled", "--enabled"], False),
+        (["setup", "--disabled", "--enabled", "--bucket=store"], False),
+    ],
+)
+def test_remote_sync_input_metadata_preserves_complete_command_bypass(
+    args: list[str], needs_input: bool
+) -> None:
+    from config.command_inputs import needs_command_input
+
+    assert needs_command_input("/remote-sync", args) is needs_input

@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from integrations._validation_helpers import report_classify_failure
-from integrations.config_models import GroundcoverIntegrationConfig
+from integrations.groundcover.config import GroundcoverIntegrationConfig
 
 logger = logging.getLogger(__name__)
 

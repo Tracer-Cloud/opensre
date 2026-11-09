@@ -21,14 +21,14 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-from core.agent_harness.accounting.turn_accounting import DefaultTurnAccounting
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
-from gateway.channels import TransportName
-from gateway.core.runtime.errors import GatewayConfigurationError
-from gateway.core.runtime.manager import GatewayManager, start_gateway
+from gateway.core.billing.turn_metering import bound_turn_metering
+from gateway.core.lifecycle.controller import GatewayController, start_gateway
+from gateway.core.lifecycle.errors import GatewayConfigurationError
+from gateway.transports.names import TransportName
 from gateway.transports.telegram.inbound_handler import (
     handle_polled_inbound_telegram_message,
 )
@@ -38,26 +38,28 @@ from gateway.transports.telegram.settings import (
     TelegramInboundMessage,
 )
 from gateway.web.startup import WebStartup
+from tests.shared.default_headless_build_stub import default_headless_build_stub
+from tests.shared.fake_agent import attach_real_handle
 
 
 def _patch_non_telegram_components(monkeypatch) -> None:
     """Keep lifecycle tests focused on the Telegram worker: skip web/scheduler/pidfile."""
     monkeypatch.setattr(
-        "gateway.channels.compose.start_web_server",
+        "gateway.startup.start_web_server",
         lambda **_kwargs: WebStartup(server=None, status="skipped in lifecycle test"),
     )
-    monkeypatch.setattr(GatewayManager, "start_scheduler", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(GatewayManager, "_publish_status", lambda *_args: None)
+    monkeypatch.setattr(GatewayController, "start_scheduler", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(GatewayController, "_publish_status", lambda *_args: None)
 
     def _skip_transport(**_kwargs: Any) -> None:
         raise GatewayConfigurationError("skipped in lifecycle test")
 
     monkeypatch.setattr(
-        "gateway.channels.chat.start_slack_worker",
+        "gateway.transports.startup.start_slack_worker",
         _skip_transport,
     )
     monkeypatch.setattr(
-        "gateway.channels.chat.start_discord_worker",
+        "gateway.transports.startup.start_discord_worker",
         _skip_transport,
     )
 
@@ -72,14 +74,13 @@ def _patch_process_boot(monkeypatch) -> None:
         lambda **_kwargs: None,
     )
     monkeypatch.setattr("bootstrap.process.install_harness_adapters", lambda: None)
-    monkeypatch.setattr("bootstrap.process.install_scheduler_runners", lambda: None)
     monkeypatch.setattr(
-        "platform.observability.errors.sentry.init_sentry",
+        "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kwargs: None,
     )
     monkeypatch.setattr("core.llm.internal.preload.preload_llm_clients", lambda: None)
     monkeypatch.setattr(
-        "platform.sandbox.capabilities.boot_capability_warnings",
+        "infrastructure.safety.sandbox.capabilities.boot_capability_warnings",
         lambda: [],
     )
 
@@ -89,23 +90,24 @@ def test_gateway_start_returns_running_gateway_handle(monkeypatch) -> None:
     logger = logging.getLogger("gateway.lifecycle.test")
     handle = MagicMock()
     agent_cls = MagicMock()
+    attach_real_handle(agent_cls.return_value)
     signal_calls: list[tuple[int, Any]] = []
     background_kwargs: dict[str, Any] = {}
 
     _patch_process_boot(monkeypatch)
-    monkeypatch.setattr("gateway.core.runtime.manager.configure_logging", lambda: logger)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.configure_logging", lambda: logger)
     _patch_non_telegram_components(monkeypatch)
     monkeypatch.setattr(
         "gateway.transports.telegram.startup.load_gateway_settings", lambda: settings
     )
     monkeypatch.setattr(
-        "gateway.core.runtime.manager.signal.signal",
+        "gateway.core.lifecycle.controller.signal.signal",
         lambda signum, handler: signal_calls.append((signum, handler)),
     )
     # Patch the agent factory the gateway uses so the turn callback is spyable.
     monkeypatch.setattr(
-        "gateway.core.runtime.session_agents.build_default_headless_agent",
-        agent_cls,
+        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
+        default_headless_build_stub(agent_cls),
     )
 
     def _start_telegram_gateway_background(**kwargs: Any) -> MagicMock:
@@ -117,12 +119,12 @@ def test_gateway_start_returns_running_gateway_handle(monkeypatch) -> None:
         _start_telegram_gateway_background,
     )
 
-    gateway = GatewayManager().start_gateway(wait=False)
+    gateway = GatewayController().start_gateway(wait=False)
 
-    assert isinstance(gateway, GatewayManager)
+    assert isinstance(gateway, GatewayController)
     assert gateway.logger is logger
-    assert gateway.channels is not None
-    telegram = gateway.channels.transports.get(TransportName.TELEGRAM)
+    assert gateway.surfaces is not None
+    telegram = gateway.surfaces.transports.get(TransportName.TELEGRAM)
     assert telegram is not None
     assert telegram.worker is handle
     assert background_kwargs["settings"] is settings
@@ -144,10 +146,15 @@ def test_gateway_start_returns_running_gateway_handle(monkeypatch) -> None:
             response_text="Hawaii: +25C",
         ),
         assistant_response_text="Hawaii: +25C",
-        llm_run=None,
     )
     callback = background_kwargs["handle_callback_to_gateway_agent"]
-    callback("hello", session, sink, logger)
+    with bound_turn_metering(
+        organization_id="org_lifecycle",
+        reason="telegram_turn",
+        idempotency_key="telegram:1",
+        on_denied=MagicMock(),
+    ):
+        callback("hello", session, sink, logger)
     agent_cls.return_value.dispatch.assert_called_once()
     sink.finalize.assert_called_once_with("Hawaii: +25C")
     assert agent_cls.return_value.dispatch.call_args.args == ("hello",)
@@ -155,24 +162,18 @@ def test_gateway_start_returns_running_gateway_handle(monkeypatch) -> None:
     assert ctor.kwargs["session"] is session
     # Session-scoped agent holds a live sink proxy; the transport sink is bound
     # each turn (not passed as the constructor ``output`` identity).
-    from gateway.core.runtime.live_sink import LiveOutputSink
+    from infrastructure.turn_host.bindable_output import BindableOutput
 
-    assert isinstance(ctor.kwargs["output"], LiveOutputSink)
+    assert isinstance(ctor.kwargs["output"], BindableOutput)
     assert ctor.kwargs["surface"] == "gateway"
-    from core.agent_harness.turns.gather_ports import GatherPorts
-
-    assert isinstance(ctor.kwargs["gather"], GatherPorts)
-    assert ctor.kwargs["gather"].enabled is True
-    assert ctor.kwargs["is_tty"] is False
-    assert ctor.kwargs["observer_factory"] is not None
-    tool_provider = DefaultToolProvider(
-        ctor.kwargs["session"],
-        ctor.kwargs["console"],
-        tool_action_logger=ctor.kwargs["logger"],
-        observer_factory=ctor.kwargs["observer_factory"],
-        subprocess_presenter_factory=ctor.kwargs.get("subprocess_presenter_factory"),
-        slash_ports_factory=ctor.kwargs.get("slash_ports_factory"),
-    )
+    turn_binding = agent_cls.return_value.bind_turn.call_args.args[0]
+    assert turn_binding.is_tty is False
+    # The gateway hands the factory its configured tool provider (the bridge
+    # between the agent and the host's tool stack), not loose port factories.
+    tool_provider = ctor.kwargs["tools"]
+    assert isinstance(tool_provider, DefaultToolProvider)
+    assert tool_provider._session is session
+    assert tool_provider._tool_action_logger is logger
     assert tool_provider._precomputed_action_tools is None
     with patch.object(logger, "info") as mock_info:
         tool_provider.observer(message="hello")(
@@ -184,8 +185,10 @@ def test_gateway_start_returns_running_gateway_handle(monkeypatch) -> None:
         "shell_run",
         "{'command': 'pwd'}",
     )
-    bind_kwargs = agent_cls.return_value.bind_turn.call_args.kwargs
-    assert isinstance(bind_kwargs["accounting"], DefaultTurnAccounting)
+    # The host passes no accounting: the agent's default per-message accounting
+    # (DefaultTurnAccounting) applies — pinned in test_default_accounting_is_resolved_fresh_per_message.
+    turn_binding = agent_cls.return_value.bind_turn.call_args.args[0]
+    assert turn_binding.accounting is None
 
 
 def test_polled_telegram_message_reaches_start_gateway_agent_callback(monkeypatch) -> None:
@@ -217,12 +220,12 @@ def test_polled_telegram_message_reaches_start_gateway_agent_callback(monkeypatc
 
     monkeypatch.setenv("ORGANIZATION_ID", "org_lifecycle_e2e")
     _patch_process_boot(monkeypatch)
-    monkeypatch.setattr("gateway.core.runtime.manager.configure_logging", lambda: logger)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.configure_logging", lambda: logger)
     _patch_non_telegram_components(monkeypatch)
     monkeypatch.setattr(
         "gateway.transports.telegram.startup.load_gateway_settings", lambda: settings
     )
-    monkeypatch.setattr("gateway.core.runtime.manager.signal.signal", lambda *_args: None)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.signal.signal", lambda *_args: None)
 
     def _start_telegram_gateway_background(**kwargs: Any) -> MagicMock:
         background_kwargs.update(kwargs)
@@ -237,7 +240,7 @@ def test_polled_telegram_message_reaches_start_gateway_agent_callback(monkeypatc
         lambda **_kwargs: InboundDecision(allowed=True),
     )
 
-    GatewayManager().start_gateway(wait=False)
+    GatewayController().start_gateway(wait=False)
     callback = background_kwargs["handle_callback_to_gateway_agent"]
     session = SessionCore(store=InMemorySessionStore())
     client = MagicMock()
@@ -247,8 +250,8 @@ def test_polled_telegram_message_reaches_start_gateway_agent_callback(monkeypatc
     async def _run_message() -> None:
         executor = ThreadPoolExecutor(max_workers=1)
         try:
-            from gateway.core.runtime.active_turns import ActiveTurnRegistry
-            from gateway.core.runtime.approvals import ApprovalBroker
+            from gateway.core.middleware.active_turns import ActiveTurnRegistry
+            from gateway.core.middleware.approvals import ApprovalBroker
 
             await handle_polled_inbound_telegram_message(
                 TelegramInboundMessage(
@@ -280,9 +283,9 @@ def test_gateway_start_continues_without_telegram_configuration(monkeypatch) -> 
     """The unified daemon keeps its other components when Telegram is unconfigured."""
     logger = logging.getLogger("gateway.lifecycle.test")
     _patch_process_boot(monkeypatch)
-    monkeypatch.setattr("gateway.core.runtime.manager.configure_logging", lambda: logger)
-    monkeypatch.setattr("gateway.core.runtime.manager.signal.signal", lambda *_args: None)
-    monkeypatch.setattr("gateway.core.runtime.manager.clear_component_status", lambda: None)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.configure_logging", lambda: logger)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.signal.signal", lambda *_args: None)
+    monkeypatch.setattr("gateway.core.lifecycle.controller.clear_component_status", lambda: None)
     _patch_non_telegram_components(monkeypatch)
 
     def _unconfigured() -> GatewaySettings:
@@ -290,31 +293,31 @@ def test_gateway_start_continues_without_telegram_configuration(monkeypatch) -> 
 
     monkeypatch.setattr("gateway.transports.telegram.startup.load_gateway_settings", _unconfigured)
 
-    gateway = GatewayManager().start_gateway(wait=False)
+    gateway = GatewayController().start_gateway(wait=False)
 
-    assert gateway.channels is not None
-    assert TransportName.TELEGRAM not in gateway.channels.transports
+    assert gateway.surfaces is not None
+    assert TransportName.TELEGRAM not in gateway.surfaces.transports
     assert gateway.components["telegram"].startswith("not configured")
     assert gateway.stop() is True
-    assert gateway.channels is None
+    assert gateway.surfaces is None
 
 
 def test_start_gateway_wrapper_delegates_to_gateway_instance(monkeypatch) -> None:
-    expected = MagicMock(spec=GatewayManager)
+    expected = MagicMock(spec=GatewayController)
     calls: list[bool] = []
     factory = object()
 
     def _start_gateway(
-        self: GatewayManager,
+        self: GatewayController,
         *,
         wait: bool = True,
-    ) -> GatewayManager:
-        assert isinstance(self, GatewayManager)
+    ) -> GatewayController:
+        assert isinstance(self, GatewayController)
         assert self._slash_ports_factory is factory
         calls.append(wait)
         return expected
 
-    monkeypatch.setattr(GatewayManager, "start_gateway", _start_gateway)
+    monkeypatch.setattr(GatewayController, "start_gateway", _start_gateway)
 
     assert start_gateway(wait=False, slash_ports_factory=factory) is expected  # type: ignore[arg-type]
     assert calls == [False]

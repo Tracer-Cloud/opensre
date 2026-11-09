@@ -11,13 +11,16 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from integrations.aws.availability import ec2_available_or_backend
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 from integrations.aws.topology_helper import (
     build_elb_summary,
     extract_target_health_params,
+)
+from integrations.elb.tools.elb_target_health_tool._evidence import (
+    map_get_elb_target_health,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +83,7 @@ def _is_available(sources: dict[str, dict]) -> bool:
     },
     is_available=_is_available,
     extract_params=extract_target_health_params,
+    evidence_mapper=map_get_elb_target_health,
 )
 def get_elb_target_health(
     target_group_arns: list[str] | None = None,

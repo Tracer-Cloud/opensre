@@ -7,7 +7,7 @@ import threading
 
 from rich.console import Console
 
-from gateway.core.runtime.cancel_console import CancelConsole
+from infrastructure.turn_host.cancel_console import CancelConsole
 
 
 def _console() -> Console:
@@ -40,6 +40,7 @@ def test_cancel_requested_tracks_the_shared_event() -> None:
     console = CancelConsole(_console(), cancel)
 
     # Act / Assert.
+    assert console.cancel_event is cancel
     assert console.cancel_requested is False
     cancel.set()
     assert console.cancel_requested is True

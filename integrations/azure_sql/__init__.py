@@ -27,19 +27,19 @@ from config.constants.azure_sql import (
     AZURE_SQL_PORT_ENV,
     AZURE_SQL_SERVER_ENV,
     AZURE_SQL_USERNAME_ENV,
+    DEFAULT_AZURE_SQL_DRIVER,
+    DEFAULT_AZURE_SQL_MAX_RESULTS,
+    DEFAULT_AZURE_SQL_PORT,
+    DEFAULT_AZURE_SQL_TIMEOUT_SECONDS,
 )
 from config.llm_credentials import resolve_env_credential
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
+from infrastructure.text.truncation import truncate
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
-from platform.common.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AZURE_SQL_PORT = 1433
-DEFAULT_AZURE_SQL_DRIVER = "ODBC Driver 18 for SQL Server"
-DEFAULT_AZURE_SQL_TIMEOUT_SECONDS = 15.0
-DEFAULT_AZURE_SQL_MAX_RESULTS = 50
 _QUERY_TRUNCATE_LEN = 500
 
 
@@ -667,11 +667,11 @@ def classify(
         cfg = build_azure_sql_config(
             {
                 "server": credentials.get("server", ""),
-                "port": credentials.get("port", 1433),
+                "port": credentials.get("port", DEFAULT_AZURE_SQL_PORT),
                 "database": credentials.get("database", ""),
                 "username": credentials.get("username", ""),
                 "password": credentials.get("password", ""),
-                "driver": credentials.get("driver", "ODBC Driver 18 for SQL Server"),
+                "driver": credentials.get("driver", DEFAULT_AZURE_SQL_DRIVER),
                 "encrypt": credentials.get("encrypt", True),
             }
         )

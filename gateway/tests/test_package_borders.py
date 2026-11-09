@@ -3,12 +3,15 @@
 Pinned rules (see ``gateway/AGENTS.md``):
 
 * Chat transports are peers — none imports another.
-* ``gateway.web`` never imports ``gateway.transports`` or ``gateway.channels``.
+* ``gateway.web`` never imports ``gateway.transports`` or ``gateway.startup``.
 * ``gateway.core`` never imports chat transports or ``gateway.web``.
-* Only ``gateway.core.runtime.manager`` may import ``gateway.channels``.
-* ``gateway.transports.*`` never imports ``gateway.channels`` or ``gateway.web``.
-* ``gateway.channels`` may import peer ``*.startup`` (and ``gateway.web``); peers
+* Only ``gateway.core.lifecycle.controller`` may import ``gateway.startup``.
+* ``gateway.transports.*`` never imports ``gateway.startup`` or ``gateway.web``.
+* ``gateway.startup`` may import peer ``*.startup`` (and ``gateway.web``); peers
   must not import channels.
+* ``gateway.core`` names no chat vendor; a transport names only its own.
+* ``infrastructure.scheduling.scheduler`` never imports ``TurnRunner`` (producer, not a
+  chat channel — see ``gateway/AGENTS.md`` Channel vs producer).
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ def _discover_transport_packages() -> tuple[str, ...]:
 
 _TRANSPORTS = _discover_transport_packages()
 
-_CHANNELS_COMPOSER = "gateway/core/runtime/manager.py"
+_STARTUP_COMPOSER = "gateway/core/lifecycle/controller.py"
 
 _TRANSPORT_STARTUP_MODULES = frozenset(f"{package}.startup" for package in _TRANSPORTS)
 
@@ -87,57 +90,122 @@ def test_chat_transport_peers_never_import_each_other() -> None:
 
 
 def test_web_surface_never_imports_chat_transports_or_channels() -> None:
-    offenders = _offenders("gateway.web", (*_TRANSPORTS, "gateway.channels"))
+    offenders = _offenders("gateway.web", (*_TRANSPORTS, "gateway.startup"))
     assert offenders == [], "Web surface reached into transports/channels:\n" + "\n".join(offenders)
 
 
 def test_core_never_imports_chat_transports_or_web() -> None:
-    """Surfaces are composed via ``gateway.channels``, not from core leaves."""
+    """Surfaces are composed via ``gateway.startup``, not from core leaves."""
     banned = (*_TRANSPORTS, "gateway.web", "gateway.transports")
     offenders = _offenders("gateway.core", banned)
     assert offenders == [], "Core imported a surface directly:\n" + "\n".join(offenders)
 
 
-def test_only_manager_imports_channels_module() -> None:
-    offenders: list[str] = []
-    for path in _python_files("gateway.core"):
-        rel = str(path.relative_to(REPO_ROOT))
-        for name in _imported_modules(path):
-            names_channels = name == "gateway.channels" or name.startswith("gateway.channels.")
-            if names_channels and rel != _CHANNELS_COMPOSER:
-                offenders.append(f"{rel} → {name}")
-    assert offenders == [], "Non-manager core imported gateway.channels:\n" + "\n".join(offenders)
+def test_core_never_names_a_chat_vendor() -> None:
+    """Vendor knowledge belongs to the transport that speaks to that vendor.
+
+    ``gateway/core/billing`` used to import ``integrations.slack.webapp_auth``,
+    which made the billing client look Slack-specific; the module was silo →
+    webapp auth misfiled under a vendor and now lives in
+    ``integrations.webapp``. Core is transport-agnostic, so no module under it
+    may name a chat vendor's integration.
+    """
+    # Arrange: the integration package of every transport on disk.
+    vendor_packages = tuple(f"integrations.{package.rsplit('.', 1)[1]}" for package in _TRANSPORTS)
+
+    # Act
+    offenders = _offenders("gateway.core", vendor_packages)
+
+    # Assert
+    assert offenders == [], (
+        "gateway/core named a chat vendor; move the shared part to a "
+        "vendor-neutral module or push the call into the transport:\n" + "\n".join(offenders)
+    )
 
 
-def test_transports_never_import_channels_or_web() -> None:
+def test_a_transport_names_only_its_own_vendor() -> None:
+    """A transport may speak to its own vendor's integration, never a peer's."""
     offenders: list[str] = []
     for package in _TRANSPORTS:
-        offenders.extend(_offenders(package, ("gateway.channels", "gateway.web")))
-    # Also scan transports package root (no registry composer left there).
-    offenders.extend(_offenders("gateway.transports", ("gateway.channels", "gateway.web")))
-    # Deduplicate paths that appear both as package and via rglob of parent.
-    offenders = sorted(set(offenders))
-    assert offenders == [], "Transport peer imported channels/web:\n" + "\n".join(offenders)
+        peers = tuple(
+            f"integrations.{other.rsplit('.', 1)[1]}" for other in _TRANSPORTS if other != package
+        )
+        offenders.extend(_offenders(package, peers))
 
-
-def test_channels_only_imports_peer_startup_not_transport_internals() -> None:
-    """Channels may compose via ``*.startup``; deeper peer modules stay private."""
-    offenders: list[str] = []
-    for path in _python_files("gateway.channels"):
-        rel = str(path.relative_to(REPO_ROOT))
-        for name in _imported_modules(path):
-            if not any(name == p or name.startswith(f"{p}.") for p in _TRANSPORTS):
-                continue
-            if name in _TRANSPORT_STARTUP_MODULES:
-                continue
-            offenders.append(f"{rel} → {name}")
-    assert offenders == [], "channels imported non-startup transport modules:\n" + "\n".join(
+    assert offenders == [], "A transport reached into another vendor's integration:\n" + "\n".join(
         offenders
     )
 
 
+def test_only_the_controller_imports_the_startup_module() -> None:
+    offenders: list[str] = []
+    for path in _python_files("gateway.core"):
+        rel = str(path.relative_to(REPO_ROOT))
+        for name in _imported_modules(path):
+            names_startup = name == "gateway.startup" or name.startswith("gateway.startup.")
+            if names_startup and rel != _STARTUP_COMPOSER:
+                offenders.append(f"{rel} → {name}")
+    assert offenders == [], "Non-controller core imported gateway.startup:\n" + "\n".join(offenders)
+
+
+def test_transports_never_import_startup_or_web() -> None:
+    offenders: list[str] = []
+    for package in _TRANSPORTS:
+        offenders.extend(_offenders(package, ("gateway.startup", "gateway.web")))
+    # Also scan the transports package root: the composer (startup.py) lives
+    # there now, and it too must never import gateway.startup or gateway.web.
+    offenders.extend(_offenders("gateway.transports", ("gateway.startup", "gateway.web")))
+    # Deduplicate paths that appear both as package and via rglob of parent.
+    offenders = sorted(set(offenders))
+    assert offenders == [], "Transport peer imported startup/web:\n" + "\n".join(offenders)
+
+
+def test_composers_only_import_peer_startup_not_transport_internals() -> None:
+    """Both composers reach transports only via ``*.startup`` modules.
+
+    ``gateway/startup.py`` composes web + chat through
+    ``gateway.transports.startup``; that module in turn may import only its
+    peers' ``startup`` submodules — deeper peer modules stay private.
+    """
+    composer_allowed = _TRANSPORT_STARTUP_MODULES | {"gateway.transports.startup"}
+    offenders: list[str] = []
+    for source in ("gateway.startup", "gateway.transports.startup"):
+        for path in _python_files(source):
+            rel = str(path.relative_to(REPO_ROOT))
+            for name in _imported_modules(path):
+                if not any(name == p or name.startswith(f"{p}.") for p in _TRANSPORTS):
+                    continue
+                if name in composer_allowed:
+                    continue
+                offenders.append(f"{rel} → {name}")
+    assert offenders == [], "composer imported non-startup transport modules:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_only_the_gateway_facade_imports_the_transport_composer() -> None:
+    """``gateway.transports.startup`` has exactly one consumer: gateway/startup.py.
+
+    A second importer would be a second place that starts workers — the exact
+    smear this split removed from the gateway package root.
+    """
+    offenders: list[str] = []
+    for path in _python_files("gateway"):
+        rel = str(path.relative_to(REPO_ROOT))
+        if rel in ("gateway/startup.py", "gateway/transports/startup.py"):
+            continue
+        if rel.startswith("gateway/tests/"):
+            # Tests build fixtures from the composer's types; only production
+            # code is barred from starting workers behind the facade's back.
+            continue
+        for name in _imported_modules(path):
+            if name == "gateway.transports.startup":
+                offenders.append(f"{rel} → {name}")
+    assert offenders == [], "worker init leaked past the facade:\n" + "\n".join(offenders)
+
+
 def test_approvals_module_imports_no_transport() -> None:
-    path = REPO_ROOT / "gateway" / "core" / "runtime" / "approvals.py"
+    path = REPO_ROOT / "gateway" / "core" / "middleware" / "approvals.py"
     imported = _imported_modules(path)
     leaked = [n for n in imported if any(n == p or n.startswith(f"{p}.") for p in _TRANSPORTS)]
     assert leaked == [], f"approvals.py imports transports: {leaked}"
@@ -171,13 +239,37 @@ def _executable_surface_references(path: Path) -> list[str]:
     return found
 
 
+def test_scheduler_never_imports_the_gateway_turn_runner() -> None:
+    """A producer has no user and no turn output — it must not call the chat runner.
+
+    The gateway process may host ``infrastructure.scheduling.scheduler`` (same capacity gate).
+    Runners still enter through ``AgentSession.run_headless_turn``, not
+    ``TurnRunner``. Importing the runner here is how someone "fixes"
+    the scheduler into a fifth chat channel.
+    """
+    banned = ("infrastructure.turn_host.turn_runner",)
+    offenders = _offenders("infrastructure.scheduling.scheduler", banned)
+    for path in _python_files("infrastructure.scheduling.scheduler"):
+        if "tests" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name == "TurnRunner":
+                        rel = path.relative_to(REPO_ROOT)
+                        offenders.append(f"{rel} → TurnRunner")
+    assert offenders == [], "scheduler imported the chat turn runner:\n" + "\n".join(offenders)
+
+
 def test_gateway_never_names_a_surfaces_module_in_executable_code() -> None:
     """``surfaces`` is a peer package, and a spawned module path is still a dependency.
 
-    The daemon used to hardcode ``python -m surfaces.cli.gateway_entry`` in its
+    The daemon used to hardcode ``python -m surfaces.gateway_entry`` in its
     subprocess argv. Import-linter cannot see a dependency spelled as a string
     literal, so the cycle stayed invisible: a surface starts the daemon, and the
-    daemon starts a surface back. Each surface now passes its own argv.
+    daemon starts a surface back. Each surface now passes its own argv;
+    this package still must not name ``surfaces.*``.
     """
     # Arrange / Act: scan every non-test gateway module.
     offenders: list[str] = []
@@ -200,7 +292,7 @@ _QUARANTINED_HANDLER_NAMES = frozenset(
 
 
 def test_concurrency_limited_handler_stays_out_of_production_gateway() -> None:
-    """Wave C4: capacity wrapper is tests-only; production uses GatewayTurnHandler(gate=)."""
+    """Wave C4: capacity wrapper is tests-only; production uses TurnRunner(gate=)."""
     offenders: list[str] = []
     for path in _python_files("gateway"):
         if "tests" in path.parts:
@@ -223,7 +315,7 @@ def test_concurrency_limited_handler_stays_out_of_production_gateway() -> None:
 def test_production_gateway_never_subclasses_core_agent() -> None:
     """Wave D4: gateway hosts HeadlessAgent; it must not own a core.agent.Agent subclass.
 
-    Chat turns reuse SessionAgentPool → build_default_headless_agent. A production
+    Chat turns reuse SessionAgentPool → DefaultHeadlessBuild.agent. A production
     ``class …(Agent)`` under gateway/ would be a second brain beside the harness.
     """
     offenders: list[str] = []
@@ -306,14 +398,14 @@ def test_every_transport_package_is_registered_in_the_chat_table() -> None:
     """A transport package on disk must appear in the registry, and vice versa.
 
     Adding a transport used to mean editing the manager; now it means adding a
-    ``TransportSpec`` row. This fails if someone ships the package without the
+    ``TransportRegistration`` row. This fails if someone ships the package without the
     row (the transport never starts) or the row without the package.
     """
     # Arrange / Act.
-    from gateway.channels.chat import TRANSPORTS
+    from gateway.transports.startup import TRANSPORTS
 
     on_disk = {package.rsplit(".", 1)[-1] for package in _TRANSPORTS}
-    registered = {spec.name.value for spec in TRANSPORTS}
+    registered = {registration.name.value for registration in TRANSPORTS}
 
     # Assert.
     assert on_disk == registered, (

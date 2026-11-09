@@ -7,23 +7,23 @@
 
 set -euo pipefail
 
+# Keep the optional canary credential in this shell, not in child environments.
+GITHUB_METADATA_TOKEN="${OPENSRE_INSTALL_GITHUB_TOKEN:-}"
+unset OPENSRE_INSTALL_GITHUB_TOKEN
+
 if [ -t 1 ]; then
   COLOR_RESET=$'\033[0m'
-  COLOR_BOLD=$'\033[1m'
-  COLOR_DIM=$'\033[2m'
   COLOR_RED=$'\033[31m'
   COLOR_GREEN=$'\033[32m'
   COLOR_YELLOW=$'\033[33m'
-  COLOR_CYAN=$'\033[36m'
+  COLOR_GRAY=$'\033[90m'
   SUCCESS_MARK="✓"
 else
   COLOR_RESET=""
-  COLOR_BOLD=""
-  COLOR_DIM=""
   COLOR_RED=""
   COLOR_GREEN=""
   COLOR_YELLOW=""
-  COLOR_CYAN=""
+  COLOR_GRAY=""
   SUCCESS_MARK="Success:"
 fi
 
@@ -35,10 +35,10 @@ INSTALL_DIR="${OPENSRE_INSTALL_DIR:-}"
 INSTALL_DIR_OVERRIDE=0
 INSTALL_CHANNEL="${OPENSRE_INSTALL_CHANNEL:-main}"
 INSTALL_CHANNEL_EXPLICIT=0
+INSTALL_ORIGIN=""
 [ -n "${OPENSRE_INSTALL_CHANNEL:-}" ] && INSTALL_CHANNEL_EXPLICIT=1
 MAIN_RELEASE_TAG="${OPENSRE_MAIN_RELEASE_TAG:-main-build}"
 BIN_NAME="opensre"
-PROGRESS_PID=""
 requested_version="${OPENSRE_VERSION:-}"
 
 [ -n "$INSTALL_DIR" ] && INSTALL_DIR_OVERRIDE=1
@@ -46,6 +46,10 @@ requested_version="${requested_version#v}"
 
 log() {
   printf '%s\n' "$*"
+}
+
+muted() {
+  printf '%s%s%s\n' "${COLOR_GRAY:-}" "$*" "${COLOR_RESET:-}"
 }
 
 warn() {
@@ -61,10 +65,6 @@ success() {
   printf '%s%s %s%s\n' "${COLOR_GREEN:-}" "${SUCCESS_MARK:-Success:}" "$*" "${COLOR_RESET:-}"
 }
 
-step() {
-  printf '%s%s%s\n' "${COLOR_CYAN:-}" "$*" "${COLOR_RESET:-}"
-}
-
 install_verbose() {
   case "${OPENSRE_INSTALL_VERBOSE:-}" in
     1|true|TRUE|yes|YES)
@@ -76,359 +76,71 @@ install_verbose() {
   esac
 }
 
-is_interactive_terminal() {
-  [ -t 1 ] && [ "${TERM:-}" != "dumb" ] && ! install_verbose
+is_interactive_status_terminal() {
+  [ -t 2 ] && [ "${TERM:-}" != "dumb" ] && ! install_verbose
 }
 
-terminal_supports_unicode() {
-  local locale_value="${LC_ALL:-${LC_CTYPE:-${LANG:-}}}"
-
-  case "$locale_value" in
-    *UTF-8*|*utf-8*|*UTF8*|*utf8*)
-      return 0
-      ;;
-  esac
-
-  case "${TERM_PROGRAM:-}" in
-    Apple_Terminal|iTerm.app|vscode|WezTerm)
-      return 0
-      ;;
-  esac
-
-  return 1
-}
-
-terminal_columns() {
-  local cols=""
-
-  if command -v tput >/dev/null 2>&1; then
-    cols="$(tput cols 2>/dev/null || true)"
-  fi
-  if [ -z "$cols" ]; then
-    cols="${COLUMNS:-}"
-  fi
-
-  case "$cols" in
-    ''|*[!0-9]*)
-      cols=80
-      ;;
-  esac
-  if [ "$cols" -lt 20 ]; then
-    cols=20
-  fi
-
-  printf '%s\n' "$cols"
-}
-
-truncate_text() {
-  local value="$1"
-  local max_width="$2"
-
-  value="${value//$'\r'/ }"
-  value="${value//$'\n'/ }"
-
-  if [ "$max_width" -le 0 ]; then
-    return
-  fi
-  if [ "${#value}" -le "$max_width" ]; then
-    printf '%s' "$value"
-    return
-  fi
-  if [ "$max_width" -le 3 ]; then
-    printf '%.*s' "$max_width" "$value"
-    return
-  fi
-
-  printf '%.*s...' "$((max_width - 3))" "$value"
-}
-
-friendly_progress_label() {
+animate_dots() {
   local label="$1"
-
-  case "$label" in
-    *Fetching\ latest\ main\ build\ metadata*|*Fetching\ latest\ release\ version*|*Fetching\ release\ metadata*)
-      printf 'fetching metadata'
-      ;;
-    *Preparing\ opensre*)
-      printf 'resolving build'
-      ;;
-    *Downloading\ release\ archive*)
-      printf 'downloading archive'
-      ;;
-    *Downloading\ and\ verifying\ checksum*|*Verifying\ release\ archive*)
-      printf 'verifying checksum'
-      ;;
-    *Extracting\ and\ verifying\ binary*)
-      printf 'verifying binary'
-      ;;
-    *Installing\ *opensre*)
-      printf 'installing binary'
-      ;;
-    *)
-      label="${label#*\] }"
-      printf '%s' "$label"
-      ;;
-  esac
-}
-
-progress_frame() {
-  local step_count="$1"
-
-  if terminal_supports_unicode; then
-    case $((step_count % 10)) in
-      0) printf '⠋' ;;
-      1) printf '⠙' ;;
-      2) printf '⠹' ;;
-      3) printf '⠸' ;;
-      4) printf '⠼' ;;
-      5) printf '⠴' ;;
-      6) printf '⠦' ;;
-      7) printf '⠧' ;;
-      8) printf '⠇' ;;
-      *) printf '⠏' ;;
-    esac
-    return
-  fi
-
-  case $((step_count % 4)) in
-    0) printf '-' ;;
-    1) printf '\\' ;;
-    2) printf '|' ;;
-    *) printf '/' ;;
-  esac
-}
-
-draw_progress() {
-  local label="$1"
-  local step_count="$2"
-  local title="${3:-Installing OpenSRE}"
-  local frame
-  local columns
-  local reserve
-  local available
-  local width
-  local label_width
-  local short_label
-  local trail=8
-  local head
-  local bar=""
-  local i=0
-
-  columns="$(terminal_columns)"
-  if [ "$columns" -lt 56 ]; then
-    title="OpenSRE"
-  fi
-
-  reserve=$((2 + 1 + 1 + 1 + ${#title} + 1))
-  available=$((columns - reserve))
-  if [ "$available" -lt 12 ]; then
-    width=4
-  else
-    width=$((available / 2))
-    if [ "$width" -gt 28 ]; then
-      width=28
-    fi
-    if [ "$width" -lt 8 ]; then
-      width=8
-    fi
-  fi
-
-  label_width=$((columns - reserve - width))
-  if [ "$label_width" -lt 8 ] && [ "$width" -gt 4 ]; then
-    width=$((columns - reserve - 8))
-    if [ "$width" -lt 4 ]; then
-      width=4
-    fi
-    label_width=$((columns - reserve - width))
-  fi
-  if [ "$label_width" -lt 0 ]; then
-    label_width=0
-  fi
-
-  short_label="$(truncate_text "$(friendly_progress_label "$label")" "$label_width")"
-  frame="$(progress_frame "$step_count")"
-  head=$((step_count % (width + trail)))
-
-  while [ "$i" -lt "$width" ]; do
-    local age=$((head - i))
-    if [ "$age" -ge 0 ] && [ "$age" -lt "$trail" ]; then
-      if terminal_supports_unicode; then
-        case "$age" in
-          0|1) bar="${bar}${COLOR_GREEN:-}█${COLOR_RESET:-}" ;;
-          2|3) bar="${bar}${COLOR_CYAN:-}█${COLOR_RESET:-}" ;;
-          4|5) bar="${bar}${COLOR_RED:-}█${COLOR_RESET:-}" ;;
-          *) bar="${bar}${COLOR_YELLOW:-}█${COLOR_RESET:-}" ;;
-        esac
-      else
-        bar="${bar}#"
-      fi
-    else
-      if terminal_supports_unicode; then
-        bar="${bar}${COLOR_DIM:-}░${COLOR_RESET:-}"
-      else
-        bar="${bar}-"
-      fi
-    fi
-    i=$((i + 1))
-  done
-
-  printf '\r\033[K  %s%s%s %s %s%s%s %s' \
-    "${COLOR_YELLOW:-}" "$frame" "${COLOR_RESET:-}" \
-    "$bar" "${COLOR_BOLD:-}" "$title" "${COLOR_RESET:-}" "$short_label"
-}
-
-animate_progress() {
-  local label="$1"
-  local step_count=0
+  local dot_count=1
+  local dots
 
   while :; do
-    draw_progress "$label" "$step_count"
-    step_count=$((step_count + 1))
-    sleep 0.08
+    case "$dot_count" in
+      1) dots="." ;;
+      2) dots=".." ;;
+      *) dots="..." ;;
+    esac
+    printf '\r\033[K%s%s%s%s' \
+      "${COLOR_GRAY:-}" "$label" "$dots" "${COLOR_RESET:-}" >&2
+    dot_count=$((dot_count % 3 + 1))
+    sleep 0.4
   done
 }
 
-finish_progress() {
-  local progress_pid="${1:-}"
+finish_dots() {
+  local dots_pid="$1"
+  local label="$2"
 
-  if [ -n "$progress_pid" ]; then
-    kill "$progress_pid" 2>/dev/null || true
-    wait "$progress_pid" 2>/dev/null || true
-  fi
-  printf '\r\033[K\033[?25h'
+  kill "$dots_pid" 2>/dev/null || true
+  wait "$dots_pid" 2>/dev/null || true
+  printf '\r\033[K%s%s...%s\n\033[?25h' \
+    "${COLOR_GRAY:-}" "$label" "${COLOR_RESET:-}" >&2
 }
 
-run_with_progress() {
+run_with_dots() {
   local label="$1"
   shift
 
-  if ! is_interactive_terminal; then
-    step "$label"
+  if ! is_interactive_status_terminal; then
+    printf '%s%s...%s\n' \
+      "${COLOR_GRAY:-}" "$label" "${COLOR_RESET:-}" >&2
     "$@"
     return
   fi
 
-  local log_file
-  local command_pid
+  local dots_pid
   local status
-  log_file="$(mktemp "${TMPDIR:-/tmp}/opensre-install-progress.XXXXXX")"
 
-  "$@" >"$log_file" 2>&1 &
-  command_pid=$!
+  printf '\033[?25l' >&2
+  animate_dots "$label" &
+  dots_pid=$!
+  trap 'finish_dots "$dots_pid" "$label"; exit 130' INT TERM
 
-  printf '\033[?25l'
-  animate_progress "$label" &
-  PROGRESS_PID=$!
-  trap 'kill "$command_pid" 2>/dev/null || true; finish_progress "$PROGRESS_PID"; rm -f "$log_file"; exit 130' INT TERM
-
-  if wait "$command_pid"; then
+  if "$@"; then
     status=0
   else
     status=$?
   fi
 
-  finish_progress "$PROGRESS_PID"
-  PROGRESS_PID=""
+  finish_dots "$dots_pid" "$label"
   trap - INT TERM
-
-  if [ "$status" -ne 0 ]; then
-    printf '%sError:%s %s failed (exit %s).%s\n' "${COLOR_RED:-}" "${COLOR_RESET:-}" "$label" "$status" "${COLOR_RESET:-}" >&2
-    if [ "$status" -gt 128 ]; then
-      printf 'Process was terminated by signal %s (e.g. killed by the OS, possibly out-of-memory).\n' "$((status - 128))" >&2
-    fi
-    if [ -s "$log_file" ]; then
-      cat "$log_file" >&2
-    else
-      printf '(no output was captured before the process ended)\n' >&2
-    fi
-    rm -f "$log_file"
-    return "$status"
-  fi
-
-  rm -f "$log_file"
-  printf '  %s%s%s %s\n' "${COLOR_GREEN:-}" "${SUCCESS_MARK:-ok}" "${COLOR_RESET:-}" "$label"
-}
-
-capture_with_progress() {
-  local __result_var="$1"
-  local label="$2"
-  shift 2
-
-  if ! is_interactive_terminal; then
-    step "$label"
-    local captured
-    local status
-    if captured="$("$@")"; then
-      printf -v "$__result_var" '%s' "$captured"
-      return
-    else
-      status=$?
-    fi
-
-    if [ -n "$captured" ]; then
-      printf '%s\n' "$captured" >&2
-    fi
-    return "$status"
-  fi
-
-  local stdout_file
-  local stderr_file
-  local command_pid
-  local status
-  stdout_file="$(mktemp "${TMPDIR:-/tmp}/opensre-install-stdout.XXXXXX")"
-  stderr_file="$(mktemp "${TMPDIR:-/tmp}/opensre-install-stderr.XXXXXX")"
-
-  "$@" >"$stdout_file" 2>"$stderr_file" &
-  command_pid=$!
-
-  printf '\033[?25l'
-  animate_progress "$label" &
-  PROGRESS_PID=$!
-  trap 'kill "$command_pid" 2>/dev/null || true; finish_progress "$PROGRESS_PID"; rm -f "$stdout_file" "$stderr_file"; exit 130' INT TERM
-
-  if wait "$command_pid"; then
-    status=0
-  else
-    status=$?
-  fi
-
-  finish_progress "$PROGRESS_PID"
-  PROGRESS_PID=""
-  trap - INT TERM
-
-  if [ "$status" -ne 0 ]; then
-    printf '%sError:%s %s failed (exit %s).%s\n' "${COLOR_RED:-}" "${COLOR_RESET:-}" "$label" "$status" "${COLOR_RESET:-}" >&2
-    if [ "$status" -gt 128 ]; then
-      printf 'Process was terminated by signal %s (e.g. killed by the OS, possibly out-of-memory).\n' "$((status - 128))" >&2
-    fi
-    if [ ! -s "$stdout_file" ] && [ ! -s "$stderr_file" ]; then
-      printf '(no output was captured before the process ended)\n' >&2
-    else
-      cat "$stdout_file" >&2
-      cat "$stderr_file" >&2
-    fi
-    rm -f "$stdout_file" "$stderr_file"
-    return "$status"
-  fi
-
-  printf -v "$__result_var" '%s' "$(cat "$stdout_file")"
-  rm -f "$stdout_file" "$stderr_file"
-  printf '  %s%s%s %s\n' "${COLOR_GREEN:-}" "${SUCCESS_MARK:-ok}" "${COLOR_RESET:-}" "$label"
-}
-
-print_installer_header() {
-  if ! is_interactive_terminal; then
-    return
-  fi
-
-  log "${COLOR_BOLD:-}${COLOR_CYAN:-}OpenSRE Installer${COLOR_RESET:-}"
-  log "${COLOR_BOLD:-}Installing the OpenSRE CLI${COLOR_RESET:-}"
-  log ""
+  return "$status"
 }
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--main] [--release] [--version <version>] [--install-dir <path>]
+Usage: install.sh [--main] [--release] [--version <version>] [--install-dir <path>] [-lp | -gh | -dc]
 
 Installs the OpenSRE CLI.
 
@@ -437,18 +149,35 @@ Options:
   --release             Install the latest versioned release instead of main.
   --version <version>   Install a specific versioned release (for example 2026.4.29).
   --install-dir <path>  Install into a specific directory.
+  -lp                   Installation command from the landing page.
+  -gh                   Installation command from the GitHub README.
+  -dc                   Installation command from the documentation.
   -h, --help            Show this help text.
 
 Examples:
   curl -fsSL https://install.opensre.com | bash
+  curl -fsSL https://install.opensre.com | bash -s -- -lp
+  curl -fsSL https://install.opensre.com | bash -s -- -gh
+  curl -fsSL https://install.opensre.com | bash -s -- -dc
   curl -fsSL https://install.opensre.com | bash -s -- --main
   curl -fsSL https://install.opensre.com | bash -s -- --version 2026.4.29
 EOF
 }
 
 parse_args() {
+  local origin
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      -lp|-gh|-dc)
+        case "$1" in
+          -lp) origin="landing_page" ;;
+          -gh) origin="github" ;;
+          -dc) origin="documentation" ;;
+        esac
+        [ -z "$INSTALL_ORIGIN" ] || [ "$INSTALL_ORIGIN" = "$origin" ] \
+          || die "Specify only one installation origin (-lp, -gh, or -dc)."
+        INSTALL_ORIGIN="$origin"
+        ;;
       --main)
         INSTALL_CHANNEL="main"
         INSTALL_CHANNEL_EXPLICIT=1
@@ -512,72 +241,340 @@ skip_github_cli_install() {
 
 ensure_github_cli() {
   # Soft dependency for github_cli chat tools. Never fails the OpenSRE install.
-  if command -v gh >/dev/null 2>&1; then
+  [ -n "${gh_install_pid:-}" ] || start_github_cli_install
+  if [ -n "${gh_install_pid:-}" ]; then
+    if run_with_dots "Installing GitHub CLI (gh) for OpenSRE GitHub tools" wait "$gh_install_pid"; then
+      gh_install_pid=""
+      if [ "${gh_install_method:-}" = "release" ]; then
+        success "Installed GitHub CLI (gh) to ${INSTALL_DIR}/gh"
+      else
+        success "Installed GitHub CLI (gh) via Homebrew"
+      fi
+      return 0
+    fi
+    gh_install_pid=""
+    warn "Could not install GitHub CLI (gh) automatically."
+    print_github_cli_install_hint
+    return 0
+  fi
+
+  if command -v gh >/dev/null 2>&1 || [ -x "${INSTALL_DIR:-}/gh" ]; then
     if install_verbose; then
-      log "GitHub CLI (gh) already on PATH: $(command -v gh)"
+      log "GitHub CLI (gh) already installed: $(command -v gh || printf '%s' "${INSTALL_DIR}/gh")"
     fi
     return 0
   fi
 
   if skip_github_cli_install; then
     warn "GitHub CLI (gh) is not on PATH; skipped install because OPENSRE_SKIP_GH_INSTALL is set."
-    warn "Install from https://cli.github.com/ for OpenSRE GitHub chat tools."
-    return 0
+  else
+    warn "GitHub CLI (gh) is not installed."
   fi
+  print_github_cli_install_hint
+}
 
-  step "Installing GitHub CLI (gh) for OpenSRE GitHub tools"
+github_cli_install_needed() {
+  ! command -v gh >/dev/null 2>&1 \
+    && [ ! -x "${INSTALL_DIR:-}/gh" ] \
+    && ! skip_github_cli_install \
+    && { command -v brew >/dev/null 2>&1 || github_cli_release_platform >/dev/null; }
+}
 
+start_github_cli_install() {
+  # Installing gh is independent of the OpenSRE download, so it runs
+  # alongside it; ensure_github_cli waits for it. Homebrew keeps gh upgradable
+  # where it exists; its auto-update alone costs ~10s and only refreshes
+  # formulae that a soft dependency does not need to be the newest of.
+  # Elsewhere on Linux, distro archives lack a current gh (Ubuntu's apt has
+  # none until GitHub's repo is added, which needs sudo), so the official
+  # static build goes beside opensre instead.
+  github_cli_install_needed || return 0
   if command -v brew >/dev/null 2>&1; then
-    if brew install gh; then
-      success "Installed GitHub CLI (gh) via Homebrew"
-      return 0
-    fi
-    warn "Homebrew failed to install gh. Install manually from https://cli.github.com/"
-    return 0
+    gh_install_method="homebrew"
+    (
+      trap '' HUP
+      HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 \
+        brew install gh
+    ) </dev/null >/dev/null 2>&1 &
+  else
+    gh_install_method="release"
+    install_github_cli_release </dev/null >/dev/null 2>&1 &
+  fi
+  gh_install_pid=$!
+}
+
+github_cli_release_platform() {
+  # gh names its Linux builds by Go architecture.
+  [ "${platform:-}" = "linux" ] || return 1
+  case "${target_arch:-}" in
+    x64) printf 'linux_amd64\n' ;;
+    arm64) printf 'linux_arm64\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+github_cli_latest_tag() {
+  # The release page redirect names the tag without spending the GitHub API
+  # rate limit that the OpenSRE metadata lookup needs.
+  local location
+  location="$(
+    curl --silent --show-error --fail --connect-timeout 20 --max-time 60 \
+      -o /dev/null -w '%{redirect_url}' "https://github.com/cli/cli/releases/latest"
+  )" || return 1
+  case "${location##*/}" in
+    v[0-9]*) printf '%s\n' "${location##*/}" ;;
+    *) return 1 ;;
+  esac
+}
+
+install_github_cli_release() {
+  # Checksum-verified against the release's own checksums file, the same trust
+  # the OpenSRE archive gets. Fails closed: no verifier means no gh.
+  local suffix tag version asset gh_dir releases="https://github.com/cli/cli/releases/download"
+
+  command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || return 1
+  suffix="$(github_cli_release_platform)" || return 1
+  tag="$(github_cli_latest_tag)" || return 1
+  version="${tag#v}"
+  asset="gh_${version}_${suffix}.tar.gz"
+  gh_dir="${tmp_dir}/gh"
+  mkdir -p "$gh_dir" || return 1
+
+  download_to "${releases}/${tag}/${asset}" "${gh_dir}/${asset}" || return 1
+  download_to "${releases}/${tag}/gh_${version}_checksums.txt" "${gh_dir}/checksums.txt" || return 1
+  awk -v name="$asset" '$2 == name' "${gh_dir}/checksums.txt" > "${gh_dir}/${asset}.sha256"
+  [ -s "${gh_dir}/${asset}.sha256" ] || return 1
+  verify_checksum "${gh_dir}/${asset}.sha256" "${gh_dir}/${asset}" || return 1
+
+  tar -xzf "${gh_dir}/${asset}" -C "$gh_dir" "${asset%.tar.gz}/bin/gh" || return 1
+  mkdir -p "$INSTALL_DIR" || return 1
+  install_binary "${gh_dir}/${asset%.tar.gz}/bin/gh" "${INSTALL_DIR}/gh.new.$$" || return 1
+  mv -f "${INSTALL_DIR}/gh.new.$$" "${INSTALL_DIR}/gh"
+}
+
+print_github_cli_install_hint() {
+  # Copy-pasteable commands for the package manager this machine has. Bare
+  # ``apt install gh`` fails on stock Ubuntu/Debian images: gh comes from
+  # GitHub's apt repository, which has to be added first.
+  local sudo_cmd="sudo "
+  local keyring="/etc/apt/keyrings/githubcli-archive-keyring.gpg"
+  local rpm_repo="https://cli.github.com/packages/rpm/gh-cli.repo"
+  local -a steps=()
+
+  [ "$(id -u 2>/dev/null || printf '1')" != "0" ] || sudo_cmd=""
+
+  if [ "${platform:-}" = "darwin" ]; then
+    command -v brew >/dev/null 2>&1 || steps+=("# Install Homebrew first: https://brew.sh")
+    steps+=("brew install gh")
+  elif command -v apt-get >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}mkdir -p -m 755 /etc/apt/keyrings"
+      "curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | ${sudo_cmd}tee ${keyring} >/dev/null"
+      "${sudo_cmd}chmod go+r ${keyring}"
+      "echo \"deb [arch=\$(dpkg --print-architecture) signed-by=${keyring}] https://cli.github.com/packages stable main\" | ${sudo_cmd}tee /etc/apt/sources.list.d/github-cli.list >/dev/null"
+      "${sudo_cmd}apt-get update && ${sudo_cmd}apt-get install -y gh"
+    )
+  elif command -v dnf5 >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}dnf install -y dnf5-plugins"
+      "${sudo_cmd}dnf config-manager addrepo --from-repofile=${rpm_repo}"
+      "${sudo_cmd}dnf install -y gh"
+    )
+  elif command -v dnf >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}dnf install -y 'dnf-command(config-manager)'"
+      "${sudo_cmd}dnf config-manager --add-repo ${rpm_repo}"
+      "${sudo_cmd}dnf install -y gh"
+    )
+  elif command -v yum >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}yum install -y yum-utils"
+      "${sudo_cmd}yum-config-manager --add-repo ${rpm_repo}"
+      "${sudo_cmd}yum install -y gh"
+    )
+  elif command -v zypper >/dev/null 2>&1; then
+    steps+=(
+      "${sudo_cmd}zypper addrepo ${rpm_repo}"
+      "${sudo_cmd}zypper ref"
+      "${sudo_cmd}zypper install -y gh"
+    )
+  elif command -v pacman >/dev/null 2>&1; then
+    steps+=("${sudo_cmd}pacman -S --noconfirm github-cli")
+  elif command -v apk >/dev/null 2>&1; then
+    steps+=("${sudo_cmd}apk add github-cli")
   fi
 
-  if command -v apt-get >/dev/null 2>&1; then
-    # Soft dependency only — never require sudo for the OpenSRE installer.
-    warn "GitHub CLI (gh) is missing and apt is available but auto-install needs sudo."
-    warn "Install manually: apt install gh  (or https://cli.github.com/) for OpenSRE GitHub chat tools."
-    return 0
+  if [ "${#steps[@]}" -gt 0 ]; then
+    printf '  OpenSRE GitHub chat tools need it. Install it with:\n' >&2
+    printf '    %s\n' "${steps[@]}" >&2
+  else
+    printf '  OpenSRE GitHub chat tools need it.\n' >&2
   fi
-
-  warn "GitHub CLI (gh) is not on PATH and no supported package manager was found."
-  warn "Install from https://cli.github.com/ for OpenSRE GitHub chat tools."
+  printf '  Other platforms and options: https://github.com/cli/cli#installation\n' >&2
 }
 
 require_prerequisites() {
   need_cmd curl
   need_cmd grep
+  need_cmd mktemp
   need_cmd sed
   need_cmd tr
   need_cmd uname
 }
 
-CURL_FLAGS=(
-  --fail
-  --silent
-  --show-error
-  --location
-  --retry 3
-  --retry-delay 1
-)
+github_status_retryable() {
+  # 403/429 are GitHub's rate-limit responses from shared CI addresses.
+  # Other 4xx responses (a missing tag, for example) are final.
+  case "$1" in
+    403|408|429|500|502|503|504|000|"")
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+github_retry_after() {
+  local header_file="$1"
+  local value=""
+
+  command -v awk >/dev/null 2>&1 || return 0
+  value="$(
+    tr -d '\r' < "$header_file" \
+      | awk 'tolower($1) == "retry-after:" { wait = $2 } END { print wait }' \
+      | tr -cd '0-9'
+  )"
+  [ -n "$value" ] || return 0
+  # Ignore a non-numeric or multi-minute directive; exponential backoff still runs.
+  [ "${#value}" -le 2 ] || return 0
+  value=$((10#$value))
+  if [ "$value" -ge 1 ] && [ "$value" -le 60 ]; then
+    printf '%s\n' "$value"
+  fi
+}
+
+github_curl() {
+  local url="$1"
+  local destination="$2"
+  local http1="$3"
+  local auth_token="${4:-}"
+  shift 4
+
+  local attempt=1
+  local max_attempts=6
+  local body_file header_file http_code retry_after delay
+  local -a protocol=()
+  local -a extra=("$@")
+
+  # Release archives hit curl 92 (HTTP/2 PROTOCOL_ERROR) from GitHub.
+  # Metadata stays on curl's default HTTP version: forcing HTTP/1.1 there
+  # changes a different request class than the archive failures.
+  if [ "$http1" = "http1" ]; then
+    protocol+=(--http1.1)
+  fi
+
+  body_file="$(mktemp)"
+  header_file="$(mktemp)"
+
+  while true; do
+    # Empty arrays must stay safe with set -u on bash 3.2.
+    if [ -n "$auth_token" ]; then
+      http_code="$(
+        printf 'header = "Authorization: Bearer %s"\n' "$auth_token" |
+          curl --silent --location \
+            --connect-timeout 20 --max-time 180 \
+            ${protocol[@]+"${protocol[@]}"} \
+            -D "$header_file" \
+            -o "$body_file" \
+            -w '%{http_code}' \
+            ${extra[@]+"${extra[@]}"} \
+            --config - \
+            "$url" || true
+      )"
+    else
+      http_code="$(
+        curl --silent --location \
+          --connect-timeout 20 --max-time 180 \
+          ${protocol[@]+"${protocol[@]}"} \
+          -D "$header_file" \
+          -o "$body_file" \
+          -w '%{http_code}' \
+          ${extra[@]+"${extra[@]}"} \
+          "$url" || true
+      )"
+    fi
+    http_code="${http_code//[[:space:]]/}"
+
+    case "$http_code" in
+      200|201|204)
+        if [ -n "$destination" ]; then
+          mv "$body_file" "$destination"
+        else
+          cat "$body_file"
+          rm -f "$body_file"
+        fi
+        rm -f "$header_file"
+        return 0
+        ;;
+    esac
+
+    # An invalid canary token should fall back immediately instead of spending
+    # the public rate limit on retries with credentials GitHub will reject.
+    if [ -n "$auth_token" ] && { [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; }; then
+      rm -f "$body_file" "$header_file"
+      return 22
+    fi
+
+    if ! github_status_retryable "$http_code" || [ "$attempt" -ge "$max_attempts" ]; then
+      if [ -n "$http_code" ] && [ "$http_code" != "000" ]; then
+        printf 'curl: (22) The requested URL returned error: %s\n' "$http_code" >&2
+      else
+        printf 'curl: (56) GitHub request failed before a response\n' >&2
+      fi
+      rm -f "$body_file" "$header_file"
+      return 22
+    fi
+
+    retry_after="$(github_retry_after "$header_file")"
+    delay=$((2 ** attempt))
+    if [ "$delay" -gt 32 ]; then
+      delay=32
+    fi
+    if [ -n "$retry_after" ]; then
+      delay="$retry_after"
+    fi
+    warn "GitHub request failed (HTTP ${http_code:-transport}); retrying in ${delay}s."
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+}
 
 download_to() {
   local url="$1"
   local destination="$2"
 
-  curl "${CURL_FLAGS[@]}" -o "$destination" "$url"
+  github_curl "$url" "$destination" http1 ""
 }
 
 download_text() {
   local url="$1"
+  local github_token="${GITHUB_METADATA_TOKEN:-}"
 
-  curl "${CURL_FLAGS[@]}" \
+  if [ -n "$github_token" ]; then
+    local authenticated_response
+    if authenticated_response="$(
+      github_curl "$url" "" "" "$github_token" \
+        -H "Accept: application/vnd.github+json" \
+        -H "User-Agent: opensre-install-script" 2>/dev/null
+    )"; then
+      printf '%s' "$authenticated_response"
+      return
+    fi
+    warn "Authenticated GitHub metadata lookup failed; retrying without credentials."
+  fi
+
+  github_curl "$url" "" "" "" \
     -H "Accept: application/vnd.github+json" \
-    -H "User-Agent: opensre-install-script" \
-    "$url"
+    -H "User-Agent: opensre-install-script"
 }
 
 fetch_release_json() {
@@ -811,15 +808,14 @@ verify_checksum() {
   checksum_path="$normalized_checksum_path"
   checksum_name="${checksum_path##*/}"
 
+  # A mismatch returns 1 so the caller decides whether it is final.
   if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$archive_dir" && sha256sum -c "$checksum_name") >/dev/null \
-      || die "Checksum verification failed for '${archive_path##*/}'."
+    (cd "$archive_dir" && sha256sum -c "$checksum_name") >/dev/null || return 1
     return
   fi
 
   if command -v shasum >/dev/null 2>&1; then
-    (cd "$archive_dir" && shasum -a 256 -c "$checksum_name") >/dev/null \
-      || die "Checksum verification failed for '${archive_path##*/}'."
+    (cd "$archive_dir" && shasum -a 256 -c "$checksum_name") >/dev/null || return 1
     return
   fi
 
@@ -828,7 +824,7 @@ verify_checksum() {
     [ -n "$expected" ] || die "Checksum file '${checksum_name}' is malformed."
 
     actual="$(openssl dgst -sha256 "$archive_path" | sed 's/^.*= //')"
-    [ "$expected" = "$actual" ] || die "Checksum verification failed for '${archive_path##*/}'."
+    [ "$expected" = "$actual" ] || return 1
     return
   fi
 
@@ -861,78 +857,144 @@ install_binary() {
   chmod 0755 "$destination_path" 2>/dev/null || true
 }
 
-install_binary_app() {
+# Install is two renames with the checks in between: stage the extracted tree
+# under INSTALL_DIR, verify it there, then swap it into place. A binary that
+# fails its checks never replaces a working install, and nothing is copied:
+# macOS caches signature validation per file, so a renamed tree keeps what the
+# checks (and the later warm-up) paid for while a copied tree is validated
+# again on the user's first launch.
+
+stage_binary() {
+  local source_path="$1"
+  local app_root=""
+
+  mkdir -p "$INSTALL_DIR"
+  if [ "$platform" != "windows" ] && app_root="$(binary_app_root "$source_path")"; then
+    stage_binary_app "$app_root"
+    return
+  fi
+
+  stage_single_binary "$source_path"
+}
+
+stage_binary_app() {
   local app_root="$1"
+  local staged_dir="${INSTALL_DIR}/.${BIN_NAME}-app.new.$$"
+
+  rm -rf "$staged_dir"
+  mv "$app_root" "$staged_dir"
+  chmod -R u+rwX,go+rX "$staged_dir" 2>/dev/null || true
+  printf '%s\n' "${staged_dir}/${BIN_NAME}"
+}
+
+stage_single_binary() {
+  local source_path="$1"
+  local staged_path="${INSTALL_DIR}/${BIN_NAME}.new.$$"
+
+  install_binary "$source_path" "$staged_path"
+  printf '%s\n' "$staged_path"
+}
+
+staged_binary_is_app() {
+  [ "${1%/*}" != "$INSTALL_DIR" ]
+}
+
+activate_staged_binary() {
+  local staged_path="$1"
   local destination_path="$2"
   local app_destination_dir="${INSTALL_DIR}/.${BIN_NAME}-app"
-  local app_tmp_dir="${app_destination_dir}.new.$$"
   local app_old_dir="${app_destination_dir}.old.$$"
 
-  rm -rf "$app_tmp_dir" "$app_old_dir"
-  cp -R "$app_root" "$app_tmp_dir"
-  chmod -R u+rwX,go+rX "$app_tmp_dir" 2>/dev/null || true
+  if ! staged_binary_is_app "$staged_path"; then
+    mv -f "$staged_path" "$destination_path"
+    return
+  fi
 
+  rm -rf "$app_old_dir"
   if [ -e "$app_destination_dir" ]; then
     mv "$app_destination_dir" "$app_old_dir"
   fi
-  mv "$app_tmp_dir" "$app_destination_dir"
+  mv "${staged_path%/*}" "$app_destination_dir"
   rm -rf "$app_old_dir"
 
   rm -f "$destination_path"
   ln -s "$app_destination_dir/${BIN_NAME}" "$destination_path"
 }
 
-install_verified_binary() {
-  local source_path="$1"
-  local destination_path="$2"
-  local app_root=""
+discard_staged_binary() {
+  local staged_path="$1"
 
-  mkdir -p "$INSTALL_DIR"
-  if [ "$platform" != "windows" ] && app_root="$(binary_app_root "$source_path")"; then
-    install_binary_app "$app_root" "$destination_path"
-    return
+  if staged_binary_is_app "$staged_path"; then
+    rm -rf "${staged_path%/*}"
+  else
+    rm -f "$staged_path"
   fi
-
-  install_binary "$source_path" "$destination_path"
 }
 
 download_and_verify_checksum() {
-  local checksum_url="$1"
-  local checksum_path="$2"
-  local archive_path="$3"
+  local checksum_path="$1"
+  local archive_path="$2"
 
-  download_to "$checksum_url" "$checksum_path"
-  verify_checksum "$checksum_path" "$archive_path"
+  # The checksum download started alongside the archive (start_release_downloads).
+  # Returns 2 when the checksum arrived but does not match the archive.
+  wait "$checksum_pid" || return 1
+  verify_checksum "$checksum_path" "$archive_path" || return 2
 }
 
-extract_and_verify_binary() {
-  local archive_path="$1"
+prepare_and_verify_binary() {
+  local binary_path="$1"
   local extraction_dir="$2"
-  local extracted_binary_path
-  local extracted_version
-  local extract_status
+  local expected_version="${3:-}"
 
-  printf 'Extracting %s into %s...\n' "$archive_path" "$extraction_dir" >&2
-  set +e
-  extract_archive "$archive_path" "$extraction_dir"
-  extract_status=$?
-  set -e
-  if [ "$extract_status" -ne 0 ]; then
-    printf 'Archive extraction failed (exit %s).\n' "$extract_status" >&2
-    return "$extract_status"
+  # macOS: clear quarantine and re-adhoc-sign onedir libs+binary. Stale or
+  # post-mutation signatures otherwise SIGKILL --version (exit 137,
+  # CODESIGNING / Invalid Page) on consumer Macs.
+  clear_macos_quarantine "$extraction_dir"
+  resign_macos_onedir_adhoc "$binary_path"
+
+  if [ -n "$expected_version" ]; then
+    verify_binary_version "$binary_path" "$expected_version"
+  else
+    verify_binary_version "$binary_path"
   fi
-  printf 'Extraction finished, locating %s binary...\n' "$BIN_NAME" >&2
+  # Runs on the staged tree under INSTALL_DIR, which is renamed into place
+  # afterwards, so the validation paid here is the validation the user's
+  # first launch would otherwise pay.
+}
 
-  extracted_binary_path="$(get_binary_path_from_archive "$extraction_dir" "$BIN_NAME")"
-  printf 'Found binary at %s, verifying it runs...\n' "$extracted_binary_path" >&2
+warm_first_launch() {
+  local binary_path="$1"
+
+  # Codesign-cache warm-up is Darwin-only; Linux/Windows have no equivalent
+  # and would otherwise pay for a full registry/verifier/skills import.
+  [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] || return 0
+
+  # macOS validates each Mach-O image on first load (~0.2s each, serialized
+  # system-wide) and caches the result per file. ``--version`` loads only a
+  # few images; the smoke imports the whole tool registry and loads nearly all
+  # of them, so the user's first ``opensre`` starts warm instead of paying ~6s
+  # of validation. It runs detached after activation: a failed warm-up never
+  # blocked activation, and the installer should not wait on it. The activated
+  # tree is the staged tree renamed, so the cache lands on the files the user
+  # runs. SIGHUP is ignored so closing the terminal does not cut it short.
+  ( trap '' HUP; package_smoke_quiet "$binary_path" ) </dev/null >/dev/null 2>&1 &
+  warm_pid=$!
+}
+
+package_smoke_quiet() {
+  # The smoke prints a JSON summary; only its exit status matters here.
+  # Only the completed install should record the one-time installation event.
+  OPENSRE_ANALYTICS_DISABLED=1 "$1" _package-smoke >/dev/null 2>&1
+}
+
+verify_staged_binary() {
+  local staged_path="$1"
 
   if [ "$INSTALL_CHANNEL" = "main" ]; then
-    extracted_version="$(verify_binary_version "$extracted_binary_path")" || return "$?"
+    prepare_and_verify_binary "$staged_path" "${staged_path%/*}"
   else
-    extracted_version="$(verify_binary_version "$extracted_binary_path" "$version")" || return "$?"
+    prepare_and_verify_binary "$staged_path" "${staged_path%/*}" "$version"
   fi
-
-  printf '%s\n%s\n' "$extracted_binary_path" "$extracted_version"
 }
 
 get_binary_path_from_archive() {
@@ -988,6 +1050,11 @@ verify_binary_version() {
     else
       printf 'Command output: <empty>\n' >&2
     fi
+    # 137 = 128+SIGKILL. On Darwin this is often CODESIGNING / Invalid Page for
+    # a broken adhoc main-build artifact (not a missing quarantine xattr).
+    if [ "$version_status" -eq 137 ] && [ "$(uname -s 2>/dev/null || true)" = "Darwin" ]; then
+      printf 'Hint: exit 137 on macOS usually means the kernel killed the binary for an invalid code signature (adhoc main-build). Check Console DiagnosticReports for "Code Signature Invalid", re-download a notarized release, or install from source/uv.\n' >&2
+    fi
     print_binary_diagnostics "$binary_path"
     return 1
   fi
@@ -1018,6 +1085,44 @@ verify_binary_version() {
   esac
 }
 
+clear_macos_quarantine() {
+  local target_path="$1"
+
+  # Only relevant on Darwin; no-op elsewhere / when xattr is missing.
+  [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] || return 0
+  command -v xattr >/dev/null 2>&1 || return 0
+  [ -e "$target_path" ] || return 0
+  xattr -dr com.apple.quarantine "$target_path" >/dev/null 2>&1 || true
+}
+
+resign_macos_onedir_adhoc() {
+  local binary_path="$1"
+  local bundle_dir
+  local jobs
+
+  # PyInstaller onedir: post-build dylib rewrites (or a stale CI signature) leave
+  # Invalid Page codesign faults. Consumer Macs SIGKILL --version (exit 137).
+  # Sign nested libs first, then the main binary (same order as release.yml).
+  [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] || return 0
+  command -v codesign >/dev/null 2>&1 || return 0
+  [ -f "$binary_path" ] || return 0
+  bundle_dir="$(cd "$(dirname "$binary_path")" && pwd)"
+  clear_macos_quarantine "$bundle_dir"
+  # Nested libs are independent; parallelize with a small cap so large hosts
+  # do not stampede the disk. The main binary stays serial and last.
+  jobs="$(sysctl -n hw.ncpu 2>/dev/null || printf '4')"
+  if [ "$jobs" -gt 4 ]; then
+    jobs=4
+  fi
+  if [ "$jobs" -lt 1 ]; then
+    jobs=1
+  fi
+  find "$bundle_dir" -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.so.*' \) -print0 \
+    | xargs -0 -P "$jobs" -n 1 codesign --force --sign - >/dev/null 2>&1 \
+    || true
+  codesign --force --sign - "$binary_path" >/dev/null 2>&1 || true
+}
+
 print_binary_diagnostics() {
   local binary_path="$1"
 
@@ -1031,6 +1136,9 @@ print_binary_diagnostics() {
   fi
   if command -v file >/dev/null 2>&1; then
     file "$binary_path" >&2 2>/dev/null || true
+  fi
+  if command -v xattr >/dev/null 2>&1; then
+    printf '  xattr: %s\n' "$(xattr -l "$binary_path" 2>/dev/null || printf '(none)')" >&2
   fi
   if [ "$platform" = "linux" ] && command -v ldd >/dev/null 2>&1; then
     ldd "$binary_path" >&2 2>/dev/null || true
@@ -1072,137 +1180,104 @@ configure_path() {
       path_line="fish_add_path \"${INSTALL_DIR}\""
       ;;
     *)
-      log "Add the following line to your shell profile to use ${BIN_NAME:-opensre}:"
-      log "  export PATH=\"${INSTALL_DIR}:\$PATH\""
+      log "Add ${INSTALL_DIR} to PATH to run ${BIN_NAME:-opensre} from any terminal."
       return
       ;;
   esac
 
+  path_rc_file="$rc_file"
   local rc_dir="${rc_file%/*}"
   [ "$rc_dir" != "$rc_file" ] && [ ! -d "$rc_dir" ] && mkdir -p "$rc_dir"
 
   if [ -f "$rc_file" ] && grep -qF "${INSTALL_DIR}" "$rc_file"; then
+    muted "PATH already configured in ${rc_file}"
     return
   fi
 
   local marker="# Added by opensre installer"
   if [ -f "$rc_file" ] && grep -qF "$marker" "$rc_file" && grep -qF "${INSTALL_DIR}" "$rc_file"; then
+    muted "PATH already configured in ${rc_file}"
     return
   fi
 
   printf '\n%s\n%s\n' "$marker" "$path_line" >> "$rc_file"
-
-  log ""
-  log "${BIN_NAME:-opensre} has been added to PATH in ${rc_file}."
-  log "To apply now, run:  source \"${rc_file}\""
-  log "Or open a new terminal."
+  muted "PATH configured in ${rc_file}"
 }
 
 ensure_on_path() {
-  # A child process cannot edit the parent shell's PATH, so when the install
-  # dir is not already on PATH, link the binary into a user-writable directory
-  # that is — no sudo, and `opensre` works in this terminal immediately. Only
-  # when no PATH directory is writable fall back to the shell rc update.
-  local link_dir
-
-  if [ "$platform" != "windows" ] && ! path_has_dir "$INSTALL_DIR"; then
-    if link_dir="$(select_writable_path_candidate_from_list "$PATH")" \
-      && mkdir -p "$link_dir" 2>/dev/null \
-      && ln -sf "${INSTALL_DIR}/${BIN_NAME}" "${link_dir}/${BIN_NAME}" 2>/dev/null; then
-      success "Linked ${BIN_NAME} into ${link_dir} — ready to run in this terminal."
-      return
-    fi
+  # Instant, so no progress animation: its dots would interleave with the
+  # result lines printed here.
+  if path_has_dir "$INSTALL_DIR"; then
+    muted "PATH already configured"
+    return
   fi
 
   configure_path
-}
-
-print_success_screen() {
-  local version="$1"
-  local sep="────────────────────────────────────────────"
-
-  if [ ! -t 1 ]; then
-    sep="--------------------------------------------"
+  if link_into_shell_path; then
+    muted "Linked ${BIN_NAME} into ${shell_path_link_dir} so it runs in this shell"
   fi
-
-  log ""
-  log "$sep"
-  success "Welcome to OpenSRE"
-  if [ "$version" = "main" ]; then
-    log "  ${COLOR_BOLD:-}opensre (main build) installed successfully${COLOR_RESET:-}"
-  else
-    log "  ${COLOR_BOLD:-}opensre v${version} installed successfully${COLOR_RESET:-}"
-  fi
-  log "$sep"
-  log ""
-  log "Next steps:"
-  log "  1. Run  ${BIN_NAME:-opensre} onboard"
-  log "     Set up your LLM provider and add your observability integrations."
-  log ""
-  log "  2. Run  ${BIN_NAME:-opensre}  (no subcommand)"
-  log "     From a normal interactive terminal this starts the interactive shell — type a"
-  log "     prompt or incident description at the prompt to investigate."
-  log ""
-  log "  3. Optional — one-shot RCA from a file:"
-  log "     ${BIN_NAME:-opensre} investigate -i path/to/alert.json"
-  log ""
-  log "Docs: https://www.opensre.com/docs"
-  log ""
 }
 
-auto_launch_disabled() {
-  case "${OPENSRE_AUTO_LAUNCH:-}" in
-    0|false|FALSE|no|NO|off|OFF)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+link_into_shell_path() {
+  # A piped installer cannot change its parent shell's PATH, and the rc file
+  # only reaches new shells. A link in a system dir that is already on PATH
+  # makes opensre (and a gh installed beside it) run in this shell too. That
+  # dir is not user-writable (or it would have been INSTALL_DIR), so this
+  # needs passwordless sudo, as on EC2 and most cloud images; sudo is never
+  # allowed to prompt. An explicit --install-dir opts out.
+  local dir name link_dir=""
+  local old_ifs="$IFS"
+
+  [ "${INSTALL_DIR_OVERRIDE:-0}" -eq 0 ] || return 1
+  [ "${platform:-}" != "windows" ] || return 1
+  command -v sudo >/dev/null 2>&1 || return 1
+  IFS=':'
+  for dir in ${SYSTEM_INSTALL_DIR_CANDIDATES:-}; do
+    if [ -d "$dir" ] && path_has_dir "$dir"; then
+      link_dir="$dir"
+      break
+    fi
+  done
+  IFS="$old_ifs"
+  [ -n "$link_dir" ] || return 1
+  sudo -n true >/dev/null 2>&1 || return 1
+
+  for name in "$BIN_NAME" gh; do
+    [ -x "${INSTALL_DIR}/${name}" ] || continue
+    # Never replace a real binary someone else put there; links are ours.
+    if [ -e "${link_dir}/${name}" ] && [ ! -L "${link_dir}/${name}" ]; then
+      [ "$name" != "$BIN_NAME" ] || return 1
+      continue
+    fi
+    sudo -n ln -sfn "${INSTALL_DIR}/${name}" "${link_dir}/${name}" >/dev/null 2>&1 || return 1
+  done
+  shell_path_link_dir="$link_dir"
 }
 
-controlling_tty_usable() {
-  # The onboarding wizard needs a terminal it can actually control: it calls
-  # tcgetattr/tcsetattr on its stdin. `stty -g` performs the same tcgetattr,
-  # so where it fails, launching the wizard would die with a "terminal I/O
-  # error" mid-render (issue #3273). Only offer /dev/tty when it passes.
-  command -v stty >/dev/null 2>&1 || return 1
-  [ -r /dev/tty ] && [ -w /dev/tty ] || return 1
-  stty -g </dev/tty >/dev/null 2>&1
-}
+print_get_started() {
+  local rc_display
 
-run_onboarding() {
-  # Uses the caller's `installed_binary` (bash dynamic scoping); any redirect
-  # on the call applies to the wizard.
-  log "Launching ${BIN_NAME} onboard..."
-  "$installed_binary" onboard || \
-    warn "Onboarding exited before completion. Run '${BIN_NAME} onboard' to retry."
-}
-
-launch_onboarding_after_install() {
-  local installed_binary="${INSTALL_DIR}/${BIN_NAME}"
-
-  # The full-screen wizard needs a real terminal on stdout to render.
-  if auto_launch_disabled || [ ! -t 1 ]; then
+  if path_has_dir "$INSTALL_DIR" || [ -n "${shell_path_link_dir:-}" ]; then
+    log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
     return
   fi
-  if [ ! -x "$installed_binary" ]; then
-    warn "Could not auto-launch onboarding; ${installed_binary} is not executable."
+  if [ -n "${path_rc_file:-}" ]; then
+    case "$path_rc_file" in
+      "$HOME"/*) rc_display="~/${path_rc_file#"$HOME"/}" ;;
+      *) rc_display="$path_rc_file" ;;
+    esac
+    log "${COLOR_YELLOW:-}Run 'source ${rc_display}' (or open a new terminal), then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
     return
   fi
-
-  if [ -t 0 ]; then
-    run_onboarding
-  elif [ "$platform" != "windows" ] && controlling_tty_usable; then
-    # Piped install (the documented `curl … | bash`): stdin is the curl pipe,
-    # so hand the wizard the controlling terminal instead. Git Bash on Windows
-    # emulates /dev/tty in ways the wizard cannot control, so the piped
-    # auto-launch stays darwin/linux-only.
-    run_onboarding </dev/tty
-  fi
+  log "${COLOR_YELLOW:-}Add ${INSTALL_DIR} to PATH, then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
 }
 
 cleanup() {
+  # A failed install must not leave downloads running. A Homebrew gh install
+  # is left alone: interrupting Homebrew mid-pour can leave a broken keg.
+  stop_background_job "${archive_pid:-}"
+  stop_background_job "${checksum_pid:-}"
+  [ "${gh_install_method:-}" != "release" ] || stop_background_job "${gh_install_pid:-}"
   if [ -n "${tmp_dir:-}" ] && [ -d "$tmp_dir" ]; then
     rm -rf "$tmp_dir"
   fi
@@ -1249,15 +1324,7 @@ resolve_release_metadata() {
   version="$requested_version"
   release_tag=""
 
-  if [ "$INSTALL_CHANNEL" = "main" ]; then
-    metadata_step="[1/6] Fetching latest main build metadata"
-  elif [ -n "$version" ]; then
-    metadata_step="[1/6] Fetching release metadata for v${version}"
-  else
-    metadata_step="[1/6] Fetching latest release version"
-  fi
-
-  capture_with_progress release_json "$metadata_step" fetch_release_json "$version" || {
+  release_json="$(fetch_release_json "$version")" || {
     if [ "$INSTALL_CHANNEL" = "main" ]; then
       die "Failed to query main build metadata from GitHub."
     fi
@@ -1311,13 +1378,7 @@ select_archive_asset() {
 prepare_download() {
   download_url="https://github.com/${REPO}/releases/download/${release_tag}/${archive}"
   checksum_asset="${archive}.sha256"
-  checksum_url="${download_url}.sha256"
 
-  if [ "$INSTALL_CHANNEL" = "main" ]; then
-    step "[2/6] Preparing opensre main build (${platform}/${target_arch})"
-  else
-    step "[2/6] Preparing opensre v${version} (${platform}/${target_arch})"
-  fi
   if [ "$asset_arch" != "$target_arch" ]; then
     log "Using release asset built for ${platform}/${asset_arch}."
   fi
@@ -1372,20 +1433,90 @@ create_temp_workspace() {
   trap cleanup EXIT
 }
 
+stop_background_job() {
+  local pid="$1"
+  local child
+
+  [ -n "$pid" ] || return 0
+  # github_curl runs curl in a command substitution, so the job's own pid is a
+  # subshell; stop its children too or curl keeps downloading after exit.
+  if command -v pgrep >/dev/null 2>&1; then
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+      stop_background_job "$child"
+    done
+  fi
+  kill "$pid" 2>/dev/null || true
+}
+
+start_release_downloads() {
+  local url="$1"
+  local name="$2"
+
+  # The checksum is tiny and may not be published; its errors surface later
+  # only when the release metadata says it exists.
+  download_to "$url" "${tmp_dir}/${name}" &
+  archive_pid=$!
+  download_to "${url}.sha256" "${tmp_dir}/${name}.sha256" 2>/dev/null &
+  checksum_pid=$!
+  started_download_url="$url"
+}
+
+prefetch_release_archive() {
+  local tag
+  local name
+
+  # When the asset URL is known without the release metadata (the main build,
+  # or a pinned --version), start the download now so the metadata lookup
+  # overlaps it. Windows is excluded: its ARM64 build can fall back to x64,
+  # which only the metadata decides.
+  [ "$platform" != "windows" ] || return 0
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    tag="$MAIN_RELEASE_TAG"
+  elif [ -n "$requested_version" ]; then
+    tag="v${requested_version}"
+  else
+    return 0
+  fi
+
+  name="$(build_archive_name "$requested_version" "$target_arch")"
+  start_release_downloads "https://github.com/${REPO}/releases/download/${tag}/${name}" "$name"
+}
+
 download_release_archive() {
+  local download_label
+
   archive_path="${tmp_dir}/${archive}"
-  run_with_progress "[3/6] Downloading release archive (${archive})" download_to "$download_url" "$archive_path" \
+  if [ "$INSTALL_CHANNEL" = "main" ]; then
+    download_label="Downloading OpenSRE main build for ${platform}-${asset_arch}"
+  else
+    download_label="Downloading OpenSRE v${version} for ${platform}-${asset_arch}"
+  fi
+
+  if [ "${started_download_url:-}" != "$download_url" ]; then
+    stop_background_job "${archive_pid:-}"
+    stop_background_job "${checksum_pid:-}"
+    start_release_downloads "$download_url" "$archive"
+  fi
+
+  run_with_dots "$download_label" wait "$archive_pid" \
     || die "Failed to download '${archive}'."
+  archive_pid=""
 }
 
 verify_release_checksum() {
   local checksum_path
+  local status=0
 
   if release_has_asset "$release_json" "$checksum_asset"; then
     checksum_path="${tmp_dir}/${checksum_asset}"
-    run_with_progress "[4/6] Downloading and verifying checksum (${checksum_asset})" \
-      download_and_verify_checksum "$checksum_url" "$checksum_path" "$archive_path" \
-      || die "Failed to download or verify checksum '${checksum_asset}'."
+    run_with_dots "Fetching and verifying checksum" \
+      download_and_verify_checksum "$checksum_path" "$archive_path" \
+      || status=$?
+    checksum_pid=""
+    # A mismatch returns 1 so the caller decides whether it is final.
+    [ "$status" -ne 2 ] || return 1
+    [ "$status" -eq 0 ] || die "Failed to download checksum '${checksum_asset}'."
+    muted "Checksum verification passed"
     return
   fi
 
@@ -1396,50 +1527,164 @@ verify_release_checksum() {
   fi
 }
 
-extract_release_binary() {
-  local verified_binary
+download_and_verify_release_archive() {
+  local wait_seconds=10
 
-  capture_with_progress verified_binary "[5/6] Extracting and verifying binary" extract_and_verify_binary "$archive_path" "$tmp_dir"
-  binary_path="${verified_binary%%$'\n'*}"
-  installed_version="${verified_binary#*$'\n'}"
+  download_release_archive
+  if verify_release_checksum; then
+    return
+  fi
+
+  # The main build is republished in place after every merge, one asset at a
+  # time (delete, then upload), so a download that spans a publish can pair an
+  # archive and checksum from different builds. A publish settles within
+  # seconds, so fetch the release once more after a short wait. Versioned
+  # releases never change, so their mismatch is final.
+  [ "$INSTALL_CHANNEL" = "main" ] || die "Checksum verification failed for '${archive}'."
+  warn "Checksum mismatch; the main build was likely republished during the download. Downloading it again in ${wait_seconds}s."
+  sleep "$wait_seconds"
+  resolve_release_metadata
+  select_archive_asset
+  prepare_download
+  start_release_downloads "$download_url" "$archive"
+  download_release_archive
+  verify_release_checksum || die "Checksum verification failed for '${archive}'."
+}
+
+extract_release_binary() {
+  run_with_dots "Extracting OpenSRE" extract_archive "$archive_path" "$tmp_dir" \
+    || die "Failed to extract '${archive}'."
+  binary_path="$(
+    run_with_dots "Locating ${BIN_NAME} binary" \
+      get_binary_path_from_archive "$tmp_dir" "$BIN_NAME"
+  )" || die "Failed to locate ${BIN_NAME} in '${archive}'."
 }
 
 install_release_binary() {
-  run_with_progress "[6/6] Installing ${BIN_NAME} to ${INSTALL_DIR}" install_verified_binary "$binary_path" "${INSTALL_DIR}/${BIN_NAME}"
+  local staged_path
+
+  staged_path="$(run_with_dots "Installing OpenSRE" stage_binary "$binary_path")" \
+    || die "Failed to install ${BIN_NAME} to '${INSTALL_DIR}'."
+  if ! installed_version="$(
+    run_with_dots "Found ${BIN_NAME} binary, verifying it runs" verify_staged_binary "$staged_path"
+  )"; then
+    discard_staged_binary "$staged_path"
+    die "Failed to verify '${archive}'."
+  fi
+  activate_staged_binary "$staged_path" "${INSTALL_DIR}/${BIN_NAME}" \
+    || die "Failed to install ${BIN_NAME} to '${INSTALL_DIR}'."
 }
 
 print_install_confirmation() {
-  if [ "$INSTALL_CHANNEL" = "main" ]; then
-    if [ "$installed_version" = "main" ]; then
-      success "Installed ${BIN_NAME} main build to ${INSTALL_DIR}/${BIN_NAME}"
-    else
-      success "Installed ${BIN_NAME} main build (${installed_version}) to ${INSTALL_DIR}/${BIN_NAME}"
-    fi
+  if [ "$installed_version" = "main" ]; then
+    muted "OpenSRE main build installed successfully to ${INSTALL_DIR}/${BIN_NAME}"
   else
-    success "Installed ${BIN_NAME} v${installed_version} to ${INSTALL_DIR}/${BIN_NAME}"
+    muted "OpenSRE v${installed_version} installed successfully to ${INSTALL_DIR}/${BIN_NAME}"
+  fi
+}
+
+auto_setup_enabled() {
+  case "${OPENSRE_AUTO_LAUNCH:-}" in
+    0|false|FALSE|no|NO|off|OFF)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+launch_setup_after_install() {
+  local binary_path="${INSTALL_DIR}/${BIN_NAME}"
+
+  if ! auto_setup_enabled || [ ! -t 0 ] || [ ! -t 1 ]; then
+    return 0
+  fi
+  log "Launching ${BIN_NAME} setup..."
+  if ! "$binary_path" setup; then
+    warn "Setup exited before completion. Run '${BIN_NAME} setup' to retry."
+  fi
+}
+
+record_install_analytics() {
+  local binary_path="${INSTALL_DIR}/${BIN_NAME}"
+
+  # ``unknown`` when no pre-install snapshot was taken: never crash under
+  # ``set -u`` and never fabricate ``absent`` for an unobserved marker.
+  OPENSRE_INSTALL_SOURCE="posix_installer" \
+    OPENSRE_INSTALL_ORIGIN="${INSTALL_ORIGIN:-}" \
+    OPENSRE_INSTALL_MARKER_STATE="${install_marker_state:-unknown}" \
+    OPENSRE_INSTALL_CHANNEL="$INSTALL_CHANNEL" \
+    OPENSRE_INSTALL_VERSION="$installed_version" \
+    "$binary_path" --record-install >/dev/null 2>&1 || true
+}
+
+expand_home_prefix() {
+  case "$1" in
+    '~') printf '%s' "$HOME" ;;
+    '~/'*) printf '%s' "$HOME/${1#\~/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+
+resolve_install_marker_dir() {
+  # Mirror the runtime's get_store_path(): an explicit wizard store path wins
+  # and the marker lives beside it; otherwise OPENSRE_HOME, then ~/.opensre.
+  local store_path state_dir
+  store_path="$(trim_whitespace "${OPENSRE_WIZARD_STORE_PATH:-}")"
+  if [ -n "$store_path" ]; then
+    dirname "$(expand_home_prefix "$store_path")"
+    return 0
+  fi
+  state_dir="$(trim_whitespace "${OPENSRE_HOME:-}")"
+  [ -n "$state_dir" ] || state_dir="$HOME/.opensre"
+  expand_home_prefix "$state_dir"
+}
+
+snapshot_install_marker() {
+  local state_dir
+  state_dir="$(resolve_install_marker_dir)"
+  install_marker_state="unknown"
+  if [ -e "$state_dir/installed" ]; then
+    install_marker_state="present"
+  elif { [ -d "$state_dir" ] && [ -x "$state_dir" ]; } || \
+       { [ ! -e "$state_dir" ] && [ -x "$(dirname "$state_dir")" ]; }; then
+    install_marker_state="absent"
   fi
 }
 
 finish_install() {
+  record_install_analytics
+  # After the analytics record, so that short run does not queue behind the
+  # warm-up's signature validation.
+  warm_first_launch "${INSTALL_DIR}/${BIN_NAME}"
   print_install_confirmation
-  ensure_on_path
+  # gh first: ensure_on_path links a gh installed beside opensre too.
   ensure_github_cli
-  print_success_screen "$installed_version"
-  launch_onboarding_after_install
+  ensure_on_path
+  print_get_started
+  launch_setup_after_install
 }
 
 main() {
   parse_args "$@"
+  snapshot_install_marker
   require_prerequisites
   detect_platform
   resolve_install_dir
-  print_installer_header
+  create_temp_workspace
+  start_github_cli_install
+  prefetch_release_archive
   resolve_release_metadata
   select_archive_asset
   prepare_download
-  create_temp_workspace
-  download_release_archive
-  verify_release_checksum
+  download_and_verify_release_archive
   extract_release_binary
   install_release_binary
   finish_install

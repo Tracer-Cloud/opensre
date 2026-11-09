@@ -1,7 +1,9 @@
 """Make the package executable: ``python -m surfaces.cli``.
 
-The CLI itself is defined in :mod:`surfaces.cli.app`. This module only launches
-it, matching ``gateway/main.py``.
+The CLI itself is defined in :mod:`surfaces.cli.app`. This module launches the
+command surface **alone**: no interactive shell to fall back to and no
+foreground gateway runner, because those come from the process entrypoint. For
+the whole product use ``opensre`` or ``python -m surfaces``.
 """
 
 from __future__ import annotations

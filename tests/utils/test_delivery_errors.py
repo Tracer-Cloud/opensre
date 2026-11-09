@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from platform.notifications.delivery_errors import extract_http_error
+from infrastructure.delivery.notifications.delivery_errors import extract_http_error
 
 
 class TestExtractHttpError:

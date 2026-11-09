@@ -5,15 +5,48 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Final
 
 from core.domain.work_items.models import WorkItem, WorkItemPriority, WorkItemStatus
+from core.domain.work_items.schedule import parse_work_item_datetime
 
-_PRIORITY_WEIGHTS: dict[WorkItemPriority, int] = {
+SECONDS_PER_HOUR: Final[float] = 3600.0
+SECONDS_PER_DAY: Final[float] = 86400.0
+
+PRIORITY_WEIGHTS: Final[dict[WorkItemPriority, int]] = {
     WorkItemPriority.URGENT: 90,
     WorkItemPriority.HIGH: 65,
     WorkItemPriority.NORMAL: 35,
     WorkItemPriority.LOW: 15,
 }
+
+STATUS_PENALTIES: Final[dict[WorkItemStatus, tuple[int, str]]] = {
+    WorkItemStatus.BLOCKED: (-25, "blocked"),
+    WorkItemStatus.DEFERRED: (-15, "deferred"),
+}
+
+COMPLETED_SCORE: Final[int] = -1
+REMINDER_DUE_BOOST: Final[int] = 15
+AGE_BOOST_AFTER_DAYS: Final[int] = 7
+AGE_BOOST_CAP: Final[int] = 14
+DEFAULT_PRIORITY_LIMIT: Final[int] = 5
+
+
+@dataclass(frozen=True)
+class ScoreContribution:
+    """One additive (or overriding) term in a work-item score."""
+
+    points: int
+    reason: str
+
+
+# (max hours remaining inclusive, contribution). First match wins; overdue is separate.
+_DUE_WINDOWS: Final[tuple[tuple[float, ScoreContribution], ...]] = (
+    (24.0, ScoreContribution(40, "due within 24h")),
+    (72.0, ScoreContribution(25, "due within 3 days")),
+    (168.0, ScoreContribution(10, "due this week")),
+)
+_OVERDUE: Final[ScoreContribution] = ScoreContribution(55, "overdue")
 
 
 @dataclass(frozen=True)
@@ -24,97 +57,101 @@ class WorkItemScore:
 
 
 def score_work_item(item: WorkItem, *, now: datetime | None = None) -> WorkItemScore:
-    current = now or datetime.now(UTC)
-    reasons: list[str] = [f"{item.priority.value} priority"]
-    score = _PRIORITY_WEIGHTS[item.priority]
+    if item.status is WorkItemStatus.COMPLETED:
+        return WorkItemScore(item=item, score=COMPLETED_SCORE, reasons=("completed",))
 
-    due_at = _parse_datetime(item.due_at)
+    current = _aware_utc(now) if now is not None else datetime.now(UTC)
+    contributions: list[ScoreContribution] = [
+        ScoreContribution(PRIORITY_WEIGHTS[item.priority], f"{item.priority.value} priority"),
+    ]
+
+    due_at = _as_utc(item.due_at)
     if due_at is not None:
-        delta_hours = (due_at - current).total_seconds() / 3600
-        if delta_hours < 0:
-            score += 55
-            reasons.append("overdue")
-        elif delta_hours <= 24:
-            score += 40
-            reasons.append("due within 24h")
-        elif delta_hours <= 72:
-            score += 25
-            reasons.append("due within 3 days")
-        elif delta_hours <= 168:
-            score += 10
-            reasons.append("due this week")
+        due = _due_contribution(due_at, current)
+        if due is not None:
+            contributions.append(due)
 
-    if item.remind_at:
-        remind_at = _parse_datetime(item.remind_at)
-        if remind_at is not None and remind_at <= current:
-            score += 15
-            reasons.append("reminder is due")
+    remind_at = _as_utc(item.remind_at)
+    if remind_at is not None and remind_at <= current:
+        contributions.append(ScoreContribution(REMINDER_DUE_BOOST, "reminder is due"))
 
-    created_at = _parse_datetime(item.created_at)
+    created_at = _as_utc(item.created_at)
     if created_at is not None:
-        age_days = int(max((current - created_at).total_seconds(), 0) // 86400)
-        if age_days >= 7:
-            boost = min(age_days, 14)
-            score += boost
-            reasons.append(f"open for {age_days}d")
+        age = _age_contribution(created_at, current)
+        if age is not None:
+            contributions.append(age)
 
-    if item.status is WorkItemStatus.BLOCKED:
-        score -= 25
-        reasons.append("blocked")
-    elif item.status is WorkItemStatus.DEFERRED:
-        score -= 15
-        reasons.append("deferred")
-    elif item.status is WorkItemStatus.COMPLETED:
-        score = -1
-        reasons = ["completed"]
+    penalty = STATUS_PENALTIES.get(item.status)
+    if penalty is not None:
+        points, reason = penalty
+        contributions.append(ScoreContribution(points, reason))
 
-    return WorkItemScore(item=item, score=score, reasons=tuple(reasons))
+    return WorkItemScore(
+        item=item,
+        score=sum(part.points for part in contributions),
+        reasons=tuple(part.reason for part in contributions),
+    )
 
 
 def prioritize_work_items(
     items: Sequence[WorkItem],
     *,
-    limit: int = 5,
+    limit: int = DEFAULT_PRIORITY_LIMIT,
     now: datetime | None = None,
 ) -> list[WorkItemScore]:
-    scores = [
-        score_work_item(item, now=now)
-        for item in items
-        if item.status is not WorkItemStatus.COMPLETED
-    ]
-    scores.sort(
-        key=lambda scored: (
-            -scored.score,
-            _priority_rank(scored.item.priority),
-            scored.item.created_at,
-            scored.item.title.lower(),
-        )
+    current = _aware_utc(now) if now is not None else None
+    ranked = sorted(
+        (score_work_item(item, now=current) for item in items if item.is_active),
+        key=_rank_key,
     )
-    return scores[: max(limit, 0)]
+    return ranked[: max(limit, 0)]
 
 
-def _priority_rank(priority: WorkItemPriority) -> int:
-    return {
-        WorkItemPriority.URGENT: 0,
-        WorkItemPriority.HIGH: 1,
-        WorkItemPriority.NORMAL: 2,
-        WorkItemPriority.LOW: 3,
-    }[priority]
+def _rank_key(scored: WorkItemScore) -> tuple[int, int, str, str]:
+    item = scored.item
+    return (
+        -scored.score,
+        -PRIORITY_WEIGHTS[item.priority],
+        item.created_at,
+        item.title.lower(),
+    )
 
 
-def _parse_datetime(value: str) -> datetime | None:
-    text = value.strip()
-    if not text:
+def _due_contribution(due_at: datetime, now: datetime) -> ScoreContribution | None:
+    hours_remaining = (due_at - now).total_seconds() / SECONDS_PER_HOUR
+    if hours_remaining < 0:
+        return _OVERDUE
+    for max_hours, contribution in _DUE_WINDOWS:
+        if hours_remaining <= max_hours:
+            return contribution
+    return None
+
+
+def _age_contribution(created_at: datetime, now: datetime) -> ScoreContribution | None:
+    age_days = int(max((now - created_at).total_seconds(), 0.0) // SECONDS_PER_DAY)
+    if age_days < AGE_BOOST_AFTER_DAYS:
         return None
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
+    return ScoreContribution(min(age_days, AGE_BOOST_CAP), f"open for {age_days}d")
+
+
+def _as_utc(value: str) -> datetime | None:
+    parsed = parse_work_item_datetime(value)
+    if parsed is None:
         return None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return _aware_utc(parsed)
 
 
-__all__ = ["WorkItemScore", "prioritize_work_items", "score_work_item"]
+def _aware_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+__all__ = [
+    "DEFAULT_PRIORITY_LIMIT",
+    "PRIORITY_WEIGHTS",
+    "ScoreContribution",
+    "WorkItemScore",
+    "prioritize_work_items",
+    "score_work_item",
+]

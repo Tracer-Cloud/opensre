@@ -6,26 +6,41 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from config.constants.llm import (
+    ANTHROPIC_API_KEY_ENV,
     AZURE_OPENAI_API_KEY_ENV,
     AZURE_OPENAI_API_VERSION_ENV,
     AZURE_OPENAI_BASE_URL_ENV,
+    CUSTOM_ANTHROPIC_API_KEY_ENV,
+    CUSTOM_ANTHROPIC_BASE_URL_ENV,
+    CUSTOM_OPENAI_API_KEY_ENV,
+    CUSTOM_OPENAI_BASE_URL_ENV,
+    DEEPSEEK_API_KEY_ENV,
+    GEMINI_API_KEY_ENV,
+    GROQ_API_KEY_ENV,
+    MINIMAX_API_KEY_ENV,
+    NVIDIA_API_KEY_ENV,
+    OPENAI_API_KEY_ENV,
+    OPENROUTER_API_KEY_ENV,
+    TRUSTEDROUTER_API_KEY_ENV,
 )
+from config.llm_auth.subscriptions import SUBSCRIPTION_PROVIDERS
 
 
 class CredentialKind(StrEnum):
     """How a provider proves its identity to the LLM backend.
 
     Kept distinct from the wizard's onboarding vocabulary
-    (:class:`surfaces.cli.wizard.config.WizardCredentialKind`): the two share
+    (:class:`surfaces.shared.llm_setup.catalog.WizardCredentialKind`): the two share
     ``api_key``/``cli`` but the wizard's ``host``/``none`` map to this enum's
     ``local``/``ambient``. Do not merge them — see the ``WIZARD_TO_CATALOG_KIND``
-    translation in ``surfaces/cli/wizard/config.py``.
+    translation in ``surfaces/shared/llm_setup/catalog.py``.
     """
 
-    #: A user-supplied API key stored by OpenSRE (keyring/.env).
+    #: A user-supplied API key stored by OpenSRE (credentials file / env).
     API_KEY = "api_key"
     #: A vendor CLI handles its own auth (Codex, Claude Code); no key in .env.
     CLI = "cli"
+    SUBSCRIPTION = "subscription"
     #: Credentials the runtime reads from the environment (Bedrock IAM, Vertex ADC).
     AMBIENT = "ambient"
     #: A local host endpoint (Ollama); reachability, not a secret.
@@ -57,11 +72,21 @@ class ProviderSpec:
 
 
 PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
+    *(
+        ProviderSpec(
+            value=provider.value,
+            label=provider.label,
+            credential_kind=CredentialKind.SUBSCRIPTION,
+            model_env=provider.model_env,
+            allow_custom_models=True,
+        )
+        for provider in SUBSCRIPTION_PROVIDERS
+    ),
     ProviderSpec(
         value="anthropic",
         label="Anthropic API key",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="ANTHROPIC_API_KEY",
+        api_key_env=ANTHROPIC_API_KEY_ENV,
         model_env="ANTHROPIC_REASONING_MODEL",
         legacy_model_env="ANTHROPIC_MODEL",
         toolcall_model_env="ANTHROPIC_TOOLCALL_MODEL",
@@ -71,7 +96,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         value="openai",
         label="OpenAI API key",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="OPENAI_API_KEY",
+        api_key_env=OPENAI_API_KEY_ENV,
         model_env="OPENAI_REASONING_MODEL",
         legacy_model_env="OPENAI_MODEL",
         toolcall_model_env="OPENAI_TOOLCALL_MODEL",
@@ -82,7 +107,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         value="openrouter",
         label="OpenRouter",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="OPENROUTER_API_KEY",
+        api_key_env=OPENROUTER_API_KEY_ENV,
         model_env="OPENROUTER_REASONING_MODEL",
         legacy_model_env="OPENROUTER_MODEL",
         toolcall_model_env="OPENROUTER_TOOLCALL_MODEL",
@@ -90,10 +115,21 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         allow_custom_models=True,
     ),
     ProviderSpec(
+        value="trustedrouter",
+        label="TrustedRouter",
+        credential_kind=CredentialKind.API_KEY,
+        api_key_env=TRUSTEDROUTER_API_KEY_ENV,
+        model_env="TRUSTEDROUTER_REASONING_MODEL",
+        legacy_model_env="TRUSTEDROUTER_MODEL",
+        toolcall_model_env="TRUSTEDROUTER_TOOLCALL_MODEL",
+        classification_model_env="TRUSTEDROUTER_CLASSIFICATION_MODEL",
+        allow_custom_models=True,
+    ),
+    ProviderSpec(
         value="deepseek",
         label="DeepSeek",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="DEEPSEEK_API_KEY",
+        api_key_env=DEEPSEEK_API_KEY_ENV,
         model_env="DEEPSEEK_REASONING_MODEL",
         legacy_model_env="DEEPSEEK_MODEL",
         toolcall_model_env="DEEPSEEK_TOOLCALL_MODEL",
@@ -104,7 +140,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         value="gemini",
         label="Google Gemini API key",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="GEMINI_API_KEY",
+        api_key_env=GEMINI_API_KEY_ENV,
         model_env="GEMINI_REASONING_MODEL",
         legacy_model_env="GEMINI_MODEL",
         toolcall_model_env="GEMINI_TOOLCALL_MODEL",
@@ -115,7 +151,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         value="nvidia",
         label="NVIDIA NIM",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="NVIDIA_API_KEY",
+        api_key_env=NVIDIA_API_KEY_ENV,
         model_env="NVIDIA_REASONING_MODEL",
         legacy_model_env="NVIDIA_MODEL",
         toolcall_model_env="NVIDIA_TOOLCALL_MODEL",
@@ -126,7 +162,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         value="minimax",
         label="MiniMax",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="MINIMAX_API_KEY",
+        api_key_env=MINIMAX_API_KEY_ENV,
         model_env="MINIMAX_REASONING_MODEL",
         legacy_model_env="MINIMAX_MODEL",
         toolcall_model_env="MINIMAX_TOOLCALL_MODEL",
@@ -137,7 +173,7 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         value="groq",
         label="Groq API key",
         credential_kind=CredentialKind.API_KEY,
-        api_key_env="GROQ_API_KEY",
+        api_key_env=GROQ_API_KEY_ENV,
         model_env="GROQ_REASONING_MODEL",
         legacy_model_env="GROQ_MODEL",
         toolcall_model_env="GROQ_TOOLCALL_MODEL",
@@ -155,6 +191,30 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         classification_model_env="AZURE_OPENAI_CLASSIFICATION_MODEL",
         endpoint_env=AZURE_OPENAI_BASE_URL_ENV,
         api_version_env=AZURE_OPENAI_API_VERSION_ENV,
+        allow_custom_models=True,
+    ),
+    ProviderSpec(
+        value="custom-openai",
+        label="Custom OpenAI-compatible endpoint",
+        credential_kind=CredentialKind.API_KEY,
+        api_key_env=CUSTOM_OPENAI_API_KEY_ENV,
+        model_env="CUSTOM_OPENAI_REASONING_MODEL",
+        legacy_model_env="CUSTOM_OPENAI_MODEL",
+        toolcall_model_env="CUSTOM_OPENAI_TOOLCALL_MODEL",
+        classification_model_env="CUSTOM_OPENAI_CLASSIFICATION_MODEL",
+        endpoint_env=CUSTOM_OPENAI_BASE_URL_ENV,
+        allow_custom_models=True,
+    ),
+    ProviderSpec(
+        value="custom-anthropic",
+        label="Custom Anthropic-compatible endpoint",
+        credential_kind=CredentialKind.API_KEY,
+        api_key_env=CUSTOM_ANTHROPIC_API_KEY_ENV,
+        model_env="CUSTOM_ANTHROPIC_REASONING_MODEL",
+        legacy_model_env="CUSTOM_ANTHROPIC_MODEL",
+        toolcall_model_env="CUSTOM_ANTHROPIC_TOOLCALL_MODEL",
+        classification_model_env="CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL",
+        endpoint_env=CUSTOM_ANTHROPIC_BASE_URL_ENV,
         allow_custom_models=True,
     ),
     ProviderSpec(
@@ -275,11 +335,19 @@ API_KEY_PROVIDER_ENVS: dict[str, str] = {
 KEYLESS_PROVIDER_VALUES: frozenset[str] = frozenset(
     spec.value for spec in PROVIDER_SPECS if not spec.uses_open_sre_api_key
 )
+_PROVIDER_BY_API_KEY_ENV: dict[str, str] = {
+    api_key_env: provider for provider, api_key_env in API_KEY_PROVIDER_ENVS.items()
+}
 
 
 def provider_spec(provider: str) -> ProviderSpec | None:
     """Return the provider spec for *provider*, if supported."""
     return PROVIDER_BY_VALUE.get(provider.strip().lower())
+
+
+def provider_for_api_key_env(api_key_env: str) -> str | None:
+    """Return the provider id whose OpenSRE-managed API key lives in *api_key_env*."""
+    return _PROVIDER_BY_API_KEY_ENV.get(api_key_env.strip().upper())
 
 
 def require_provider_spec(provider: str) -> ProviderSpec:
@@ -298,6 +366,7 @@ __all__ = [
     "PROVIDER_SPECS",
     "ProviderSpec",
     "SUPPORTED_PROVIDER_VALUES",
+    "provider_for_api_key_env",
     "provider_spec",
     "require_provider_spec",
 ]

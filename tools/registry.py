@@ -1,4 +1,4 @@
-"""Canonical tool registry shared by investigation and chat surfaces.
+"""Canonical tool registry shared by chat and action surfaces.
 
 Facade over tool discovery (:mod:`tools.registry_discovery`), the static
 descriptor index (:mod:`tools.registry_index`), and skill-guidance attachment
@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 import threading
 from functools import lru_cache
 from types import ModuleType
 from typing import TYPE_CHECKING
 
 import tools as tools_package
-from core.tool_framework.registered_tool import RegisteredTool, ToolSurface
+from core.tool import RegisteredTool, ToolSurface
 from tools.registry_discovery import (
     INTEGRATION_TOOL_PACKAGES,
     collect_registered_tools_from_module,
@@ -117,15 +118,24 @@ def _load_registry_tool_map() -> dict[str, RegisteredTool]:
 
 
 @lru_cache(maxsize=8)
-def _load_surface_snapshot(surface: str) -> tuple[RegisteredTool, ...]:
+def _load_surface_snapshot(surface: ToolSurface) -> tuple[RegisteredTool, ...]:
     """Import only the modules that statically declare a tool for ``surface``.
 
     Resolved from the descriptor index so a surface load never imports the other
     surfaces' vendor executors. Runtime-registered external packages are already
     imported, so they are collected directly. Equivalent to the full snapshot
     filtered by ``surface`` (pinned by the registry-index contract test).
+
+    A PyInstaller frozen binary carries bytecode only, so the AST scanner finds
+    no source; the build bakes the descriptor index into the bundle instead
+    (``dump_descriptor_index``) and this loads it. Only a frozen build that
+    shipped without that index falls back to the full dynamic snapshot, which
+    imports every vendor tool module.
     """
-    from tools.registry_index import build_descriptor_index
+    from tools.registry_index import baked_index_available, build_descriptor_index
+
+    if getattr(sys, "frozen", False) and not baked_index_available():
+        return tuple(t for t in _load_registry_snapshot() if surface in t.surfaces)
 
     index = build_descriptor_index()
     modules = sorted({d.module for d in index.values() if surface in d.surfaces})
@@ -154,12 +164,13 @@ def clear_tool_registry_cache() -> None:
     _load_registry_snapshot.cache_clear()
     _load_registry_tool_map.cache_clear()
     _load_surface_snapshot.cache_clear()
+    _integration_by_tool_name.cache_clear()
     from tools.registry_index import clear_descriptor_index_cache
 
     clear_descriptor_index_cache()
 
 
-def get_registered_tools(surface: ToolSurface | str | None = None) -> list[RegisteredTool]:
+def get_registered_tools(surface: ToolSurface | None = None) -> list[RegisteredTool]:
     if surface is None:
         return list(_load_registry_snapshot())
     return list(_load_surface_snapshot(surface))
@@ -175,13 +186,48 @@ def get_registered_tool(tool_name: str) -> RegisteredTool | None:
     return _load_registry_tool_map().get(tool_name)
 
 
-def get_registered_tool_map(surface: ToolSurface | str | None = None) -> dict[str, RegisteredTool]:
+@lru_cache(maxsize=1)
+def _integration_by_tool_name() -> dict[str, str]:
+    """Tool name -> the integration whose package defines it, from the descriptor index."""
+    from tools.registry_index import build_descriptor_index
+
+    owners: dict[str, str] = {}
+    for name, descriptor in build_descriptor_index().items():
+        parts = descriptor.module.split(".")
+        if len(parts) > 2 and parts[0] == "integrations":
+            owners[name] = parts[1]
+    return owners
+
+
+def integration_of_tool(tool_name: str) -> str | None:
+    """The integration that owns ``tool_name`` (``github``, ``s3``, ...), or ``None``.
+
+    Decided by where the registry discovered the tool, not by its evidence
+    ``source``, which vendors set independently.
+    """
+    return _integration_by_tool_name().get(tool_name)
+
+
+def describe_registered_tool(tool_name: str) -> tuple[str, ...]:
+    """A tool's own wording — display name then description — for status copy.
+
+    The turn host renders live tool status but sits below this tier, so it is
+    handed this function rather than reaching into the registry itself.
+    Returns an empty tuple for an unknown tool.
+    """
+    tool = get_registered_tool(tool_name)
+    if tool is None:
+        return ()
+    return (tool.display_name or "", tool.description)
+
+
+def get_registered_tool_map(surface: ToolSurface | None = None) -> dict[str, RegisteredTool]:
     if surface is None:
         return dict(_load_registry_tool_map())
     return {tool.name: tool for tool in get_registered_tools(surface)}
 
 
-def get_tool_descriptors(surface: ToolSurface | str | None = None) -> list[ToolDescriptor]:
+def get_tool_descriptors(surface: ToolSurface | None = None) -> list[ToolDescriptor]:
     """Cheap tool metadata for ``surface`` — reads the static index, imports no
     executor. Use for listing/availability; call :func:`load_tool` to materialize
     an executor only when a tool must run.
@@ -213,13 +259,13 @@ def load_tool(descriptor: ToolDescriptor) -> RegisteredTool | None:
 
 
 class RegisteredToolRegistry:
-    """:class:`~core.agent_harness.ports.ToolRegistry` backed by discovered tool packages."""
+    """:class:`~core.tool.registry.ToolRegistry` backed by discovered tool packages."""
 
-    def tools_for_surface(self, surface: str) -> list[RegisteredTool]:
-        return get_registered_tools(surface)  # type: ignore[arg-type]
+    def tools_for_surface(self, surface: ToolSurface) -> list[RegisteredTool]:
+        return get_registered_tools(surface)
 
-    def tool_map_for_surface(self, surface: str) -> dict[str, RegisteredTool]:
-        return get_registered_tool_map(surface)  # type: ignore[arg-type]
+    def tool_map_for_surface(self, surface: ToolSurface) -> dict[str, RegisteredTool]:
+        return get_registered_tool_map(surface)
 
 
 def resolve_tool_display_name(tool_name: str) -> str:

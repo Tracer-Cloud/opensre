@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import patch
 
-from integrations.mariadb.tools.mariadb_innodb_status_tool import get_mariadb_innodb_status
+from integrations.mariadb.tools.mariadb_innodb_status_tool import (
+    _map_get_mariadb_innodb_status,
+    get_mariadb_innodb_status,
+)
 from tests.tools.conftest import BaseToolContract
 
 
@@ -41,3 +45,51 @@ def test_run_error_propagated() -> None:
     ):
         result = get_mariadb_innodb_status(host="invalid", database="test", username="user")
     assert "error" in result
+
+
+class TestMapGetMariadbInnodbStatus:
+    def test_records_entry_flagging_deadlock_section(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_innodb_status(
+            evidence,
+            {
+                "available": True,
+                "innodb_status": "...\nLATEST DETECTED DEADLOCK\n...",
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "get_mariadb_innodb_status"
+        assert (
+            entries[0]["summary"] == "InnoDB engine status captured — includes a recorded deadlock"
+        )
+
+    def test_records_entry_without_deadlock_clause(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_innodb_status(
+            evidence,
+            {"available": True, "innodb_status": "BUFFER POOL AND MEMORY\n..."},
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"] == "InnoDB engine status captured"
+
+    def test_records_nothing_when_status_text_empty(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_innodb_status(evidence, {"available": True, "innodb_status": ""}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_get_mariadb_innodb_status(
+            evidence, {"available": False, "error": "connection timeout"}, {}
+        )
+
+        assert "catalog_entries" not in evidence

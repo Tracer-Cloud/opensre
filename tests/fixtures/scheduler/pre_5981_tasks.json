@@ -1,0 +1,85 @@
+[
+  {
+    "id": "existing-loop",
+    "name": "Overnight incidents",
+    "kind": "custom_investigation",
+    "cron": "0 9 * * *",
+    "timezone": "Asia/Kolkata",
+    "provider": "interactive_shell",
+    "chat_id": "local-session",
+    "window_hours": 12,
+    "enabled": true,
+    "params": {
+      "loop_prompt": "Summarize overnight incidents",
+      "loop_channels": "interactive_shell"
+    },
+    "created_at": "2026-08-20T03:30:00+00:00",
+    "last_run": "2026-09-01T03:30:00+00:00",
+    "next_run": "2026-09-02T03:30:00+00:00"
+  },
+  {
+    "id": "legacy-daily",
+    "name": "Daily reliability",
+    "kind": "daily_summary",
+    "cron": "0 8 * * 1-5",
+    "timezone": "UTC",
+    "provider": "slack",
+    "chat_id": "C0123ABCD",
+    "window_hours": 24,
+    "enabled": true,
+    "params": {},
+    "created_at": "2026-08-01T00:00:00+00:00"
+  },
+  {
+    "id": "legacy-weekly",
+    "name": "Weekly alert audit",
+    "kind": "weekly_audit",
+    "cron": "0 9 * * 1",
+    "timezone": "UTC",
+    "provider": "telegram",
+    "chat_id": "-100123",
+    "window_hours": 168,
+    "enabled": false,
+    "params": {},
+    "created_at": "2026-08-01T00:00:00+00:00"
+  },
+  {
+    "id": "legacy-replay",
+    "name": "Incident replay",
+    "kind": "incident_window_replay",
+    "cron": "30 2 * * *",
+    "timezone": "UTC",
+    "provider": "discord",
+    "chat_id": "987654321",
+    "window_hours": 6,
+    "enabled": true,
+    "params": {},
+    "created_at": "2026-08-01T00:00:00+00:00"
+  },
+  {
+    "id": "legacy-synthetic",
+    "name": "Synthetic checks",
+    "kind": "synthetic_run",
+    "cron": "*/15 * * * *",
+    "timezone": "UTC",
+    "provider": "rocketchat",
+    "chat_id": "ops",
+    "window_hours": 1,
+    "enabled": true,
+    "params": {},
+    "created_at": "2026-08-01T00:00:00+00:00"
+  },
+  {
+    "id": "legacy-promptless",
+    "name": "Old custom investigation",
+    "kind": "custom_investigation",
+    "cron": "0 4 * * *",
+    "timezone": "UTC",
+    "provider": "slack",
+    "chat_id": "C999",
+    "window_hours": 24,
+    "enabled": true,
+    "params": {},
+    "created_at": "2026-08-01T00:00:00+00:00"
+  }
+]

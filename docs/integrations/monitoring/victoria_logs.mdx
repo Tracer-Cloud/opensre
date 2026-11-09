@@ -1,0 +1,101 @@
+---
+title: "VictoriaLogs"
+description: "Connect VictoriaLogs so OpenSRE can pull structured logs as evidence"
+---
+
+## Overview
+
+OpenSRE queries [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/) with LogsQL to retrieve structured log evidence — correlating application errors, request anomalies, and stream-level events with the alert under investigation.
+
+## Prerequisites
+
+- A reachable VictoriaLogs instance (for example `http://vmlogs:9428`)
+- LogsQL knowledge for any custom queries you want OpenSRE to run
+
+## Setup
+
+There is no `opensre integrations setup victoria_logs` handler. Configure VictoriaLogs with environment variables or the persistent store only.
+
+### Option 1: Environment variables
+
+Add to your `.env`:
+
+```bash
+VICTORIA_LOGS_URL=http://vmlogs.monitoring.svc:9428
+
+# Optional — only set this if your deployment is multi-tenant.
+# Single-tenant clusters should leave it unset; OpenSRE will not send
+# the AccountID header at all.
+# VICTORIA_LOGS_TENANT_ID=acme
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VICTORIA_LOGS_URL` | — | **Required.** Base URL of your VictoriaLogs instance |
+| `VICTORIA_LOGS_TENANT_ID` | _(unset)_ | Optional. Sent as the `AccountID` header on multi-tenant deployments |
+
+Leave `VICTORIA_LOGS_TENANT_ID` unset for single-tenant clusters. OpenSRE does not send `AccountID: 0` implicitly — that would target the default tenant on every request.
+
+### Option 2: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "victoria-logs-prod",
+      "service": "victoria_logs",
+      "status": "active",
+      "credentials": {
+        "base_url": "http://vmlogs.monitoring.svc:9428"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+VictoriaLogs typically needs no API token for OpenSRE. Point
+`VICTORIA_LOGS_URL` at a reachable instance. On multi-tenant deployments, set
+`VICTORIA_LOGS_TENANT_ID` so OpenSRE sends the correct `AccountID` header.
+
+## Tools
+
+When VictoriaLogs is configured, the `victoria_logs_query` tool becomes available to the agent. It runs LogsQL queries against `/select/logsql/query` and returns structured rows. The default is a wildcard match over the past hour; the agent narrows the query from alert context (service, level, trace ID, time window).
+
+## Verify
+
+```bash
+opensre integrations verify victoria_logs
+```
+
+Expected output:
+
+```
+SERVICE          SOURCE      STATUS   DETAIL
+victoria_logs    local env   passed   Connected to VictoriaLogs at http://vmlogs.monitoring.svc:9428.
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Status: missing** | Set `VICTORIA_LOGS_URL` or add a `victoria_logs` entry to your integrations store |
+| **Connection refused** | Verify the URL is reachable from this host; check firewall rules |
+| **404 on `/select/logsql/query`** | Confirm you are pointing at VictoriaLogs (not VictoriaMetrics for time-series); they expose different endpoints |
+| **Empty rows** | Normal when no logs match — widen the time range with a longer `start` (for example `-24h`) or relax the LogsQL filter |
+
+## Security
+
+Leave `VICTORIA_LOGS_TENANT_ID` unset for single-tenant clusters. OpenSRE does not send `AccountID: 0` implicitly — that would target the default tenant on every request.
+
+## Extras
+
+### How it works
+
+Typical agent uses:
+
+- Pull recent error-level logs for the affected service to surface stack traces
+- Filter by request ID or trace ID to follow a single failing transaction across services
+- Compare log volume in the incident window against a known-good baseline to spot regressions

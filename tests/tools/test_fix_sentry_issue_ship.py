@@ -432,6 +432,8 @@ def test_run_open_pr_missing_token_fails_fast(
 ) -> None:
     monkeypatch.setenv("PI_ISSUE_FIX_ENABLED", "1")
     monkeypatch.setenv("PI_ISSUE_FIX_SHIP_ENABLED", "1")
+    # Clear every fallback resolve_github_token consults, including the MCP env.
+    monkeypatch.delenv("GITHUB_MCP_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     out = fix_sentry_issue.run(sentry_url=_URL, open_pr=True)

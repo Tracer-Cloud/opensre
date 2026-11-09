@@ -1,0 +1,85 @@
+# Labels each PR with a readable size (small/medium/large/extra large) based
+# on lines changed, so reviewers can triage queue depth at a glance.
+
+name: PR Size Label
+
+on:
+  # pull_request_target (not pull_request) so fork PRs get a write-scoped
+  # token — this workflow never checks out PR code, only reads the file list
+  # and mutates labels via the API, so it's safe against untrusted PR content.
+  pull_request_target:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: pr-size-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    name: label size
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Apply size label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Keep excluded paths and thresholds in sync with any doc that
+            // references PR size labels.
+            const EXCLUDED_FILES = new Set(["uv.lock"]);
+
+            // Labels already exist in the repo (size:small #0E8A16, size:medium
+            // #FBCA04, size:large #D93F0B, size:extra-large #B60205) — recreate
+            // manually with `gh label create` if one is ever deleted.
+            const SIZES = [
+              { name: "size:small", max: 199 },
+              { name: "size:medium", max: 999 },
+              { name: "size:large", max: 2999 },
+              { name: "size:extra-large", max: Infinity },
+            ];
+
+            async function countChangedLines(pullNumber) {
+              const files = await github.paginate(
+                github.rest.pulls.listFiles,
+                {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pullNumber,
+                  per_page: 100,
+                },
+              );
+              return files
+                .filter((file) => !EXCLUDED_FILES.has(file.filename))
+                .reduce((sum, file) => sum + file.additions + file.deletions, 0);
+            }
+
+            const pullNumber = context.payload.pull_request.number;
+            const changedLines = await countChangedLines(pullNumber);
+            const size = SIZES.find((candidate) => changedLines <= candidate.max);
+
+            const currentLabels = context.payload.pull_request.labels.map((l) => l.name);
+            const staleSizeLabels = currentLabels.filter(
+              (name) => name.startsWith("size:") && name !== size.name,
+            );
+            for (const name of staleSizeLabels) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullNumber,
+                name,
+              });
+            }
+
+            if (!currentLabels.includes(size.name)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullNumber,
+                labels: [size.name],
+              });
+            }

@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool_framework.tool_decorator import tool
-from core.tool_framework.utils.code_host_unavailable import code_host_unavailable_payload
-from integrations.bitbucket import (
+from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
+from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.bitbucket.client import search_code
+from integrations.bitbucket.config import (
     BitbucketConfig,
     bitbucket_config_from_env,
     build_bitbucket_config,
-    search_code,
 )
-from integrations.bitbucket.availability import bitbucket_available_or_backend
+from integrations.bitbucket.tools.availability import bitbucket_available_or_backend
+from integrations.bitbucket.tools.bitbucket_search_code_tool._evidence import (
+    map_search_bitbucket_code,
+)
 
 
 def _resolve_config(
@@ -68,7 +73,9 @@ def _search_bitbucket_code_available(sources: dict[str, dict]) -> bool:
     name="search_bitbucket_code",
     description="Search code across a Bitbucket workspace or specific repository.",
     source="bitbucket",
-    surfaces=("investigation", "chat"),
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
+    surfaces=(ToolSurface.CHAT,),
     use_cases=[
         "Finding where a specific function or configuration is defined",
         "Searching for error patterns across repositories",
@@ -91,6 +98,7 @@ def _search_bitbucket_code_available(sources: dict[str, dict]) -> bool:
     },
     is_available=_search_bitbucket_code_available,
     extract_params=_search_bitbucket_code_extract_params,
+    evidence_mapper=map_search_bitbucket_code,
 )
 def search_bitbucket_code(
     query: str,

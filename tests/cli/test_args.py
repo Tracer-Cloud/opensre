@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from config.constants.investigation import ALERT_TEMPLATE_CHOICES
-from surfaces.cli.args import parse_args, write_json
+from surfaces.cli.args import write_json
 
 
 def test_write_json_prints_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
@@ -24,35 +23,3 @@ def test_write_json_writes_to_file(tmp_path: Path) -> None:
     write_json(payload, str(output_path))
 
     assert output_path.read_text(encoding="utf-8") == json.dumps(payload, indent=2) + "\n"
-
-
-@pytest.mark.parametrize(
-    ("argv", "expected_error"),
-    [
-        (["--input", "alert.json", "--input-json", '{"alert":"test"}'], "--input-json"),
-        (["--input", "alert.json", "--interactive"], "--interactive"),
-        (
-            ["--input-json", '{"alert":"test"}', "--print-template", ALERT_TEMPLATE_CHOICES[0]],
-            "--print-template",
-        ),
-    ],
-)
-def test_parse_args_rejects_multiple_input_sources(
-    argv: list[str], expected_error: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        parse_args(argv)
-
-    assert exc_info.value.code == 2
-    assert expected_error in capsys.readouterr().err
-
-
-def test_parse_args_accepts_output_and_evaluate_flags() -> None:
-    args = parse_args(["--input", "alert.json", "--output", "result.json", "--evaluate"])
-
-    assert args.input == "alert.json"
-    assert args.input_json is None
-    assert args.interactive is False
-    assert args.print_template is None
-    assert args.output == "result.json"
-    assert args.evaluate is True

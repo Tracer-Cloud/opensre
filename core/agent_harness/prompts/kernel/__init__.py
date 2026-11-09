@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from core.agent_harness.prompts.kernel.envelope import (
     PromptBlock,
+    PromptBlockId,
     PromptBlockKind,
     PromptEnvelope,
+    PromptLayers,
     PromptTier,
 )
 from core.agent_harness.prompts.kernel.surfaces import (
@@ -16,8 +18,10 @@ from core.agent_harness.prompts.kernel.surfaces import (
 
 __all__ = [
     "PromptBlock",
+    "PromptBlockId",
     "PromptBlockKind",
     "PromptEnvelope",
+    "PromptLayers",
     "PromptSurface",
     "PromptTier",
     "SurfaceProfile",

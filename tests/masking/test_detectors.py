@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from platform.masking.detectors import DetectedIdentifier, _resolve_overlaps, find_identifiers
-from platform.masking.policy import ALL_KINDS, MaskingPolicy
+from infrastructure.safety.masking.detectors import (
+    DetectedIdentifier,
+    _resolve_overlaps,
+    find_identifiers,
+)
+from infrastructure.safety.masking.policy import ALL_KINDS, MaskingPolicy
 
 
 def _policy(kinds: tuple[str, ...] = ALL_KINDS) -> MaskingPolicy:

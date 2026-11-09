@@ -35,13 +35,13 @@ _URL = "https://acme.sentry.io/issues/12345/"
 # --------------------------------------------------------------------------- #
 # metadata + availability
 # --------------------------------------------------------------------------- #
-def test_metadata_is_mutating_on_investigation_surface() -> None:
+def test_metadata_is_mutating_on_action_surface() -> None:
     t = fix_sentry_issue
     assert t.name == "fix_sentry_issue"
     assert t.source == "sentry"
     assert t.side_effect_level == "mutating"
-    assert t.requires_approval is True
-    assert t.surfaces == ("investigation",)
+    assert t.requires_approval is False
+    assert t.surfaces == ("action",)
     assert t.input_schema["required"] == ["sentry_url"]
     assert "error_kind" in t.outputs
     assert t.metadata().name == "fix_sentry_issue"
@@ -180,15 +180,15 @@ def test_run_success(
 # --------------------------------------------------------------------------- #
 # registry discovery
 # --------------------------------------------------------------------------- #
-def test_registry_discovers_fix_sentry_issue_on_investigation_surface() -> None:
+def test_registry_discovers_fix_sentry_issue_on_action_surface() -> None:
     from tools.registry import get_registered_tool_map
 
-    investigation = get_registered_tool_map("investigation")
+    action = get_registered_tool_map("action")
     chat = get_registered_tool_map("chat")
-    assert "fix_sentry_issue" in investigation
+    assert "fix_sentry_issue" in action
     assert "fix_sentry_issue" not in chat
-    rt = investigation["fix_sentry_issue"]
-    assert rt.requires_approval is True
+    rt = action["fix_sentry_issue"]
+    assert rt.requires_approval is False
     assert rt.side_effect_level == "mutating"
 
 

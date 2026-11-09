@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.azure import AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT
 from integrations.verification import register_verifier, result
 
 
@@ -11,8 +12,8 @@ from integrations.verification import register_verifier, result
 def verify_azure(source: str, config: dict[str, Any]) -> dict[str, str]:
     workspace_id = str(config.get("workspace_id", "")).strip()
     access_token = str(config.get("access_token", "")).strip()
-    endpoint = str(config.get("endpoint", "https://api.loganalytics.io")).strip() or (
-        "https://api.loganalytics.io"
+    endpoint = str(config.get("endpoint", AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT)).strip() or (
+        AZURE_LOG_ANALYTICS_DEFAULT_ENDPOINT
     )
     if not workspace_id or not access_token:
         return result(

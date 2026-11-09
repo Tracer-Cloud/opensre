@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from platform.scheduler.delivery import (
+from infrastructure.scheduling.scheduler.delivery import (
     SUPPORTED_DELIVERY_PROVIDERS,
     any_delivery_ready,
     delivery_provider_ready,
@@ -15,17 +15,17 @@ from platform.scheduler.delivery import (
     task_can_deliver,
     telegram_delivery_ready,
 )
-from platform.scheduler.types import Provider
+from infrastructure.scheduling.scheduler.types import Provider
 
 
 class TestDeliveryReadiness:
     def test_telegram_ready_when_token_present(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
             lambda _params: {"bot_token": "token"},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
             lambda _params: {},
         )
         assert telegram_delivery_ready() is True
@@ -34,11 +34,11 @@ class TestDeliveryReadiness:
 
     def test_slack_ready_with_bot_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
             lambda _params: {"access_token": "xoxb-token"},
         )
         assert slack_delivery_ready() is True
@@ -49,15 +49,15 @@ class TestDeliveryReadiness:
         # chat_id, so a webhook-only install must not pass readiness for a
         # report that always carries an explicit --chat-id.
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_rocketchat_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
             lambda _params: {"webhook_url": "https://hooks.slack.com/services/x"},
         )
         assert slack_delivery_ready() is False
@@ -69,15 +69,15 @@ class TestDeliveryReadiness:
         # True because of Rocket.Chat specifically, not because a real
         # TELEGRAM_BOT_TOKEN/SLACK_WEBHOOK_URL happens to be set locally.
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_rocketchat_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials",
             lambda _params: {
                 "server_url": "https://chat.example.com",
                 "auth_token": "tok",
@@ -91,15 +91,15 @@ class TestDeliveryReadiness:
     def test_rocketchat_not_ready_with_webhook_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A webhook alone cannot target an explicit --chat-id destination."""
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_rocketchat_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials",
             lambda _params: {"webhook_url": "https://chat.example.com/hooks/a/b"},
         )
         assert rocketchat_delivery_ready() is False
@@ -108,15 +108,15 @@ class TestDeliveryReadiness:
 
     def test_none_ready(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
             lambda _params: {},
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_rocketchat_credentials",
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials",
             lambda _params: {},
         )
         assert any_delivery_ready() is False
@@ -145,13 +145,16 @@ class TestDeliveryReadiness:
 class TestTaskCanDeliver:
     def _isolate(self, monkeypatch, *, slack: dict, telegram: dict) -> None:
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_slack_credentials", lambda _p: slack
+            "infrastructure.scheduling.scheduler.delivery.resolve_slack_credentials",
+            lambda _p: slack,
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials", lambda _p: telegram
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
+            lambda _p: telegram,
         )
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_rocketchat_credentials", lambda _p: {}
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials",
+            lambda _p: {},
         )
 
     def test_slack_task_without_a_destination_cannot_deliver(self, monkeypatch) -> None:
@@ -217,7 +220,8 @@ class TestTaskCanDeliver:
             return dict(task_params)
 
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_telegram_credentials", _params_only
+            "infrastructure.scheduling.scheduler.delivery.resolve_telegram_credentials",
+            _params_only,
         )
 
         # Act / Assert
@@ -238,13 +242,16 @@ class TestTaskCanDeliver:
         def _webhook_only(_task_params: dict[str, str]) -> dict[str, str]:
             return {"webhook_url": "https://rc.example/hooks/x"}
 
-        monkeypatch.setattr("platform.scheduler.delivery.resolve_rocketchat_credentials", _trio)
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials", _trio
+        )
 
         # Act / Assert
         assert task_can_deliver("rocketchat", chat_id="general") is True
         assert task_can_deliver("rocketchat", chat_id="") is False
 
         monkeypatch.setattr(
-            "platform.scheduler.delivery.resolve_rocketchat_credentials", _webhook_only
+            "infrastructure.scheduling.scheduler.delivery.resolve_rocketchat_credentials",
+            _webhook_only,
         )
         assert task_can_deliver("rocketchat", chat_id="general") is False

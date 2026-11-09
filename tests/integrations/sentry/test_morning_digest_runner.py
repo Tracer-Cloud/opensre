@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import pytest
 
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
@@ -13,16 +11,11 @@ from integrations.sentry.morning_digest_runner import (
 )
 
 
-@dataclass(frozen=True)
-class _AnsweredTurn:
-    text: str
-
-
 class TestBuildMorningDigestPrompt:
     def test_default_prompt(self) -> None:
         prompt = build_morning_digest_prompt({})
         assert "24 hours" in prompt
-        assert "sentry-summary" in prompt
+        assert "summarizing-sentry-issues" in prompt
 
     def test_includes_uptime_instruction(self) -> None:
         prompt = build_morning_digest_prompt({})
@@ -60,7 +53,6 @@ class TestRunSentryMorningDigest:
                     handled=True,
                 ),
                 assistant_response_text="",
-                llm_run=None,
             ),
         )
 
@@ -84,7 +76,6 @@ class TestRunSentryMorningDigest:
                     handled=True,
                 ),
                 assistant_response_text="## Morning digest\nCheckout errors dominate.",
-                llm_run=_AnsweredTurn("## Morning digest\nCheckout errors dominate."),
             ),
         )
 

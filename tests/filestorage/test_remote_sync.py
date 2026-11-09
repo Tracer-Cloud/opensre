@@ -15,11 +15,17 @@ import pytest
 from config.constants.filestorage import (
     REMOTE_SYNC_BUCKET_ENV,
     REMOTE_SYNC_ENV,
+    REMOTE_SYNC_EXCLUDE_ENV,
+    REMOTE_SYNC_EXCLUDE_OFF_ENV,
     REMOTE_SYNC_PREFIX_ENV,
+    REMOTE_SYNC_PROFILE_ENV,
+    REMOTE_SYNC_PROVIDER_ENV,
+    REMOTE_SYNC_REGION_ENV,
 )
-from platform.filestorage import engine as sync_module
-from platform.filestorage.config import load_remote_sync_config, remote_sync_enabled
-from platform.filestorage.engine import (
+from infrastructure.filestorage import engine as sync_module
+from infrastructure.filestorage.config import load_remote_sync_config, remote_sync_enabled
+from infrastructure.filestorage.contracts import RemoteObject
+from infrastructure.filestorage.engine import (
     ProgressCallback,
     SyncProgress,
     content_tag,
@@ -28,10 +34,9 @@ from platform.filestorage.engine import (
     resolve_direction,
     run_sync,
 )
-from platform.filestorage.enums import SyncDirection, SyncRootName
-from platform.filestorage.errors import RemoteSyncConfigError, UnsyncablePathError
-from platform.filestorage.ports import RemoteObject
-from platform.filestorage.syncable import SyncRoot, is_syncable
+from infrastructure.filestorage.enums import SyncDirection, SyncRootName
+from infrastructure.filestorage.errors import RemoteSyncConfigError, UnsyncablePathError
+from infrastructure.filestorage.syncable import SyncRoot, is_syncable
 
 # Planted in the credential files. If sync ever widens, this string shows up in
 # an uploaded object and the assertion below fails loudly.
@@ -75,8 +80,8 @@ def home(tmp_path: Path) -> Path:
     """A laptop ~/.opensre with sessions, memory, and credential files."""
     (tmp_path / "sessions").mkdir()
     (tmp_path / "memory").mkdir()
-    (tmp_path / "sessions" / "abc.jsonl").write_text('{"turn": 1}\n', encoding="utf-8")
-    (tmp_path / "memory" / "a-fact.md").write_text("remembered\n", encoding="utf-8")
+    (tmp_path / "sessions" / "abc.jsonl").write_bytes(b'{"turn": 1}\n')
+    (tmp_path / "memory" / "a-fact.md").write_bytes(b"remembered\n")
     # Credentials live beside them and must not move.
     (tmp_path / "integrations.json").write_text(
         f'{{"datadog": {{"api_key": "{LEAKED_SECRET}"}}}}', encoding="utf-8"
@@ -569,9 +574,9 @@ def test_aws_failures_name_their_cause() -> None:
     # Arrange: a client whose calls fail the way botocore does.
     from botocore.exceptions import ClientError
 
-    from platform.filestorage.config import RemoteSyncConfig
-    from platform.filestorage.errors import RemoteSyncUnavailableError
-    from platform.filestorage.providers.aws import S3ObjectStore
+    from infrastructure.filestorage.config import RemoteSyncConfig
+    from infrastructure.filestorage.errors import RemoteSyncUnavailableError
+    from infrastructure.filestorage.providers.aws import S3ObjectStore
 
     class _Failing:
         def get_paginator(self, _name: str) -> object:
@@ -602,7 +607,7 @@ def test_multipart_etag_is_not_treated_as_a_content_match(
     home: Path, roots: tuple[SyncRoot, ...]
 ) -> None:
     """Compound S3 ETags (``md5-parts``) must not suppress a needed upload."""
-    from platform.filestorage.engine import comparable_etag
+    from infrastructure.filestorage.engine import comparable_etag
 
     # Arrange: listing carries a multipart-style tag that is not content MD5.
     # The object is stamped older than the local file so recency cannot be what
@@ -684,7 +689,7 @@ def test_unknown_remote_key_prefix_is_ignored(home: Path, roots: tuple[SyncRoot,
 
 
 def test_push_only_does_not_download(home: Path, roots: tuple[SyncRoot, ...]) -> None:
-    from platform.filestorage.engine import SyncDirection
+    from infrastructure.filestorage.engine import SyncDirection
 
     # Arrange: remote-only file must stay remote-only under push-only.
     store = FakeObjectStore()
@@ -700,7 +705,7 @@ def test_push_only_does_not_download(home: Path, roots: tuple[SyncRoot, ...]) ->
 
 
 def test_pull_only_does_not_upload(home: Path, roots: tuple[SyncRoot, ...]) -> None:
-    from platform.filestorage.engine import SyncDirection
+    from infrastructure.filestorage.engine import SyncDirection
 
     # Arrange
     store = FakeObjectStore()
@@ -738,7 +743,7 @@ def test_credentials_json_is_not_syncable(home: Path, roots: tuple[SyncRoot, ...
 
 
 def test_comparable_etag_strips_quotes_and_rejects_multipart() -> None:
-    from platform.filestorage.engine import comparable_etag
+    from infrastructure.filestorage.engine import comparable_etag
 
     now = datetime.now(tz=UTC)
     quoted = RemoteObject(key="k", size=1, last_modified=now, etag='"abc123"')
@@ -751,7 +756,7 @@ def test_comparable_etag_strips_quotes_and_rejects_multipart() -> None:
 
 
 def test_resolve_direction_maps_each_flag() -> None:
-    from platform.filestorage.engine import SyncDirection
+    from infrastructure.filestorage.engine import SyncDirection
 
     assert resolve_direction(pull_only=False, push_only=False) is SyncDirection.BOTH
     assert resolve_direction(pull_only=True, push_only=False) is SyncDirection.PULL
@@ -789,7 +794,7 @@ def test_s3_is_the_default_registered_provider(
         REMOTE_SYNC_ENV,
         REMOTE_SYNC_PROVIDER_ENV,
     )
-    from platform.filestorage.providers import registered_providers
+    from infrastructure.filestorage.providers import registered_providers
 
     monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
     monkeypatch.setenv(REMOTE_SYNC_BUCKET_ENV, "b")
@@ -809,7 +814,7 @@ def test_unknown_provider_fails_closed_at_build(
         REMOTE_SYNC_ENV,
         REMOTE_SYNC_PROVIDER_ENV,
     )
-    from platform.filestorage import build_object_store
+    from infrastructure.filestorage import build_object_store
 
     monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
     monkeypatch.setenv(REMOTE_SYNC_BUCKET_ENV, "b")
@@ -830,8 +835,8 @@ def test_a_new_provider_registers_without_touching_the_engine(
         REMOTE_SYNC_ENV,
         REMOTE_SYNC_PROVIDER_ENV,
     )
-    from platform.filestorage import build_object_store
-    from platform.filestorage.providers.registry import register_object_store
+    from infrastructure.filestorage import build_object_store
+    from infrastructure.filestorage.providers.registry import register_object_store
 
     # Arrange: a one-off in-memory backend registered under a new name.
     register_object_store("memory", lambda _cfg: FakeObjectStore())
@@ -853,15 +858,15 @@ def test_shared_service_status_and_run_are_surface_agnostic(
 ) -> None:
     """CLI / REPL / gateway all call get_sync_status + run_remote_sync."""
     from config.constants.filestorage import REMOTE_SYNC_PROVIDER_ENV
-    from platform.filestorage import operations as sync_service
-    from platform.filestorage.enums import SyncRootName
-    from platform.filestorage.messages import (
+    from infrastructure.filestorage import operations as sync_service
+    from infrastructure.filestorage.enums import SyncRootName
+    from infrastructure.filestorage.messages import (
         DISABLED_HELP,
         format_report_lines,
         format_status_lines,
     )
-    from platform.filestorage.operations import get_sync_status, run_remote_sync
-    from platform.filestorage.providers.registry import register_object_store
+    from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
+    from infrastructure.filestorage.providers.registry import register_object_store
 
     monkeypatch.delenv(REMOTE_SYNC_ENV, raising=False)
     off = get_sync_status()
@@ -901,10 +906,10 @@ def test_shared_service_is_stateless_and_safe_under_concurrent_calls(
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     from config.constants.filestorage import REMOTE_SYNC_PROVIDER_ENV
-    from platform.filestorage import operations as sync_service
-    from platform.filestorage.messages import format_report_lines, format_status_lines
-    from platform.filestorage.operations import get_sync_status, run_remote_sync
-    from platform.filestorage.providers.registry import register_object_store
+    from infrastructure.filestorage import operations as sync_service
+    from infrastructure.filestorage.messages import format_report_lines, format_status_lines
+    from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
+    from infrastructure.filestorage.providers.registry import register_object_store
 
     register_object_store("svc-concurrent", lambda _cfg: FakeObjectStore())
     monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
@@ -1103,8 +1108,8 @@ def test_org_scoped_turn_refuses_to_sync(monkeypatch: pytest.MonkeyPatch) -> Non
     # Arrange
     from config.principal import Actor, Principal, StorageScope
     from config.scope_context import bound_storage_scope
-    from platform.filestorage.errors import OrgScopeNotSupportedError
-    from platform.filestorage.operations import get_sync_status, run_remote_sync
+    from infrastructure.filestorage.errors import OrgScopeNotSupportedError
+    from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
 
     monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
     monkeypatch.setenv(REMOTE_SYNC_BUCKET_ENV, "shared-bucket")
@@ -1122,7 +1127,7 @@ def test_unbound_laptop_turn_still_syncs(monkeypatch: pytest.MonkeyPatch, tmp_pa
     """The refusal is scoped to organizations, not a blanket disable."""
     # Arrange
     from config.constants import paths
-    from platform.filestorage.operations import get_sync_status
+    from infrastructure.filestorage.operations import get_sync_status
 
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
     monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
@@ -1185,13 +1190,13 @@ def test_env_only_config_ignores_a_corrupt_settings_file(
     monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
     monkeypatch.setenv(REMOTE_SYNC_BUCKET_ENV, "env-bucket")
     monkeypatch.setenv(REMOTE_SYNC_PREFIX_ENV, "env-prefix")
-    monkeypatch.setenv("OPENSRE_REMOTE_SYNC_REGION", "eu-west-2")
-    monkeypatch.setenv("OPENSRE_REMOTE_SYNC_PROFILE", "env-profile")
-    monkeypatch.setenv("OPENSRE_REMOTE_SYNC_PROVIDER", "aws")
+    monkeypatch.setenv(REMOTE_SYNC_REGION_ENV, "eu-west-2")
+    monkeypatch.setenv(REMOTE_SYNC_PROFILE_ENV, "env-profile")
+    monkeypatch.setenv(REMOTE_SYNC_PROVIDER_ENV, "aws")
     # Exclusions are a setting like any other, so "purely by env" now includes
-    # them. Left unset, the file has to be read to find out what the user wants
-    # held back — see test_a_corrupt_settings_file_does_not_sync_everything.
-    monkeypatch.setenv("OPENSRE_REMOTE_SYNC_EXCLUDE", "*.tmp")
+    # them. Left unset, an unreadable stored section falls back to the defaults
+    # — see test_a_corrupt_settings_file_defaults_to_no_exclusions_when_env_covers_required.
+    monkeypatch.setenv(REMOTE_SYNC_EXCLUDE_ENV, "*.tmp")
 
     # Act
     config = load_remote_sync_config()
@@ -1203,11 +1208,72 @@ def test_env_only_config_ignores_a_corrupt_settings_file(
     assert config.exclude.patterns == ("*.tmp",)
 
 
+def test_the_two_documented_env_vars_survive_a_corrupt_settings_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The documented env-only setup works with defaults for unset optionals.
+
+    Docs teach enabling sync with just ``OPENSRE_REMOTE_SYNC`` and
+    ``OPENSRE_REMOTE_SYNC_BUCKET``; every other value defaults. A corrupt
+    ``config.yml`` must not block that happy path, even though the optionals
+    would otherwise fall through to the file.
+    """
+    # Arrange
+    from config.constants import paths
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+    (tmp_path / "config.yml").write_text("just a string, not a mapping", encoding="utf-8")
+    monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
+    monkeypatch.setenv(REMOTE_SYNC_BUCKET_ENV, "env-bucket")
+    for env in (
+        REMOTE_SYNC_PREFIX_ENV,
+        REMOTE_SYNC_REGION_ENV,
+        REMOTE_SYNC_PROFILE_ENV,
+        REMOTE_SYNC_PROVIDER_ENV,
+        REMOTE_SYNC_EXCLUDE_ENV,
+        REMOTE_SYNC_EXCLUDE_OFF_ENV,
+    ):
+        monkeypatch.delenv(env, raising=False)
+
+    # Act
+    config = load_remote_sync_config()
+
+    # Assert: env provides what is required, defaults cover the rest.
+    assert config is not None
+    assert config.bucket == "env-bucket"
+    assert config.prefix == "opensre"
+    assert config.provider == "aws"
+    assert config.region == ""
+    assert config.profile == ""
+    assert config.exclude.patterns == ()
+
+
+def test_a_corrupt_settings_file_still_fails_when_the_bucket_has_no_env_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreadable file only blocks sync when the env cannot supply a value.
+
+    With the switch on but the bucket only available in the stored section,
+    the settings file is required, so its damage has to reach the surface.
+    """
+    # Arrange
+    from config.constants import paths
+
+    monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path)
+    (tmp_path / "config.yml").write_text("not a mapping", encoding="utf-8")
+    monkeypatch.setenv(REMOTE_SYNC_ENV, "1")
+    monkeypatch.delenv(REMOTE_SYNC_BUCKET_ENV, raising=False)
+
+    # Act / Assert
+    with pytest.raises(RemoteSyncConfigError):
+        load_remote_sync_config()
+
+
 def test_list_prefix_is_delimited_so_a_sibling_bucket_path_cannot_match() -> None:
     """Prefix "opensre" must not also sweep in "opensre-backup/"."""
     # Arrange
-    from platform.filestorage.config import RemoteSyncConfig
-    from platform.filestorage.providers.aws import S3ObjectStore
+    from infrastructure.filestorage.config import RemoteSyncConfig
+    from infrastructure.filestorage.providers.aws import S3ObjectStore
 
     seen: dict[str, str] = {}
 

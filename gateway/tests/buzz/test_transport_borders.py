@@ -3,7 +3,7 @@
 Borders under test
 ------------------
 * ``gateway.transports.buzz`` never imports another transport — the shared
-  approval broker and session store live in ``gateway.core.runtime`` /
+  approval broker and session store live in ``gateway.core.middleware`` /
   ``gateway.core.storage``.
 * Importing the Buzz transport pulls in no Discord or Slack SDK.
 * Buzz sessions are isolated per ``(channel, sender pubkey)``.

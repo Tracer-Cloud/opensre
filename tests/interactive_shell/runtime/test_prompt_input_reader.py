@@ -9,9 +9,14 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from prompt_toolkit.application import create_app_session
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.input import create_pipe_input
+from prompt_toolkit.output import DummyOutput
 from rich.console import Console
 
-from surfaces.interactive_shell.runtime.core.state import ReplState
+from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
+from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.runtime.input import (
     InputCancelled,
     InputClosed,
@@ -20,6 +25,7 @@ from surfaces.interactive_shell.runtime.input import (
 )
 from surfaces.interactive_shell.runtime.input import prompt_input_reader as reader_module
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
 
 
 class FakePrompt:
@@ -78,7 +84,9 @@ async def test_prompt_input_reader_submits_normal_text(
 
 
 @pytest.mark.asyncio
-async def test_prompt_input_reader_eof_with_dispatch_running_returns_cancelled() -> None:
+async def test_prompt_input_reader_eof_with_dispatch_running_closes_the_shell() -> None:
+    # Ctrl-D is swallowed while a turn runs, so EOF mid-turn is a closed
+    # terminal, not a request to cancel the turn and keep reading.
     state, task = _running_state()
     try:
         event = await _reader(FakePrompt(lambda: (_ for _ in ()).throw(EOFError)), state).read()
@@ -86,7 +94,42 @@ async def test_prompt_input_reader_eof_with_dispatch_running_returns_cancelled()
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    assert event == InputCancelled()
+    assert event == InputClosed()
+
+
+@pytest.mark.asyncio
+async def test_ctrl_d_ends_the_shell_only_from_an_idle_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TERM", "xterm-256color")
+    state, task = _running_state()
+    with (
+        create_pipe_input() as keys,
+        create_app_session(input=keys, output=DummyOutput()),
+    ):
+        session = Session()
+        pt_session = build_prompt_session(session)
+        pt_session.history = InMemoryHistory()
+        pt_session.default_buffer.history = pt_session.history
+        builder = PromptBuilder(session, state, SpinnerState(), pt_session)
+        builder.setup()
+        reader = _reader(builder, state, session)
+        try:
+            # Mid-turn on an empty prompt: Ctrl-D neither cancels nor closes,
+            # and the prompt keeps taking input.
+            keys.send_text("\x04next\r")
+            assert await asyncio.wait_for(reader.read(), timeout=5) == InputSubmitted("next")
+            assert state.current_cancel_event is not None
+            assert not state.current_cancel_event.is_set()
+
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            keys.send_text("\x04")
+            assert await asyncio.wait_for(reader.read(), timeout=5) == InputClosed()
+        finally:
+            await builder.close()
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -130,18 +173,23 @@ async def test_prompt_input_reader_keyboard_interrupt_with_dispatch_running_retu
 async def test_prompt_input_reader_keyboard_interrupt_without_dispatch_uses_ctrl_c_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(reader_module, "repl_prompt_note_ctrl_c", lambda _console, _sid: False)
+    monkeypatch.setattr(reader_module, "repl_prompt_ctrl_c_should_exit", lambda: False)
 
-    event = await _reader(FakePrompt(lambda: (_ for _ in ()).throw(KeyboardInterrupt))).read()
+    state = ReplState()
+    event = await _reader(
+        FakePrompt(lambda: (_ for _ in ()).throw(KeyboardInterrupt)),
+        state,
+    ).read()
 
     assert event == InputCancelled()
+    assert state.is_ctrl_c_exit_hint_visible()
 
 
 @pytest.mark.asyncio
 async def test_prompt_input_reader_keyboard_interrupt_without_dispatch_can_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(reader_module, "repl_prompt_note_ctrl_c", lambda _console, _sid: True)
+    monkeypatch.setattr(reader_module, "repl_prompt_ctrl_c_should_exit", lambda: True)
 
     event = await _reader(FakePrompt(lambda: (_ for _ in ()).throw(KeyboardInterrupt))).read()
 
@@ -162,3 +210,10 @@ async def test_prompt_input_reader_ignores_cpr_only_input() -> None:
     ).read()
 
     assert event == InputSubmitted("show status")
+
+
+@pytest.mark.asyncio
+async def test_prompt_input_reader_ignores_held_key_spam() -> None:
+    spam = "d" * 80 + "cs"
+    event = await _reader(SequencePrompt([spam, "real ask"])).read()
+    assert event == InputSubmitted("real ask")

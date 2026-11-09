@@ -1,4 +1,4 @@
-"""Discord REST helpers for the gateway output sink."""
+"""Discord REST helpers for posting turn replies."""
 
 from __future__ import annotations
 

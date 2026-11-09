@@ -14,21 +14,21 @@ from config.constants.filestorage import (
     REMOTE_SYNC_ENV,
     REMOTE_SYNC_PROVIDER_ENV,
 )
-from platform.filestorage.config import RemoteSyncConfig
-from platform.filestorage.engine import SyncReport, content_tag
-from platform.filestorage.enums import RemoteSyncField, SyncDirection, SyncRootName
-from platform.filestorage.errors import RemoteSyncConfigError
-from platform.filestorage.messages import (
+from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.contracts import RemoteObject
+from infrastructure.filestorage.engine import SyncReport, content_tag
+from infrastructure.filestorage.enums import RemoteSyncField, SyncDirection, SyncRootName
+from infrastructure.filestorage.errors import RemoteSyncConfigError
+from infrastructure.filestorage.messages import (
     DISABLED_HELP,
     direction_label,
     format_report_lines,
     format_status_lines,
     sanitize_terminal_text,
 )
-from platform.filestorage.operations import get_sync_status, run_remote_sync
-from platform.filestorage.ports import RemoteObject
-from platform.filestorage.providers import build_object_store as surface_build
-from platform.filestorage.providers.registry import (
+from infrastructure.filestorage.operations import get_sync_status, run_remote_sync
+from infrastructure.filestorage.providers import build_object_store as surface_build
+from infrastructure.filestorage.providers.registry import (
     SetupExtraField,
     build_object_store,
     max_parallel_uploads_for_provider,
@@ -37,7 +37,7 @@ from platform.filestorage.providers.registry import (
     registered_providers,
     unregister_object_store,
 )
-from platform.filestorage.syncable import SyncRoot
+from infrastructure.filestorage.syncable import SyncRoot
 
 
 class _MemStore:
@@ -70,9 +70,14 @@ class _MemStore:
 
 @pytest.fixture(autouse=True)
 def _restore_registry() -> Iterator[None]:
-    from platform.filestorage.providers import registry as reg
+    from infrastructure.filestorage.providers import registry as reg
 
     with reg._REGISTRY_LOCK:
+        # Import every built-in before snapshotting. Restoring an empty
+        # registry after a lazy import leaves the module cached but its
+        # import-time registration missing for later tests.
+        for provider in reg._BUILTIN_MODULES:
+            reg._load_builtin(provider)
         snap = dict(reg._REGISTRY)
         # Restored alongside the factories: a declared upload cap outliving its
         # registration would silently re-tune a later test's push.
@@ -270,7 +275,7 @@ def test_the_shared_service_hands_the_engine_the_providers_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cap must actually reach ``push``, not just sit in the registry."""
-    from platform.filestorage import operations as sync_service
+    from infrastructure.filestorage import operations as sync_service
 
     seen: dict[str, object] = {}
 
@@ -305,7 +310,7 @@ def test_registry_safe_under_concurrent_register_and_build() -> None:
 
 
 def test_run_remote_sync_uses_scoped_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from platform.filestorage import operations as sync_service
+    from infrastructure.filestorage import operations as sync_service
 
     sessions = tmp_path / "sessions"
     memory = tmp_path / "memory"

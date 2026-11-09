@@ -27,7 +27,7 @@ def failed_result(
 
 def sent_result(*, message_length: int) -> dict[str, Any]:
     # A success result must NOT carry an "error" key: the shared tool runtime
-    # (`core.execution._normalize_result`) flags any dict containing "error" as a
+    # (`core.tool.execution._normalize_result`) flags any dict containing "error" as a
     # failed tool call regardless of its value, which would make a delivered
     # message look failed to the model and the turn accounting.
     return {

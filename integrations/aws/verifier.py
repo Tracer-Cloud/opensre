@@ -5,9 +5,31 @@ from __future__ import annotations
 from typing import Any
 
 import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError
 
 from integrations.config_models import AWSIntegrationConfig
 from integrations.verification import register_verifier, result
+
+ROLE_NEEDS_BASE_CREDENTIALS_MESSAGE = (
+    "IAM Role ARN is assumed with your ambient AWS credentials, and none were "
+    "found. Configure a base identity that may call sts:AssumeRole on the role "
+    "(AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, an `aws configure` profile, or "
+    "an attached instance/task role) and run setup again — or choose "
+    '"Access Key + Secret" instead.'
+)
+
+
+def _base_sts_client(region: str) -> Any:
+    """STS client for OpenSRE's own base identity — the one that assumes the role.
+
+    Built from :func:`integrations.aws.env.base_session`, so a lone
+    ``AWS_ACCESS_KEY_ID`` loaded from ``.env`` (its secret lives in the keyring)
+    cannot block the profile / instance-role chain. Kept as one seam so tests
+    substitute a fake here and never reach STS.
+    """
+    from integrations.aws.env import base_session
+
+    return base_session(region=region).client("sts")
 
 
 def _build_sts_client(aws_config: AWSIntegrationConfig) -> tuple[Any, str, str]:
@@ -15,7 +37,7 @@ def _build_sts_client(aws_config: AWSIntegrationConfig) -> tuple[Any, str, str]:
     role_arn = aws_config.role_arn
     external_id = aws_config.external_id
     if role_arn:
-        base_sts_client = boto3.client("sts", region_name=region)
+        base_sts_client = _base_sts_client(region)
         assume_role_args: dict[str, str] = {
             "RoleArn": role_arn,
             "RoleSessionName": "TracerIntegrationVerify",
@@ -60,6 +82,21 @@ def verify_aws(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         sts_client, region, mode = _build_sts_client(aws_config)
         identity = sts_client.get_caller_identity()
+    except NoCredentialsError:
+        # Only the role path reaches STS without explicit keys; static keys
+        # would have been passed to the client and this error cannot arise.
+        return result("aws", source, "failed", ROLE_NEEDS_BASE_CREDENTIALS_MESSAGE)
+    except PartialCredentialsError as exc:
+        missing = exc.kwargs.get("cred_var", "one of the AWS_* variables")
+        return result(
+            "aws",
+            source,
+            "failed",
+            f"This shell has half a key pair in the environment: {missing} is not set. "
+            "The role is assumed with those base credentials, so set both "
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (or unset both and use an "
+            "`aws configure` profile), then run setup again.",
+        )
     except Exception as exc:
         return result("aws", source, "failed", f"AWS STS check failed: {exc}")
 

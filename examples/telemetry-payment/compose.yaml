@@ -1,0 +1,55 @@
+name: opensre-telemetry-payment
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.12.5@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a
+    environment:
+      CLICKHOUSE_USER: collector
+      CLICKHOUSE_PASSWORD: ${COLLECTOR_PASSWORD:?Run setup.py first}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      OPENSRE_TELEMETRY_CLICKHOUSE_PASSWORD: ${OPENSRE_TELEMETRY_CLICKHOUSE_PASSWORD:?Run setup.py first}
+    ports: ["127.0.0.1:18123:8123"]
+    volumes:
+      - telemetry:/var/lib/clickhouse
+      - ./reader.xml:/etc/clickhouse-server/users.d/reader.xml:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  collector:
+    image: clickhouse/clickstack-otel-collector:2.41.0@sha256:04725e89ed305ba6441065a1a96cf98d6f3a34fdb2272b173e1fa8971fa2dfdd
+    # Run the distribution's collector directly with a complete config: no OpAMP/UI or seed migrations.
+    entrypoint: ["/otelcontribcol"]
+    command: ["--config=/demo/collector.yaml"]
+    environment:
+      CLICKHOUSE_PASSWORD: ${COLLECTOR_PASSWORD:?Run setup.py first}
+    volumes: ["./collector.yaml:/demo/collector.yaml:ro"]
+    depends_on:
+      clickhouse: {condition: service_healthy}
+  flagd:
+    image: ghcr.io/open-feature/flagd:v0.16.0@sha256:32234e63c1d0634883aabd31cbd46802934aaaef0153dfd653b5d1017940bb4e
+    command: ["start", "--uri", "file:/demo/flags.json"]
+    volumes: ["./runtime:/demo:ro"]
+  payment:
+    image: ghcr.io/open-telemetry/demo:3.1.0-payment@sha256:10d6bd20d8a00abe7705d553ab23a4f35e29b2816ab021049e63e89d07cc9192
+    environment:
+      PAYMENT_PORT: 50051
+      FLAGD_HOST: flagd
+      FLAGD_PORT: 8013
+      OTEL_TRACES_SAMPLER: always_on
+      OTEL_SERVICE_NAME: payment
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=demo
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_METRIC_EXPORT_INTERVAL: 5000
+      OTEL_BSP_SCHEDULE_DELAY: 1000
+      OTEL_LOGS_EXPORTER: otlp
+    depends_on: [collector, flagd]
+  traffic:
+    image: ghcr.io/open-telemetry/demo:3.1.0-payment@sha256:10d6bd20d8a00abe7705d553ab23a4f35e29b2816ab021049e63e89d07cc9192
+    command: ["/demo/traffic.cjs"]
+    environment: {NODE_OPTIONS: ""}
+    volumes: ["./traffic.cjs:/demo/traffic.cjs:ro"]
+    depends_on: [payment]
+volumes:
+  telemetry:

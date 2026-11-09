@@ -1,0 +1,544 @@
+"""Pure CI reliability metrics over completed workflow runs."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Iterable, Sequence
+from datetime import datetime, timedelta
+from statistics import median
+
+from integrations.github.tools.ci_analytics.models import (
+    CiAnalyticsReport,
+    ClassifiedFailure,
+    CommitWait,
+    FailureKind,
+    MergedPullRequest,
+    Outage,
+    PullRequestDelay,
+    WorkflowRun,
+    WorkflowSummary,
+)
+from integrations.github.tools.ci_analytics.working_hours import WorkingHours
+
+PUSH_EVENT = "push"
+
+
+def compute_report(
+    *,
+    owner: str,
+    repo: str,
+    default_branch: str,
+    window_days: int,
+    branch_runs: Sequence[WorkflowRun],
+    pr_runs: Sequence[WorkflowRun],
+    merged_prs: Iterable[MergedPullRequest],
+    now: datetime,
+    coverage_notices: Iterable[str] = (),
+    working_hours: WorkingHours | None = None,
+) -> CiAnalyticsReport:
+    """Reduce default-branch and PR runs to the KPIs the report shows.
+
+    ``working_hours`` decides which part of each wait counts as developer
+    downtime; the default is 09:00 to 18:00 UTC on weekdays.
+    """
+    hours = working_hours or WorkingHours()
+    counted_branch = [run for run in branch_runs if run.failed or run.succeeded]
+    counted_pr = [run for run in pr_runs if run.failed or run.succeeded]
+    all_runs = [*counted_branch, *counted_pr]
+    normal = normal_minutes(all_runs)
+    merged = tuple(merged_prs)
+    classified = classify_failures(counted_pr, normal_minutes=normal, merged_prs=merged)
+    push_runs = [run for run in counted_branch if run.event == PUSH_EVENT]
+    outages = find_outages(push_runs)
+    closed = [o for o in outages if not o.ongoing]
+    red_shares = workflow_red_hours(push_runs, outages, now=now)
+    delays = pull_request_delays(
+        counted_pr, classified, normal_minutes=normal, merged_prs=merged, working_hours=hours
+    )
+    return CiAnalyticsReport(
+        owner=owner,
+        repo=repo,
+        default_branch=default_branch,
+        window_days=window_days,
+        generated_at=now,
+        executions=len(all_runs),
+        pr_executions=len(counted_pr),
+        pr_failures=sum(1 for run in counted_pr if run.failed or run.retried_to_green),
+        classified=tuple(classified),
+        merged_pr_branches=sum(1 for d in delays if d.critical_path and d.delay_minutes > 0),
+        blocked_minutes=sum(d.delay_minutes for d in delays if d.critical_path),
+        blocked_minutes_all=sum(d.delay_minutes for d in delays),
+        blocked_working_minutes=sum(d.working_minutes for d in delays if d.critical_path),
+        working_hours_label=hours.label,
+        branch_runs=len(push_runs),
+        branch_failures=sum(1 for run in push_runs if run.failed),
+        red_hours=union_hours(outages, now=now),
+        outages=tuple(outages),
+        mean_recovery_hours=(
+            sum(o.duration_hours(now=now) for o in closed) / len(closed) if closed else None
+        ),
+        workflows=tuple(summarize_workflows(all_runs, classified, normal, red_hours=red_shares)),
+        coverage_notices=tuple(coverage_notices),
+        pr_delays=tuple(delays),
+    )
+
+
+def pull_request_delays(
+    pr_runs: Sequence[WorkflowRun],
+    classified: Sequence[ClassifiedFailure],
+    *,
+    normal_minutes: dict[int | str, float],
+    merged_prs: Sequence[MergedPullRequest] = (),
+    working_hours: WorkingHours | None = None,
+) -> list[PullRequestDelay]:
+    """Per PR: how much later its commits went green than they should have.
+
+    Only commits with a CI-caused failure count. For such a commit the
+    expected green time is the earliest queue time of its runs plus the
+    slowest workflow's normal duration ("had CI worked normally, when should
+    this commit have been green?"); the actual green time is when the last
+    of its workflows first passed. A commit whose workflows never all passed
+    is left out. The wait on a commit ends when the developer pushes the next
+    commit of the PR or the PR merges, whichever comes first, so a stale
+    commit re-run later adds nothing. A later commit that triggered no
+    workflow is invisible here; the merge time still bounds the wait. The
+    delay intervals of a PR's commits are unioned so overlapping workflows
+    and re-runs are counted once.
+    """
+    identity = PullRequestIdentity(merged_prs)
+    hours = working_hours or WorkingHours()
+    affected: set[tuple[PullRequestKey, str]] = set()
+    first_failure: dict[PullRequestKey, ClassifiedFailure] = {}
+    for item in classified:
+        if item.kind is not FailureKind.RELIABILITY:
+            continue
+        key = identity.key(item.failure)
+        affected.add((key, item.failure.head_sha))
+        earliest = first_failure.get(key)
+        if earliest is None or item.failure.created_at < earliest.failure.created_at:
+            first_failure[key] = item
+    by_commit: dict[tuple[PullRequestKey, str], list[WorkflowRun]] = defaultdict(list)
+    for run in pr_runs:
+        by_commit[(identity.key(run), run.head_sha)].append(run)
+    next_push = _next_push_times(by_commit)
+    waits: dict[PullRequestKey, list[CommitWait]] = defaultdict(list)
+    for key, sha in affected:
+        wait = _commit_delay(
+            by_commit.get((key, sha), []),
+            normal_minutes,
+            until=_earliest(next_push.get((key, sha)), identity.merged_at(key)),
+        )
+        if wait is not None:
+            waits[key].append(wait)
+    delays: list[PullRequestDelay] = []
+    for key, item in first_failure.items():
+        commit_waits = sorted(waits.get(key, []), key=lambda w: w.queued)
+        spans = _union_spans([(w.expected_green, w.actual_green) for w in commit_waits])
+        first = commit_waits[0] if commit_waits else None
+        head_repo, branch, number = key
+        delays.append(
+            PullRequestDelay(
+                head_repo=head_repo,
+                branch=branch,
+                pr_number=number,
+                critical_path=item.critical_path,
+                delay_minutes=sum((end - start).total_seconds() / 60 for start, end in spans),
+                commits=len(commit_waits),
+                url=item.failure.url,
+                expected_green=min(start for start, _ in spans) if spans else None,
+                actual_green=max(end for _, end in spans) if spans else None,
+                author=identity.author(key),
+                working_minutes=sum(hours.minutes(start, end) for start, end in spans),
+                first_queued=first.queued if first else None,
+                normal_minutes=first.normal_minutes if first else 0.0,
+            )
+        )
+    return sorted(delays, key=lambda d: -d.delay_minutes)
+
+
+PullRequestKey = tuple[str, str, int]
+"""Head repository, branch, and PR number identifying one pull request."""
+
+
+class PullRequestIdentity:
+    """Which pull request a run belongs to, and whether that PR was merged after the run.
+
+    Of several attached PR numbers, the one whose lifetime contains the run
+    wins: merged after the run was queued, earliest merge first. A run with
+    no attached number is assigned to the first PR merged from its head
+    repository and branch after the run, so a reused branch name does not
+    fold two PRs into one.
+    """
+
+    def __init__(self, merged: Sequence[MergedPullRequest]) -> None:
+        by_branch: dict[tuple[str, str], list[MergedPullRequest]] = defaultdict(list)
+        for pr in merged:
+            by_branch[(pr.head_repo, pr.branch)].append(pr)
+        for prs in by_branch.values():
+            prs.sort(key=lambda pr: pr.merged_at)
+        self._by_branch = by_branch
+        self._merged_at = {pr.number: pr.merged_at for pr in merged}
+        self._author = {pr.number: pr.author for pr in merged}
+
+    def key(self, run: WorkflowRun) -> PullRequestKey:
+        return (run.head_repo, run.branch, self._number(run))
+
+    def merged_at(self, key: PullRequestKey) -> datetime | None:
+        return self._merged_at.get(key[2])
+
+    def author(self, key: PullRequestKey) -> str:
+        return self._author.get(key[2], "")
+
+    def on_critical_path(self, run: WorkflowRun) -> bool:
+        """True when the run's PR was merged inside the window, after the run was queued."""
+        merged_at = self._merged_at.get(self._number(run))
+        return merged_at is not None and merged_at >= run.created_at
+
+    def _number(self, run: WorkflowRun) -> int:
+        if run.pr_numbers:
+            containing = [
+                (self._merged_at[n], n)
+                for n in run.pr_numbers
+                if n in self._merged_at and self._merged_at[n] >= run.created_at
+            ]
+            return min(containing)[1] if containing else run.pr_numbers[0]
+        candidates = self._by_branch.get((run.head_repo, run.branch), [])
+        merged = next((pr for pr in candidates if pr.merged_at >= run.created_at), None)
+        return merged.number if merged else 0
+
+
+def _earliest(*times: datetime | None) -> datetime | None:
+    known = [time for time in times if time is not None]
+    return min(known) if known else None
+
+
+def _next_push_times(
+    by_commit: dict[tuple[PullRequestKey, str], list[WorkflowRun]],
+) -> dict[tuple[PullRequestKey, str], datetime]:
+    """For each commit, when the same PR's next commit was first queued."""
+    queued: dict[PullRequestKey, list[tuple[datetime, str]]] = defaultdict(list)
+    for (key, sha), runs in by_commit.items():
+        queued[key].append((min(run.created_at for run in runs), sha))
+    next_push: dict[tuple[PullRequestKey, str], datetime] = {}
+    for key, commits in queued.items():
+        commits.sort()
+        for (_, sha), (later, _) in zip(commits, commits[1:], strict=False):
+            next_push[(key, sha)] = later
+    return next_push
+
+
+def _commit_delay(
+    runs: Sequence[WorkflowRun],
+    normal_minutes: dict[int | str, float],
+    *,
+    until: datetime | None = None,
+) -> CommitWait | None:
+    """Expected and actual green times of one commit, or None when nobody waited.
+
+    Each workflow's green time is its first passing completion; a later
+    duplicate pass changes nothing. A workflow without a first-attempt
+    baseline is expected to take as long as that first pass took, never as
+    long as a failed attempt. ``until`` is when the PR's next commit was
+    pushed; the wait cannot extend past it because the developer had already
+    moved on.
+    """
+    if not runs:
+        return None
+    by_workflow: dict[int | str, list[WorkflowRun]] = defaultdict(list)
+    for run in runs:
+        by_workflow[_workflow_key(run)].append(run)
+    greens: list[datetime] = []
+    expected_duration = 0.0
+    for workflow_key, workflow_runs in by_workflow.items():
+        first_pass = min(
+            (run for run in workflow_runs if run.succeeded),
+            key=lambda run: run.completed_at,
+            default=None,
+        )
+        if first_pass is None:
+            return None
+        greens.append(first_pass.completed_at)
+        expected_duration = max(
+            expected_duration, normal_minutes.get(workflow_key, first_pass.minutes)
+        )
+    queued = min(run.created_at for run in runs)
+    expected_green = queued + timedelta(minutes=expected_duration)
+    actual_green = max(greens)
+    if until is not None:
+        actual_green = min(actual_green, until)
+    if actual_green <= expected_green:
+        return None
+    return CommitWait(
+        queued=queued,
+        normal_minutes=expected_duration,
+        expected_green=expected_green,
+        actual_green=actual_green,
+    )
+
+
+def _union_spans(
+    spans: Sequence[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """Merge overlapping intervals so a wait is counted once."""
+    merged: list[tuple[datetime, datetime]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def normal_minutes(runs: Sequence[WorkflowRun]) -> dict[int | str, float]:
+    """Per-workflow baseline: median duration of first-attempt passing runs."""
+    durations: dict[int | str, list[float]] = defaultdict(list)
+    for run in runs:
+        if run.succeeded and run.attempt == 1:
+            durations[_workflow_key(run)].append(run.minutes)
+    return {workflow: median(values) for workflow, values in durations.items() if values}
+
+
+def classify_failures(
+    pr_runs: Sequence[WorkflowRun],
+    *,
+    normal_minutes: dict[int | str, float],
+    merged_prs: Sequence[MergedPullRequest],
+) -> list[ClassifiedFailure]:
+    """Pair each failed PR run with its recovery and judge whether CI or the code was at fault.
+
+    A passing run is a reliability failure only when an earlier attempt of the
+    same run actually failed. Other failed runs are grouped per workflow, head
+    repository, branch, and pull request in completion order: the first later
+    passing run on the same commit marks a reliability failure, a pass on a
+    newer commit a source-code failure, and no later pass leaves it unresolved.
+    Every delay subtracts the workflow's normal duration.
+    """
+    identity = PullRequestIdentity(merged_prs)
+    groups: dict[tuple[int | str, str, str, int], list[WorkflowRun]] = defaultdict(list)
+    for run in pr_runs:
+        groups[_history_key(run, identity)].append(run)
+    classified: list[ClassifiedFailure] = []
+    for (workflow_key, _head_repo, _branch, _pr), runs in groups.items():
+        ordered = sorted(runs, key=lambda r: r.completed_at)
+        for index, run in enumerate(ordered):
+            if run.retried_to_green:
+                started = run.earlier_failure_started_at or run.created_at
+                elapsed = (run.completed_at - started).total_seconds() / 60
+                classified.append(
+                    ClassifiedFailure(
+                        failure=run,
+                        recovery=run,
+                        kind=FailureKind.RELIABILITY,
+                        delay_minutes=max(0.0, elapsed - normal_minutes.get(workflow_key, 0.0)),
+                        critical_path=identity.on_critical_path(run),
+                    )
+                )
+                continue
+            if not run.failed:
+                continue
+            recovery = next((later for later in ordered[index + 1 :] if later.succeeded), None)
+            if recovery is None:
+                kind = FailureKind.UNRESOLVED
+            elif recovery.head_sha == run.head_sha:
+                kind = FailureKind.RELIABILITY
+            else:
+                kind = FailureKind.SOURCE
+            delay = 0.0
+            if kind is FailureKind.RELIABILITY and recovery is not None:
+                elapsed = (recovery.completed_at - run.started_at).total_seconds() / 60
+                delay = max(0.0, elapsed - normal_minutes.get(workflow_key, 0.0))
+            classified.append(
+                ClassifiedFailure(
+                    failure=run,
+                    recovery=recovery,
+                    kind=kind,
+                    delay_minutes=delay,
+                    critical_path=identity.on_critical_path(run),
+                )
+            )
+    return sorted(classified, key=lambda c: c.failure.completed_at)
+
+
+def find_outages(runs: Sequence[WorkflowRun]) -> list[Outage]:
+    """Red periods of the branch: a commit with a failing check opens one, the next fully
+    green commit closes it.
+
+    GitHub shows a branch red when its latest commit carries a failing check,
+    so outages follow commits, not per-workflow timelines: a workflow that
+    never runs again (path filter, rename, deletion) cannot keep the branch
+    red once a later commit is fully green. A commit whose counted runs all
+    passed closes the outage at its last completion; a commit with no counted
+    runs (every run cancelled) decides nothing.
+    """
+    counted = [run for run in runs if run.failed or run.succeeded]
+    by_commit: dict[str, list[WorkflowRun]] = defaultdict(list)
+    for run in counted:
+        by_commit[run.head_sha].append(run)
+    commits = sorted(by_commit.values(), key=lambda commit: min(r.created_at for r in commit))
+    outages: list[Outage] = []
+    open_since: datetime | None = None
+    open_url = ""
+    open_workflows: dict[str, None] = {}  # insertion-ordered set of red workflow names
+    for commit_runs in commits:
+        failing = sorted((run for run in commit_runs if run.failed), key=lambda r: r.completed_at)
+        if failing:
+            if open_since is None:
+                open_since = failing[0].completed_at
+                open_url = failing[0].url
+            for run in failing:
+                open_workflows.setdefault(run.workflow)
+        elif open_since is not None:
+            green_at = max(max(run.completed_at for run in commit_runs), open_since)
+            outages.append(Outage(tuple(open_workflows), open_since, green_at, open_url))
+            open_since = None
+            open_workflows = {}
+    if open_since is not None:
+        outages.append(Outage(tuple(open_workflows), open_since, None, open_url))
+    return outages
+
+
+def workflow_red_hours(
+    runs: Sequence[WorkflowRun], outages: Sequence[Outage], *, now: datetime
+) -> dict[int | str, float]:
+    """Each workflow's share of the branch's red time, keyed like ``normal_minutes``.
+
+    A workflow's own red spans (failure completion to its next success, or
+    ``now`` while unrecovered) are clipped to the branch outages, so a share
+    never exceeds the branch figure and a workflow that kept the branch red
+    is credited for the whole period even when it skipped some commits.     An
+    outage counts toward a workflow only when one of its failing runs
+    completed during that outage: a stale failure whose workflow never ran
+    again is not blamed for a later outage another workflow caused. Outages
+    are kept separate — clipped to be disjoint rather than unioned — so two
+    that touch or overlap never let one workflow's failure authorize the
+    other's time, and overlapping time is counted once.
+    """
+    windows: list[tuple[datetime, datetime, datetime]] = []
+    cursor: datetime | None = None
+    for outage in sorted(outages, key=lambda o: o.started_at):
+        end = outage.ended_at or now
+        clipped_start = outage.started_at if cursor is None else max(outage.started_at, cursor)
+        windows.append((outage.started_at, clipped_start, end))
+        cursor = end if cursor is None else max(cursor, end)
+    if not windows:
+        return {}
+    by_workflow: dict[int | str, list[WorkflowRun]] = defaultdict(list)
+    for run in runs:
+        if run.failed or run.succeeded:
+            by_workflow[_workflow_key(run)].append(run)
+    shares: dict[int | str, float] = {}
+    for key, workflow_runs in by_workflow.items():
+        spans: list[tuple[datetime, datetime]] = []
+        failures: list[datetime] = []
+        open_since: datetime | None = None
+        for run in sorted(workflow_runs, key=lambda r: r.completed_at):
+            if run.failed:
+                failures.append(run.completed_at)
+                if open_since is None:
+                    open_since = run.completed_at
+            elif run.succeeded and open_since is not None:
+                spans.append((open_since, run.completed_at))
+                open_since = None
+        if open_since is not None:
+            spans.append((open_since, now))
+        total = 0.0
+        for membership_start, clipped_start, end in windows:
+            if clipped_start >= end:
+                continue
+            if any(membership_start <= failed_at <= end for failed_at in failures):
+                total += _intersect_hours(spans, [(clipped_start, end)])
+        if total > 0:
+            shares[key] = total
+    return shares
+
+
+def _intersect_hours(
+    spans: Sequence[tuple[datetime, datetime]],
+    branch_spans: Sequence[tuple[datetime, datetime]],
+) -> float:
+    """Total hours of overlap between ``spans`` and the branch outage intervals."""
+    total = 0.0
+    for start, end in spans:
+        for branch_start, branch_end in branch_spans:
+            lo = max(start, branch_start)
+            hi = min(end, branch_end)
+            if hi > lo:
+                total += (hi - lo).total_seconds()
+    return total / 3600
+
+
+def union_hours(outages: Sequence[Outage], *, now: datetime) -> float:
+    """Hours during which at least one workflow was red, overlaps counted once."""
+    intervals = sorted((o.started_at, o.ended_at or now) for o in outages)
+    total = 0.0
+    span: tuple[datetime, datetime] | None = None
+    for start, end in intervals:
+        if span is None or start > span[1]:
+            if span is not None:
+                total += (span[1] - span[0]).total_seconds()
+            span = (start, end)
+        elif end > span[1]:
+            span = (span[0], end)
+    if span is not None:
+        total += (span[1] - span[0]).total_seconds()
+    return max(0.0, total / 3600)
+
+
+def summarize_workflows(
+    runs: Sequence[WorkflowRun],
+    classified: Sequence[ClassifiedFailure],
+    normal: dict[int | str, float],
+    *,
+    red_hours: dict[int | str, float] | None = None,
+) -> list[WorkflowSummary]:
+    """Per-workflow counts, worst first; workflows that never failed are omitted."""
+    shares = red_hours or {}
+    run_counts: dict[int | str, int] = defaultdict(int)
+    failure_counts: dict[int | str, int] = defaultdict(int)
+    names: dict[int | str, str] = {}
+    for run in runs:
+        key = _workflow_key(run)
+        names[key] = run.workflow
+        run_counts[key] += 1
+        if run.failed:
+            failure_counts[key] += 1
+    reliability_counts: dict[int | str, int] = defaultdict(int)
+    for item in classified:
+        if item.kind is FailureKind.RELIABILITY:
+            reliability_counts[_workflow_key(item.failure)] += 1
+    summaries = [
+        WorkflowSummary(
+            workflow=names[key],
+            runs=run_counts[key],
+            failures=failures,
+            reliability_failures=reliability_counts[key],
+            normal_minutes=normal.get(key),
+            red_hours=shares.get(key, 0.0),
+        )
+        for key, failures in failure_counts.items()
+    ]
+    return sorted(summaries, key=lambda s: (-s.failures, s.workflow))
+
+
+def _workflow_key(run: WorkflowRun) -> int | str:
+    return run.workflow_id if run.workflow_id else run.workflow
+
+
+def _history_key(
+    run: WorkflowRun, identity: PullRequestIdentity
+) -> tuple[int | str, str, str, int]:
+    head_repo, branch, number = identity.key(run)
+    return (_workflow_key(run), head_repo, branch, number)
+
+
+__all__ = [
+    "classify_failures",
+    "PullRequestIdentity",
+    "pull_request_delays",
+    "compute_report",
+    "find_outages",
+    "normal_minutes",
+    "summarize_workflows",
+    "union_hours",
+    "workflow_red_hours",
+]

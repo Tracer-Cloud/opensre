@@ -111,7 +111,7 @@ def test_classify_validation_error_returns_none_and_reports() -> None:
     sanitized wrapper (no secret field values), mirroring the Discord rule."""
     secret_value = "leaked-secret-token"
 
-    with patch("integrations._validation_helpers.report_exception") as mock_report:
+    with patch("infrastructure.observability.errors.boundary.capture_exception") as mock_report:
         result = classify(
             {"auth_token": secret_value, "server_url": "not-a-url", "user_id": "u1"},
             record_id="rec-rocketchat",
@@ -255,6 +255,22 @@ def test_verify_webhook_fails_on_connection_error(monkeypatch: pytest.MonkeyPatc
     result = verify_rocketchat("local env", _WEBHOOK_CONFIG)
     assert result["status"] == "failed"
     assert "unreachable" in result["detail"]
+
+
+def test_verify_webhook_connection_error_redacts_webhook_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    webhook_url = _WEBHOOK_CONFIG["webhook_url"]
+
+    def _raise(*_a: Any, **_kw: Any) -> None:
+        raise ConnectionError(f"failed to connect to {webhook_url}")
+
+    monkeypatch.setattr("integrations.rocketchat.verifier.httpx.get", _raise)
+    result = verify_rocketchat("local env", _WEBHOOK_CONFIG)
+
+    assert result["status"] == "failed"
+    assert webhook_url not in result["detail"]
+    assert "<redacted>" in result["detail"]
 
 
 def test_verify_prefers_pat_probe_when_both_configured(monkeypatch: pytest.MonkeyPatch) -> None:

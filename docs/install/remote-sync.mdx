@@ -1,0 +1,170 @@
+---
+title: "Sync to your own object store"
+description: "Copy sessions and memory between machines using an S3, GCS, Azure, Vercel Blob, or Neon Object Storage store you own."
+---
+
+By default OpenSRE keeps everything on your machine. Turn on remote sync to copy **conversations** and **memory** to a private store you own, so another laptop can continue where you left off.
+
+Credentials and API keys stay local. You still run integration setup on each new machine.
+
+| Copied | Not copied |
+| --- | --- |
+| `~/.opensre/sessions/` | Integration credentials |
+| `~/.opensre/memory/` | Model API keys |
+
+<Warning>
+Use a **private** store. It can hold incident chats and system details.
+</Warning>
+
+## Setup
+
+```bash
+# Editable form inside the interactive shell (writes ~/.opensre/config.yml)
+/remote-sync setup
+
+# AWS / S3
+opensre remote-sync setup --provider aws --bucket my-opensre-bucket
+
+# Google Cloud Storage (Application Default Credentials)
+opensre remote-sync setup --provider gcs --bucket my-opensre-bucket
+
+# Vercel Blob
+opensre remote-sync setup --provider vercel --bucket opensre-remote-sync
+export BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
+
+# Azure Blob (ambient Azure credentials)
+opensre remote-sync setup --provider azure --bucket my-container
+```
+
+In the interactive shell, run `/remote-sync setup` to open the editable form.
+Choose a provider and enter the **required** bucket, container, or store name. Provider defaults to `aws`. **Optional settings** contains the prefix (default
+`opensre`), provider-supported region/profile fields (optional, using ambient
+configuration when empty), and the enabled switch (default Yes for new setups).
+
+Existing stored settings and supplied flags prefill the form. Changing the
+provider updates its fields and credential guidance. **Save settings** writes
+`~/.opensre/config.yml`; Cancel, Esc from review, or Ctrl-C saves nothing.
+Validation errors keep your draft editable. Setup saves configuration only: it
+does not verify access, create a store, or transfer files. Use a private store.
+
+External CLI commands (`opensre remote-sync setup`) and chat gateways use flags
+only, even on a TTY. Missing `--bucket` returns an actionable error without
+prompting or saving. Provider is optional and defaults to `aws`; for example,
+`opensre remote-sync setup --bucket my-opensre-bucket` saves directly. Complete
+REPL flag commands also save without opening the form. For example:
+
+```bash
+/remote-sync setup --provider vercel --bucket opensre-remote-sync
+```
+
+A flag missing its value is rejected before the form opens or anything is saved.
+`--prefix=` uses the default prefix. `setup --disabled` only turns sync off,
+keeping the stored destination; to save new settings while disabled, also supply
+`--bucket` (and optionally `--provider`). Credentials stay in the provider's
+ambient environment, not in this form or config file. Environment variables still override saved
+settings for a run.
+
+Or set env vars yourself:
+
+```bash
+export OPENSRE_REMOTE_SYNC=1
+export OPENSRE_REMOTE_SYNC_BUCKET=my-opensre-bucket
+# optional:
+# export OPENSRE_REMOTE_SYNC_PROVIDER=aws   # default; also gcs, vercel, azure, s3compat, neon
+# export OPENSRE_REMOTE_SYNC_PREFIX=opensre # default
+```
+
+A bucket name alone does nothing — you must also set `OPENSRE_REMOTE_SYNC=1` (or enable it via `opensre remote-sync setup`).
+
+| Variable | What it does |
+| --- | --- |
+| `OPENSRE_REMOTE_SYNC` | `1` / `true` turns sync on |
+| `OPENSRE_REMOTE_SYNC_PROVIDER` | `aws` (default), `gcs`, `vercel`, `azure`, `s3compat`, or `neon` |
+| `OPENSRE_REMOTE_SYNC_BUCKET` | Bucket, container, or Blob store name (required when on) |
+| `OPENSRE_REMOTE_SYNC_PREFIX` | Key prefix (default `opensre`). Same prefix = shared history |
+| `OPENSRE_REMOTE_SYNC_REGION` | AWS region (AWS only) |
+| `OPENSRE_REMOTE_SYNC_PROFILE` | AWS profile name, or Azure storage account name when `provider=azure` |
+| `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` | Custom S3 endpoint when `provider=s3compat` (MinIO / R2 / Spaces) or `provider=neon` |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob token (Vercel only) |
+| `OPENSRE_REMOTE_SYNC_EXCLUDE` | Comma-separated paths to skip (see below) |
+| `OPENSRE_REMOTE_SYNC_EXCLUDE_OFF` | `1` ignores exclusions for one run |
+
+Env vars override `~/.opensre/config.yml` for that run. `--region` / `--profile` only work with AWS and Azure (profile = storage account); setup rejects them for other providers.
+
+Every machine that should share history needs the **same provider, store, and prefix** (and for Vercel, a token for that store).
+
+## Sync
+
+```bash
+opensre remote-sync status          # what would move
+opensre remote-sync sync            # pull, then push
+opensre remote-sync sync --pull-only   # new machine: download only
+opensre remote-sync sync --push-only   # upload only
+```
+
+In the shell: `/remote-sync status` and `/remote-sync sync`.
+
+To run one full sync automatically after an interactive shell session exits:
+
+```bash
+opensre --sync-on-exit
+```
+
+Run setup first. The flag applies only to that invocation; a normal `opensre`
+session remains manual-only. If the automatic sync fails, OpenSRE prints a
+warning without changing the shell's exit status.
+
+<Warning>
+Remote sync is for a **personal machine**. Org-bound Slack/Discord turns are refused — those already persist under the org context root.
+</Warning>
+
+## Providers
+
+**AWS / S3** — private bucket. Uses your normal AWS credentials (`AWS_*`, profile, or SSO). Uploads use server-side encryption (`AES256`). Needs `s3:ListBucket`, `s3:GetObject`, and `s3:PutObject` on your prefix. Sync never deletes objects, so `s3:DeleteObject` is not required.
+
+**Google Cloud Storage** — private bucket. Set `OPENSRE_REMOTE_SYNC_PROVIDER=gcs`. Credentials come from Application Default Credentials (`gcloud auth application-default login`). Needs `storage.objects.list`, `storage.objects.get`, `storage.objects.create`, and `storage.objects.delete` (delete is required to replace an object even though sync never removes keys). A bucket-scoped `roles/storage.objectUser` binding covers all four.
+
+**Vercel Blob** — private store. Set `BLOB_READ_WRITE_TOKEN`. `OPENSRE_REMOTE_SYNC_BUCKET` is the store name/id for status.
+
+**Azure Blob Storage** — private container. Set `OPENSRE_REMOTE_SYNC_PROVIDER=azure`, `OPENSRE_REMOTE_SYNC_BUCKET` to the container name, and `OPENSRE_REMOTE_SYNC_PROFILE` to the storage account name. Auth uses ambient Azure credentials (`az login`, Managed Identity, or `AZURE_*`). The principal needs **Storage Blob Data Contributor** on the account (plain Contributor is not enough).
+
+**S3-compatible (MinIO / R2 / Spaces)** — set `OPENSRE_REMOTE_SYNC_PROVIDER=s3compat` and `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` to the custom endpoint (or `AWS_ENDPOINT_URL_S3`). Path-style addressing is enabled for MinIO. Use the same ambient S3 credentials as AWS.
+
+**Neon Object Storage**: private bucket on a Neon branch. Set `OPENSRE_REMOTE_SYNC_PROVIDER=neon` and run `neon env pull` in the shell (or `.env`) OpenSRE uses, which sets `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` for the linked branch. Without the CLI, set `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` to the branch's `s3_endpoint` and use a key from `neon credentials create` with the `storage:read` and `storage:write` scopes. The endpoint is required: unlike `s3compat`, the `neon` provider refuses to start without one so it never falls back to AWS. Buckets belong to a branch, so every machine must use the same branch endpoint. `status` reports the bucket as public when its access level is `public_read`.
+
+## Skip some paths
+
+By default every session and memory file syncs. To hold some back:
+
+```bash
+export OPENSRE_REMOTE_SYNC_EXCLUDE='*.tmp,sessions/scratch-*'
+```
+
+Or in `~/.opensre/config.yml`:
+
+```yaml
+remote_sync:
+  enabled: true
+  bucket: my-opensre-bucket
+  exclude:
+    - "*.tmp"
+    - sessions/scratch-*
+```
+
+If the env var is set, it **replaces** the config list for that run (it does not merge). Clearing the env var to empty does **not** turn exclusions off — use this instead:
+
+```bash
+OPENSRE_REMOTE_SYNC_EXCLUDE_OFF=1 opensre remote-sync sync
+```
+
+Patterns match keys like `sessions/…` or `memory/…` (case-sensitive). `*` can cross folders. Excluded paths are skipped both ways (not uploaded, not downloaded). Patterns starting with `!` are rejected. Sync never deletes from the store.
+
+## Conflicts
+
+Sync pulls first, then pushes.
+
+- Only on one side → copied to the other
+- Both changed → newer write wins
+- Nothing is deleted on either side
+
+Deleting a session on one laptop does **not** remove it from the store or other machines. Delete the object in the store if you want it gone everywhere.

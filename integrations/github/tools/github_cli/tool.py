@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
-from core.tool_framework.metadata import SideEffectLevel
-from core.tool_framework.tool_decorator import tool
+from core.domain.types.tools import ToolSurface
+from core.tool import CALL_SIDE_EFFECT_LEVEL_KEY, SideEffectLevel
+from core.tool_framework import tool
+from integrations.github.agent_tools import (
+    github_tool_available,
+    github_tool_params,
+    require_webapp_github,
+)
 from integrations.github.tools.github_cli.credentials import (
     GITHUB_CLI_INJECTED_PARAMS,
     github_creds,
     github_source_available,
-    resolve_github_token,
 )
-from integrations.github.tools.github_cli.runner import run_gh
+from integrations.github.tools.github_cli.effects import gh_call_only_reads
+from integrations.github.tools.github_cli.runner import MAX_GH_OUTPUT_CHARS, run_gh
 from integrations.github.tools.github_cli.summary import attach_summary
 
 _ARGS_SCHEMA: dict[str, Any] = {
@@ -24,12 +31,19 @@ _ARGS_SCHEMA: dict[str, Any] = {
             "description": (
                 "Arguments after the `gh` binary (for example: "
                 '["issue", "create", "--title", "Bug", "--body", "…"] or '
-                '["issue", "list", "--limit", "10"]). Do not include `gh` itself.'
+                '["issue", "list", "--limit", "10", "--json", "number,title"]). '
+                "Do not include `gh` itself. Each list item is one argv entry, passed "
+                "to gh verbatim without shell quoting or splitting."
             ),
         },
         "repo": {
             "type": "string",
-            "description": "Optional owner/name passed to gh as -R (overrides default repo).",
+            "description": (
+                "Optional owner/name passed to gh as -R (overrides default repo). "
+                "Ignored for `gh repo`, `gh api`, and other commands without -R; "
+                "give those the repository positionally, e.g. "
+                '["repo", "create", "owner/name", "--private"].'
+            ),
         },
         "timeout": {
             "type": "integer",
@@ -46,9 +60,9 @@ _ARGS_SCHEMA: dict[str, Any] = {
 
 def _github_cli_available(sources: dict[str, dict]) -> bool:
     gh = sources.get("github", {})
-    return bool(
-        github_source_available(sources) or resolve_github_token(None) or gh.get("github_token")
-    )
+    if gh.get("connection_selection_error"):
+        return False
+    return github_source_available(sources)
 
 
 def _github_cli_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -57,6 +71,8 @@ def _github_cli_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     if not gh:
         return params
     creds = github_creds(gh)
+    if creds.get("github_connection_id"):
+        params["github_connection_id"] = creds["github_connection_id"]
     if creds.get("github_token"):
         params["github_token"] = creds["github_token"]
     owner = str(gh.get("owner") or "").strip()
@@ -72,9 +88,16 @@ def _normalize_args(args: list[str] | None) -> list[str]:
     return [str(a) for a in args]
 
 
+def _call_only_reads(arguments: Mapping[str, Any]) -> bool:
+    """Whether one call's ``gh`` command only reads, so it may run beside other reads."""
+    args = arguments.get("args")
+    return isinstance(args, list) and gh_call_only_reads(_normalize_args(args))
+
+
 @tool(
     name="github_cli",
     source="github",
+    compact_description="Run authenticated GitHub CLI commands for repository, issue, and PR work.",
     description=(
         "Run GitHub CLI (`gh`) with OpenSRE-configured auth — reads and writes. "
         "Use for issue/PR create, list, view, assign, label, merge, repo list, "
@@ -82,7 +105,16 @@ def _normalize_args(args: list[str] | None) -> list[str]:
         "Pass args after the gh binary; optional repo as owner/name for -R. "
         "After the call, reply from the result summary — plain prose for simple "
         "confirms; chat-like markdown bullets for multi-item reads (not report "
-        "tables/headers). Not raw JSON/GraphQL dumps."
+        "tables/headers). Not raw JSON/GraphQL dumps. For a commit's workflow "
+        "run history with attempts and conclusions use "
+        "list_github_actions_workflow_runs with head_sha; gh run list does not "
+        f"show attempts. Output over {MAX_GH_OUTPUT_CHARS} characters is cut, and cut JSON is "
+        "refused: for list and JSON reads always pass a small --limit, only the "
+        "--json fields you need, and --jq to select them (for gh api, --jq too). "
+        "For gh api graphql pass the whole query as one arg, e.g. "
+        '["api", "graphql", "-f", "query=query($o: String!, $n: String!) '
+        '{ repository(owner: $o, name: $n) { name } }", "-f", "o=OWNER", '
+        '"-f", "n=NAME"], with balanced braces.'
     ),
     use_cases=[
         "Creating a GitHub issue (title/body/assignee/labels) when the user asks",
@@ -95,14 +127,16 @@ def _normalize_args(args: list[str] | None) -> list[str]:
         "Printing or logging the GitHub token",
         "Inventing repo lists without calling github_cli",
     ],
-    surfaces=("action",),
+    surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
     requires_approval=False,
+    concurrent_read_call=_call_only_reads,
     input_schema=_ARGS_SCHEMA,
-    is_available=_github_cli_available,
-    extract_params=_github_cli_extract_params,
+    is_available=github_tool_available(_github_cli_available),
+    extract_params=github_tool_params(_github_cli_extract_params),
     injected_params=GITHUB_CLI_INJECTED_PARAMS,
 )
+@require_webapp_github
 def github_cli(
     args: list[str],
     repo: str | None = None,
@@ -112,10 +146,13 @@ def github_cli(
 ) -> dict[str, Any]:
     """Run an authenticated ``gh`` command (read or write; no approval gate)."""
     normalized = _normalize_args(args)
-    return attach_summary(
+    payload = attach_summary(
         run_gh(args=normalized, repo=repo, github_token=github_token, timeout=timeout),
         args=normalized,
     )
+    if gh_call_only_reads(normalized):
+        payload[CALL_SIDE_EFFECT_LEVEL_KEY] = SideEffectLevel.READ_ONLY.value
+    return payload
 
 
 __all__ = ["github_cli"]

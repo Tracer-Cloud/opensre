@@ -8,7 +8,7 @@ and stored an integration that could not authenticate.
 from __future__ import annotations
 
 from config.constants.gitlab import GITLAB_AUTH_TOKEN_ENV, GITLAB_BASE_URL_ENV
-from integrations.gitlab import DEFAULT_GITLAB_BASE_URL
+from integrations.gitlab.client import DEFAULT_GITLAB_BASE_URL
 from integrations.gitlab.verifier import verify_gitlab
 from integrations.setup_flow import IntegrationSetupSpec, SetupField
 

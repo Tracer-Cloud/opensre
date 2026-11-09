@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from rich.console import Console
 
     from config.repl_config import ReplConfig
@@ -16,6 +18,8 @@ def run_repl(
     *,
     resume_session_id: str | None = None,
     console: Console | None = None,
+    after_banner: Callable[[], None] | None = None,
+    capture_shell_rendered: bool = True,
 ) -> int:
     """Run the interactive shell and return its exit code.
 
@@ -33,6 +37,8 @@ def run_repl(
         config=config,
         resume_session_id=resume_session_id,
         console=console,
+        after_banner=after_banner,
+        capture_shell_rendered=capture_shell_rendered,
     )
 
 

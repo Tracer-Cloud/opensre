@@ -1,0 +1,243 @@
+{
+  "generated_at": "2026-09-10T12:42:46.848526+00:00",
+  "git_revision": "1a9ce46eb3550028666c832fe12d7a351fa12368",
+  "machine": {
+    "cpu_count": 9,
+    "machine": "x86_64",
+    "platform": "Linux-6.18.35-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.12.14",
+    "python_implementation": "CPython",
+    "sqlite": "3.53.1"
+  },
+  "metrics": {
+    "burst": [
+      {
+        "admitted_runs": 10,
+        "burst_size": 10,
+        "completed_runs": 10,
+        "drain_seconds": 0.06061075600064214,
+        "peak_in_memory_callbacks": 10,
+        "pending_after_admission": {
+          "count": 10,
+          "oldest_admission_at": "2026-09-10T12:42:46.872090+00:00",
+          "oldest_pending_age_seconds": 0.007756
+        },
+        "rss": {
+          "current_rss_bytes": 31084544,
+          "peak_rss_bytes": 31084544
+        },
+        "sqlite_lock_failures": 0,
+        "throughput_per_second": 164.98721777854172
+      },
+      {
+        "admitted_runs": 100,
+        "burst_size": 100,
+        "completed_runs": 100,
+        "drain_seconds": 0.5803501650007092,
+        "peak_in_memory_callbacks": 100,
+        "pending_after_admission": {
+          "count": 100,
+          "oldest_admission_at": "2026-09-10T12:42:46.938954+00:00",
+          "oldest_pending_age_seconds": 0.048045
+        },
+        "rss": {
+          "current_rss_bytes": 31428608,
+          "peak_rss_bytes": 31428608
+        },
+        "sqlite_lock_failures": 0,
+        "throughput_per_second": 172.30976405404795
+      },
+      {
+        "admitted_runs": 1000,
+        "burst_size": 1000,
+        "completed_runs": 1000,
+        "drain_seconds": 5.993895582999357,
+        "peak_in_memory_callbacks": 1000,
+        "pending_after_admission": {
+          "count": 1000,
+          "oldest_admission_at": "2026-09-10T12:42:47.565416+00:00",
+          "oldest_pending_age_seconds": 0.445672
+        },
+        "rss": {
+          "current_rss_bytes": 33382400,
+          "peak_rss_bytes": 33382400
+        },
+        "sqlite_lock_failures": 0,
+        "throughput_per_second": 166.83640649936012
+      }
+    ],
+    "history": [
+      {
+        "completed_history_rows": 10000,
+        "expected_pending_task_id": "history-pending-10000-0",
+        "query_plan": [
+          "CO-ROUTINE recovery_candidates",
+          "COMPOUND QUERY",
+          "LEFT-MOST SUBQUERY",
+          "SCAN task_runs USING COVERING INDEX idx_task_runs_recovery_pending_order",
+          "LIST SUBQUERY 4",
+          "SCAN json_each VIRTUAL TABLE INDEX 1:",
+          "CREATE BLOOM FILTER",
+          "UNION ALL",
+          "SEARCH task_runs USING COVERING INDEX idx_task_runs_recovery_expired (lease_expires_at<?)",
+          "REUSE LIST SUBQUERY 4",
+          "SCAN current",
+          "REUSE LIST SUBQUERY 4",
+          "CORRELATED SCALAR SUBQUERY 3",
+          "SEARCH live USING COVERING INDEX idx_task_runs_live_owner (task_id=? AND lease_expires_at>?)",
+          "CORRELATED SCALAR SUBQUERY 5",
+          "SEARCH latest USING COVERING INDEX sqlite_autoindex_task_runs_1 (task_id=? AND fire_time=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "recoverable_run_count": 2,
+        "recovery_query_seconds": 0.0008965700008047861,
+        "rss": {
+          "current_rss_bytes": 33480704,
+          "peak_rss_bytes": 34394112
+        }
+      },
+      {
+        "completed_history_rows": 100000,
+        "expected_pending_task_id": "history-pending-100000-0",
+        "query_plan": [
+          "CO-ROUTINE recovery_candidates",
+          "COMPOUND QUERY",
+          "LEFT-MOST SUBQUERY",
+          "SCAN task_runs USING COVERING INDEX idx_task_runs_recovery_pending_order",
+          "LIST SUBQUERY 4",
+          "SCAN json_each VIRTUAL TABLE INDEX 1:",
+          "CREATE BLOOM FILTER",
+          "UNION ALL",
+          "SEARCH task_runs USING COVERING INDEX idx_task_runs_recovery_expired (lease_expires_at<?)",
+          "REUSE LIST SUBQUERY 4",
+          "SCAN current",
+          "REUSE LIST SUBQUERY 4",
+          "CORRELATED SCALAR SUBQUERY 3",
+          "SEARCH live USING COVERING INDEX idx_task_runs_live_owner (task_id=? AND lease_expires_at>?)",
+          "CORRELATED SCALAR SUBQUERY 5",
+          "SEARCH latest USING COVERING INDEX sqlite_autoindex_task_runs_1 (task_id=? AND fire_time=?)",
+          "USE TEMP B-TREE FOR ORDER BY"
+        ],
+        "recoverable_run_count": 2,
+        "recovery_query_seconds": 0.0005864319991815137,
+        "rss": {
+          "current_rss_bytes": 33484800,
+          "peak_rss_bytes": 35057664
+        }
+      }
+    ],
+    "restart_recovery": {
+      "peak_in_memory_callbacks": 1,
+      "pending_before_restart_recovery": {
+        "count": 100,
+        "oldest_admission_at": "2026-09-10T12:42:58.619394+00:00",
+        "oldest_pending_age_seconds": 0.04558
+      },
+      "recovered_runs": 100,
+      "recovery_callback_count": 1,
+      "restart_recovery_drain_seconds": 1.146900015999563,
+      "restart_recovery_query_seconds": 0.0008375420002266765,
+      "restart_recovery_total_seconds": 1.1478088359999674,
+      "rss": {
+        "current_rss_bytes": 33484800,
+        "peak_rss_bytes": 35057664
+      },
+      "sqlite_lock_failures": 0,
+      "throughput_per_second": 87.19155864066018
+    },
+    "sustained": [
+      {
+        "admission_seconds": 0.9910689340003955,
+        "admitted_runs": 100,
+        "completed_runs": 100,
+        "drain_seconds": 0.011260401999606984,
+        "load": "below_capacity",
+        "observed_arrival_rate_per_second": 100.90115487361254,
+        "peak_in_memory_callbacks": 2,
+        "pending_after_admission": {
+          "count": 1,
+          "oldest_admission_at": "2026-09-10T12:42:54.988166+00:00",
+          "oldest_pending_age_seconds": 0.002933
+        },
+        "requested_arrival_rate_per_second": 100.0,
+        "rss": {
+          "current_rss_bytes": 33382400,
+          "peak_rss_bytes": 33382400
+        },
+        "sqlite_lock_failures": 0,
+        "sustained_duration_seconds": 1.0,
+        "throughput_per_second": 99.56932116550517,
+        "total_seconds": 1.004325417000473
+      },
+      {
+        "admission_seconds": 0.9956181099996684,
+        "admitted_runs": 200,
+        "completed_runs": 200,
+        "drain_seconds": 0.21487613000044803,
+        "load": "at_capacity",
+        "observed_arrival_rate_per_second": 200.8802350934201,
+        "peak_in_memory_callbacks": 36,
+        "pending_after_admission": {
+          "count": 34,
+          "oldest_admission_at": "2026-09-10T12:42:55.832735+00:00",
+          "oldest_pending_age_seconds": 0.165945
+        },
+        "requested_arrival_rate_per_second": 200.0,
+        "rss": {
+          "current_rss_bytes": 33382400,
+          "peak_rss_bytes": 33382400
+        },
+        "sqlite_lock_failures": 0,
+        "sustained_duration_seconds": 1.0,
+        "throughput_per_second": 165.16067465479256,
+        "total_seconds": 1.2109420139995564
+      },
+      {
+        "admission_seconds": 1.0004871990004176,
+        "admitted_runs": 300,
+        "completed_runs": 300,
+        "drain_seconds": 0.8799290340002699,
+        "load": "above_capacity",
+        "observed_arrival_rate_per_second": 299.8539114740585,
+        "peak_in_memory_callbacks": 142,
+        "pending_after_admission": {
+          "count": 140,
+          "oldest_admission_at": "2026-09-10T12:42:56.747411+00:00",
+          "oldest_pending_age_seconds": 0.467445
+        },
+        "requested_arrival_rate_per_second": 300.0,
+        "rss": {
+          "current_rss_bytes": 33382400,
+          "peak_rss_bytes": 33382400
+        },
+        "sqlite_lock_failures": 0,
+        "sustained_duration_seconds": 1.0,
+        "throughput_per_second": 159.5063896549912,
+        "total_seconds": 1.8808023970004797
+      }
+    ]
+  },
+  "scheduler_config": {
+    "ideal_fake_completion_capacity_per_second": 200.0,
+    "max_concurrent_runs": 2,
+    "shared_turn_gate": "not exercised by the fake runner"
+  },
+  "schema_version": 1,
+  "working_tree_dirty": false,
+  "workload": {
+    "burst_sizes": [
+      10,
+      100,
+      1000
+    ],
+    "concurrency": 2,
+    "fake_delivery_seconds": 0.01,
+    "history_sizes": [
+      10000,
+      100000
+    ],
+    "restart_backlog_size": 100,
+    "sustained_seconds": 1.0
+  }
+}

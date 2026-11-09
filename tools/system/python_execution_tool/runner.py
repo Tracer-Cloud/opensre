@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from platform.sandbox.runner import DEFAULT_TIMEOUT, MAX_TIMEOUT, run_python_sandbox
+from infrastructure.safety.sandbox.runner import DEFAULT_TIMEOUT, MAX_TIMEOUT, run_python_sandbox
 
 
 def run_python_execution(

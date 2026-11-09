@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from integrations.bitbucket.availability import bitbucket_available_or_backend
+from integrations.bitbucket.tools.availability import bitbucket_available_or_backend
 from integrations.cloudwatch.availability import cloudwatch_is_available
 from integrations.datadog.availability import datadog_available_or_backend
 from integrations.eks.availability import eks_available_or_backend

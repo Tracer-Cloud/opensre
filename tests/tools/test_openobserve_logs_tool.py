@@ -14,7 +14,10 @@ from typing import Any
 
 import pytest
 
-from integrations.openobserve.tools.openobserve_logs_tool import query_openobserve_logs
+from integrations.openobserve.tools.openobserve_logs_tool import (
+    _map_query_openobserve_logs,
+    query_openobserve_logs,
+)
 from tests.tools.conftest import BaseToolContract, MockHttpxResponse
 
 # ---------------------------------------------------------------------------
@@ -187,6 +190,7 @@ def test_uses_bearer_authorization_when_api_token_present(
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert captured["headers"]["Authorization"] == "Bearer oo-token"
     assert captured["headers"]["Content-Type"] == "application/json"
@@ -209,6 +213,7 @@ def test_uses_basic_authorization_when_only_username_password_present(
         base_url="https://oo.example.invalid",
         username="alice",
         password="secret",
+        stream="app_logs",
     )
     expected = base64.b64encode(b"alice:secret").decode("ascii")
     assert captured["headers"]["Authorization"] == f"Basic {expected}"
@@ -230,6 +235,7 @@ def test_bearer_takes_precedence_over_basic(monkeypatch: pytest.MonkeyPatch) -> 
         api_token="oo-token",
         username="alice",
         password="secret",
+        stream="app_logs",
     )
     # When both are provided, bearer wins
     assert captured["headers"]["Authorization"] == "Bearer oo-token"
@@ -255,6 +261,7 @@ def test_endpoint_uses_default_org_when_blank(monkeypatch: pytest.MonkeyPatch) -
         base_url="https://oo.example.invalid/",  # trailing slash should be stripped
         org="",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert captured["url"] == "https://oo.example.invalid/api/default/_search"
 
@@ -274,6 +281,7 @@ def test_endpoint_includes_provided_org(monkeypatch: pytest.MonkeyPatch) -> None
         base_url="https://oo.example.invalid",
         org="acme",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert captured["url"] == "https://oo.example.invalid/api/acme/_search"
 
@@ -293,9 +301,10 @@ def test_default_sql_used_when_query_blank(monkeypatch: pytest.MonkeyPatch) -> N
         base_url="https://oo.example.invalid",
         api_token="oo-token",
         query="",
+        stream="app_logs",
     )
     sql = captured["payload"]["query"]["sql"]
-    assert sql == "SELECT * FROM \"default\" WHERE level = 'error' ORDER BY _timestamp DESC"
+    assert sql == "SELECT * FROM \"app_logs\" WHERE level = 'error' ORDER BY _timestamp DESC"
 
 
 def test_provided_query_is_passed_through(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -335,12 +344,18 @@ def test_payload_includes_size_and_time_window(monkeypatch: pytest.MonkeyPatch) 
         api_token="oo-token",
         time_range_minutes=15,
         max_results=42,
+        stream="app_logs",
     )
     payload = captured["payload"]
     assert payload["size"] == 42
     assert "start_time" in payload["query"]
     assert "end_time" in payload["query"]
     assert payload["query"]["end_time"] > payload["query"]["start_time"]
+    # microseconds, not milliseconds - OpenObserve's _search API silently
+    # matches nothing on a millisecond value instead of raising.
+    expected_window_us = 15 * 60 * 1_000_000
+    actual_window = payload["query"]["end_time"] - payload["query"]["start_time"]
+    assert abs(actual_window - expected_window_us) < 1_000_000
 
 
 def test_stream_name_only_included_when_provided(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -354,11 +369,13 @@ def test_stream_name_only_included_when_provided(monkeypatch: pytest.MonkeyPatch
         "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
     )
 
-    # Without stream
+    # Without stream - needs an explicit query since an empty stream can no
+    # longer build a default one (see test_no_stream_and_no_query_is_unavailable)
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
         stream="",
+        query="SELECT * FROM \"whatever\" WHERE level = 'error'",
     )
     # With stream
     query_openobserve_logs(
@@ -387,6 +404,7 @@ def test_bounded_limit_caps_caller_request(monkeypatch: pytest.MonkeyPatch) -> N
         api_token="oo-token",
         limit=1000,
         max_results=4,
+        stream="app_logs",
     )
     assert captured["size"] == 4
     assert result["available"] is True
@@ -410,6 +428,7 @@ def test_records_from_top_level_hits_list(monkeypatch: pytest.MonkeyPatch) -> No
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert result["records"] == [{"a": 1}, {"a": 2}]
 
@@ -434,6 +453,7 @@ def test_records_from_elastic_style_nested_hits(monkeypatch: pytest.MonkeyPatch)
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert result["records"] == [{"msg": "boom"}, {"msg": "kaboom"}]
 
@@ -449,8 +469,9 @@ def test_records_from_records_field(monkeypatch: pytest.MonkeyPatch) -> None:
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
-    # Only dict items are kept — strings are filtered out
+    # Only dict items are kept - strings are filtered out
     assert result["records"] == [{"x": 1}, {"x": 2}]
 
 
@@ -465,6 +486,7 @@ def test_records_from_data_field(monkeypatch: pytest.MonkeyPatch) -> None:
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert result["records"] == [{"y": 9}]
 
@@ -480,6 +502,7 @@ def test_records_empty_on_unrecognized_shape(monkeypatch: pytest.MonkeyPatch) ->
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert result["available"] is True
     assert result["records"] == []
@@ -504,6 +527,7 @@ def test_returns_unavailable_on_http_error_status(monkeypatch: pytest.MonkeyPatc
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert result["available"] is False
     assert "HTTP 502 from OpenObserve" in result["error"]
@@ -519,7 +543,103 @@ def test_returns_unavailable_on_request_exception(monkeypatch: pytest.MonkeyPatc
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
         api_token="oo-token",
+        stream="app_logs",
     )
     assert result["available"] is False
     assert "connection refused" in result["error"]
     assert result["records"] == []
+
+
+def test_no_stream_and_no_query_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Neither stream nor an explicit query gives no valid table for the SQL
+    FROM clause - the old fallback hardcoded FROM "default", which is the org
+    name, not a real stream, and fails with a 400 against a real server.
+    """
+
+    def _fail_if_called(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("httpx.post should not be called without a stream or query")
+
+    monkeypatch.setattr(
+        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fail_if_called
+    )
+
+    result = query_openobserve_logs(
+        base_url="https://oo.example.invalid",
+        api_token="oo-token",
+    )
+    assert result["available"] is False
+    assert "OPENOBSERVE_STREAM" in result["error"]
+    assert result["records"] == []
+
+
+# ---------------------------------------------------------------------------
+# Evidence mapper
+# ---------------------------------------------------------------------------
+
+
+class TestMapQueryOpenobserveLogs:
+    def test_records_entry_with_stream_and_query(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(
+            evidence,
+            {
+                "available": True,
+                "total_returned": 2,
+                "effective_limit": 50,
+                "stream": "app_logs",
+                "query": "SELECT * FROM \"app_logs\" WHERE level = 'error'",
+            },
+            {},
+        )
+
+        entries = evidence["catalog_entries"]
+        assert len(entries) == 1
+        assert entries[0]["source"] == "query_openobserve_logs"
+        assert (
+            entries[0]["summary"]
+            == "2 record(s), stream 'app_logs', query 'SELECT * FROM \"app_logs\" WHERE level = 'error''"
+        )
+
+    def test_qualifies_count_when_page_is_saturated(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(
+            evidence,
+            {"available": True, "total_returned": 50, "effective_limit": 50},
+            {},
+        )
+
+        assert evidence["catalog_entries"][0]["summary"].startswith("50+ record(s)")
+
+    def test_strips_carriage_returns_from_query(self) -> None:
+        """Regression: a query with bare \\r or \\r\\n line endings must not
+        leave a literal carriage return in the report summary."""
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(
+            evidence,
+            {
+                "available": True,
+                "total_returned": 1,
+                "effective_limit": 50,
+                "query": "SELECT *\r\nFROM logs\r",
+            },
+            {},
+        )
+
+        assert "\r" not in evidence["catalog_entries"][0]["summary"]
+
+    def test_records_nothing_when_no_records(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(evidence, {"available": True, "total_returned": 0}, {})
+
+        assert "catalog_entries" not in evidence
+
+    def test_records_nothing_on_unavailable_result(self) -> None:
+        evidence: dict[str, Any] = {}
+
+        _map_query_openobserve_logs(evidence, {"available": False, "error": "HTTP 502"}, {})
+
+        assert "catalog_entries" not in evidence

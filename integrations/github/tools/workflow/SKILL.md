@@ -1,5 +1,5 @@
 ---
-name: github-workflow
+name: tracking-github-work-status
 description: Use GitHub workflow tools to read work status, draft reports, summarize follow-ups, and execute only approved issue mutations.
 tools:
   - list_github_work_items

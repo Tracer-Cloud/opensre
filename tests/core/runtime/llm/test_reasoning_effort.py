@@ -15,7 +15,9 @@ from config.llm_reasoning_effort import (
     display_reasoning_effort,
     get_active_reasoning_effort,
     infer_reasoning_effort_default,
+    model_default_reasoning_effort,
     parse_reasoning_effort,
+    resolve_reasoning_effort,
     runtime_reasoning_effort,
 )
 
@@ -106,6 +108,22 @@ def test_display_reasoning_effort_formats_default_in_parentheses() -> None:
 
 def test_infer_reasoning_effort_default_for_openai_gpt_5_2() -> None:
     assert infer_reasoning_effort_default("openai", "gpt-5.2") == "none"
+
+
+def test_gpt_6_1_defaults_to_extra_high_until_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert model_default_reasoning_effort("gpt-6.1-sol") == "xhigh"
+    assert model_default_reasoning_effort("openai/gpt-6.1-sol") == "xhigh"
+    assert model_default_reasoning_effort("gpt-5.6-sol") is None
+    assert resolve_reasoning_effort("gpt-6.1-sol") == "xhigh"
+    assert resolve_reasoning_effort("gpt-5.4-mini") is None
+    assert infer_reasoning_effort_default("openai", "gpt-6.1-sol") == "xhigh"
+    assert infer_reasoning_effort_default("codex", "gpt-6.1-sol") == "xhigh"
+    assert (
+        describe_reasoning_effort_default("openai", "gpt-6.1-sol") == "openai · gpt-6.1-sol: xhigh"
+    )
+
+    monkeypatch.setenv(_ENV_KEY, "low")
+    assert resolve_reasoning_effort("gpt-6.1-sol") == "low"
 
 
 def test_describe_reasoning_effort_default_for_unsupported_provider() -> None:

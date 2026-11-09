@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from surfaces.interactive_shell.command_registry import (
+from surfaces.interactive_shell.command_registry.catalog import (
     _MERGED_SEQUENCE,
     SLASH_COMMANDS,
 )

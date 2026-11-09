@@ -14,6 +14,15 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
+from config.constants.mysql import (
+    MYSQL_DATABASE_ENV,
+    MYSQL_HOST_ENV,
+    MYSQL_PASSWORD_ENV,
+    MYSQL_PORT_ENV,
+    MYSQL_SSL_MODE_ENV,
+    MYSQL_USERNAME_ENV,
+)
+from infrastructure.text.truncation import truncate
 from integrations._relational import (
     RelationalConfigBase,
     env_int,
@@ -22,7 +31,6 @@ from integrations._relational import (
     resolve_stored_or_env_config,
 )
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
-from platform.common.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -80,18 +88,18 @@ def build_mysql_config(raw: dict[str, Any] | None) -> MySQLConfig:
 
 def mysql_config_from_env() -> MySQLConfig | None:
     """Load a MySQL config from environment variables."""
-    host = env_str("MYSQL_HOST")
-    database = env_str("MYSQL_DATABASE")
+    host = env_str(MYSQL_HOST_ENV)
+    database = env_str(MYSQL_DATABASE_ENV)
     if not host or not database:
         return None
     return build_mysql_config(
         {
             "host": host,
-            "port": env_int("MYSQL_PORT", DEFAULT_MYSQL_PORT),
+            "port": env_int(MYSQL_PORT_ENV, DEFAULT_MYSQL_PORT),
             "database": database,
-            "username": env_str("MYSQL_USERNAME", DEFAULT_MYSQL_USER),
-            "password": os.getenv("MYSQL_PASSWORD", ""),
-            "ssl_mode": env_str("MYSQL_SSL_MODE", DEFAULT_MYSQL_SSL_MODE),
+            "username": env_str(MYSQL_USERNAME_ENV, DEFAULT_MYSQL_USER),
+            "password": os.getenv(MYSQL_PASSWORD_ENV, ""),
+            "ssl_mode": env_str(MYSQL_SSL_MODE_ENV, DEFAULT_MYSQL_SSL_MODE),
         }
     )
 

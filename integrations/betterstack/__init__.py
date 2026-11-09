@@ -28,8 +28,14 @@ from typing import Any
 import httpx
 from pydantic import Field, field_validator
 
+from config.constants.betterstack import (
+    BETTERSTACK_PASSWORD_ENV,
+    BETTERSTACK_QUERY_ENDPOINT_ENV,
+    BETTERSTACK_SOURCES_ENV,
+    BETTERSTACK_USERNAME_ENV,
+)
 from config.strict_config import StrictConfigModel
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
 
 logger = logging.getLogger(__name__)
@@ -104,16 +110,16 @@ def betterstack_config_from_env() -> BetterStackConfig | None:
     surfaced to the planner via :func:`betterstack_extract_params`; it is
     not required for availability.
     """
-    endpoint = os.getenv("BETTERSTACK_QUERY_ENDPOINT", "").strip()
-    username = os.getenv("BETTERSTACK_USERNAME", "").strip()
+    endpoint = os.getenv(BETTERSTACK_QUERY_ENDPOINT_ENV, "").strip()
+    username = os.getenv(BETTERSTACK_USERNAME_ENV, "").strip()
     if not endpoint or not username:
         return None
     return build_betterstack_config(
         {
             "query_endpoint": endpoint,
             "username": username,
-            "password": os.getenv("BETTERSTACK_PASSWORD", ""),
-            "sources": os.getenv("BETTERSTACK_SOURCES", ""),
+            "password": os.getenv(BETTERSTACK_PASSWORD_ENV, ""),
+            "sources": os.getenv(BETTERSTACK_SOURCES_ENV, ""),
         }
     )
 

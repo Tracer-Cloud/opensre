@@ -1,8 +1,7 @@
-"""Tier policy for secret storage: keyring first, owner-only local file second.
+"""Tier policy for secret storage: environment first, owner-only local file second.
 
-Covers the machines the OS keyring does not serve — headless Linux/EC2 with no
-backend at all, and a macOS login Keychain that is present but locked — where
-onboarding previously had no path to a working state.
+The OS keychain is no longer a tier. What these tests pin is that the remaining
+path still reaches a working state, and that logout genuinely revokes.
 """
 
 from __future__ import annotations
@@ -12,28 +11,47 @@ import os
 import stat
 from pathlib import Path
 
-import keyring
-import keyring.errors
 import pytest
 
-from config.constants.secrets import OPENSRE_DISABLE_KEYRING_ENV, OPENSRE_USE_KEYRING_ENV
+from config.constants.secrets import OPENSRE_DISABLE_KEYRING_ENV
 from config.llm_auth.credentials import delete as delete_provider_auth
 from config.llm_auth.credentials import resolve_for_request, save_api_key
-from config.secrets import local_file, os_keyring
-from config.secrets.backend import KeyringUnavailableError, KeyringUnavailableReason
+from config.secrets import local_file
+from config.secrets.backend import (
+    KeyringUnavailableError,
+    KeyringUnavailableReason,
+    SecretTier,
+)
 from config.secrets.store import (
     delete_secret,
     lookup,
     resolve_secret,
+    resolve_stored_secret,
     save_secret,
     secret_source,
 )
-from tests.shared.keyring_backend import MemoryKeyring
 
 _ENV_VAR = "OPENSRE_TEST_FALLBACK_TOKEN"
 
 
+@pytest.fixture(autouse=True)
+def _local_storage_enabled(tmp_path: Path, monkeypatch) -> None:
+    """Undo the suite-wide disable switch so the storage policy is exercised."""
+    monkeypatch.delenv(OPENSRE_DISABLE_KEYRING_ENV, raising=False)
+    monkeypatch.delenv(_ENV_VAR, raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setattr(local_file, "store_path", lambda: tmp_path / "credentials.json")
+
+
+def _stored_contents() -> dict[str, str]:
+    path = local_file.store_path()
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))["secrets"]
+
+
 def test_keyring_unavailable_reason_values_round_trip() -> None:
+    """The reason enum still classifies why a *write* was refused."""
     expected = {
         "disabled": KeyringUnavailableReason.DISABLED,
         "no_backend": KeyringUnavailableReason.NO_BACKEND,
@@ -47,108 +65,8 @@ def test_keyring_unavailable_reason_values_round_trip() -> None:
         assert str(reason) == value
 
 
-class _NoBackendKeyring(MemoryKeyring):
-    """Stands in for ``keyring.backends.fail.Keyring`` on a headless box."""
-
-    def get_password(self, _service: str, _username: str) -> str | None:
-        raise keyring.errors.NoKeyringError("No recommended backend was available")
-
-    def set_password(self, _service: str, _username: str, _password: str) -> None:
-        raise keyring.errors.NoKeyringError("No recommended backend was available")
-
-    def delete_password(self, _service: str, _username: str) -> None:
-        raise keyring.errors.NoKeyringError("No recommended backend was available")
-
-
-class _LockedKeyring(MemoryKeyring):
-    """A real backend that is present but refuses to serve (locked Keychain)."""
-
-    def get_password(self, _service: str, _username: str) -> str | None:
-        raise keyring.errors.KeyringLocked("The keychain is locked")
-
-    def set_password(self, _service: str, _username: str, _password: str) -> None:
-        raise keyring.errors.KeyringLocked("The keychain is locked")
-
-    def delete_password(self, _service: str, _username: str) -> None:
-        raise keyring.errors.KeyringLocked("The keychain is locked")
-
-
-@pytest.fixture
-def keyring_enabled(monkeypatch) -> None:
-    """Undo the suite-wide disable switch so tier policy is actually exercised.
-
-    Also opts into keyring *writes* (``OPENSRE_USE_KEYRING``) — the product
-    default is file-first; these tests pin the opt-in keychain path.
-    """
-    monkeypatch.delenv(OPENSRE_DISABLE_KEYRING_ENV, raising=False)
-    monkeypatch.setenv(OPENSRE_USE_KEYRING_ENV, "1")
-    monkeypatch.delenv(_ENV_VAR, raising=False)
-    os_keyring.reset_keyring_state()
-
-
-@pytest.fixture
-def use_backend(keyring_enabled):
-    """Install a keyring backend for one test, restoring the real one after."""
-    previous = keyring.get_keyring()
-
-    def _install(backend: keyring.backend.KeyringBackend) -> None:
-        keyring.set_keyring(backend)
-        os_keyring.reset_keyring_state()
-
-    yield _install
-    keyring.set_keyring(previous)
-    os_keyring.reset_keyring_state()
-
-
-def _fallback_contents() -> dict[str, str]:
-    path = local_file.store_path()
-    if not path.exists():
-        return {}
-    return json.loads(path.read_text(encoding="utf-8"))["secrets"]
-
-
-def test_save_defaults_to_fallback_file_without_keyring_opt_in(monkeypatch, use_backend) -> None:
-    """Env/file-first: keyring writes require OPENSRE_USE_KEYRING=1."""
-    use_backend(MemoryKeyring())
-    monkeypatch.delenv(OPENSRE_USE_KEYRING_ENV, raising=False)
-
-    result = save_secret(_ENV_VAR, "sk-file-first")
-
-    assert result.tier == "fallback"
-    assert "OPENSRE_USE_KEYRING=1" in result.detail
-    assert _fallback_contents() == {_ENV_VAR: "sk-file-first"}
-    from config.constants.secrets import KEYRING_SERVICE
-
-    assert keyring.get_password(KEYRING_SERVICE, _ENV_VAR) in (None, "")
-
-
-def test_save_falls_back_to_local_file_when_no_backend_exists(use_backend) -> None:
-    """#1403: headless Linux/EC2 must reach a working state, not abort onboarding."""
-    use_backend(_NoBackendKeyring())
-
-    result = save_secret(_ENV_VAR, "sk-headless")
-
-    assert result.tier == "fallback"
-    assert result.used_fallback is True
-    assert _fallback_contents() == {_ENV_VAR: "sk-headless"}
-
-
-def test_save_falls_back_when_the_keychain_is_locked(use_backend) -> None:
-    """#3348: a locked macOS login Keychain is a backend error, not a missing backend."""
-    use_backend(_LockedKeyring())
-
-    result = save_secret(_ENV_VAR, "sk-locked")
-
-    assert result.tier == "fallback"
-    # The user is told a real keychain exists and how to get back to it, rather
-    # than being silently downgraded to on-disk storage.
-    assert "could not be reached" in result.detail
-    assert "Unlock the keychain" in result.detail
-
-
-def test_fallback_credential_is_resolvable_at_request_time(use_backend) -> None:
+def test_a_saved_credential_is_resolvable_at_request_time() -> None:
     """A credential accepted during onboarding has to actually work afterwards."""
-    use_backend(_NoBackendKeyring())
     save_secret(_ENV_VAR, "sk-headless")
 
     found = lookup(_ENV_VAR)
@@ -158,8 +76,7 @@ def test_fallback_credential_is_resolvable_at_request_time(use_backend) -> None:
     assert secret_source(_ENV_VAR) == "fallback"
 
 
-def test_env_wins_over_both_stored_tiers(use_backend, monkeypatch) -> None:
-    use_backend(_NoBackendKeyring())
+def test_env_wins_over_the_stored_copy(monkeypatch) -> None:
     save_secret(_ENV_VAR, "sk-stored")
     monkeypatch.setenv(_ENV_VAR, "sk-from-env")
 
@@ -169,60 +86,101 @@ def test_env_wins_over_both_stored_tiers(use_backend, monkeypatch) -> None:
     assert found.tier == "env"
 
 
-def test_keyring_wins_over_a_stale_fallback_copy(use_backend) -> None:
-    use_backend(_NoBackendKeyring())
-    save_secret(_ENV_VAR, "sk-old-fallback")
+def test_stored_secret_ignores_the_environment(monkeypatch) -> None:
+    save_secret(_ENV_VAR, "sk-stored")
+    monkeypatch.setenv(_ENV_VAR, "sk-from-env")
 
-    use_backend(MemoryKeyring())
-    result = save_secret(_ENV_VAR, "sk-new-keyring")
+    assert resolve_stored_secret(_ENV_VAR) == "sk-stored"
+    assert resolve_secret(_ENV_VAR) == "sk-from-env"
 
-    assert result.tier == "keyring"
-    assert lookup(_ENV_VAR).tier == "keyring"
-    # The superseded plaintext copy is removed rather than left lying around.
-    assert _ENV_VAR not in _fallback_contents()
+
+def test_lookup_tolerates_a_credential_file_lock_timeout(monkeypatch) -> None:
+    """local_file.get must not raise through resolve/startup."""
+    from filelock import Timeout
+
+    def _locked(_name: str) -> str:
+        raise Timeout("/tmp/credentials.json.lock")
+
+    monkeypatch.setattr(local_file, "get", _locked)
+
+    assert lookup(_ENV_VAR).value == ""
+    assert lookup(_ENV_VAR).tier == SecretTier.NONE
+
+
+def test_lookup_tolerates_local_store_error_that_is_not_an_oserror(monkeypatch) -> None:
+    """LocalStoreError must be caught even though it does not subclass OSError."""
+    assert not issubclass(local_file.LocalStoreError, OSError)
+
+    def _locked(_name: str) -> str:
+        raise local_file.LocalStoreError("lock timed out")
+
+    monkeypatch.setattr(local_file, "get", _locked)
+
+    assert lookup(_ENV_VAR).value == ""
+    assert lookup(_ENV_VAR).tier == SecretTier.NONE
+
+
+def test_save_maps_a_lock_timeout_to_unavailable(monkeypatch) -> None:
+    def _locked(*_args: object, **_kwargs: object) -> None:
+        raise local_file.LocalStoreError("lock timed out")
+
+    monkeypatch.setattr(local_file, "set", _locked)
+
+    with pytest.raises(KeyringUnavailableError) as excinfo:
+        save_secret(_ENV_VAR, "sk-headless")
+
+    assert excinfo.value.reason == KeyringUnavailableReason.NO_BACKEND
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
-def test_fallback_file_is_never_readable_beyond_its_owner(use_backend) -> None:
-    use_backend(_NoBackendKeyring())
-
+def test_the_credential_file_is_never_readable_beyond_its_owner() -> None:
     save_secret(_ENV_VAR, "sk-headless")
 
     mode = stat.S_IMODE(local_file.store_path().stat().st_mode)
+
     assert mode == 0o600
 
 
-def test_delete_clears_both_tiers(use_backend) -> None:
-    """Logout must not leave a fallback copy that keeps resolving."""
-    backend = MemoryKeyring()
-    use_backend(backend)
-    save_secret(_ENV_VAR, "sk-keyring")
-    # Simulate a fallback copy written by an earlier run on a broken machine.
-    local_file.set(_ENV_VAR, "sk-fallback")
+def test_delete_clears_the_stored_copy() -> None:
+    """Logout must not leave a copy that keeps resolving."""
+    save_secret(_ENV_VAR, "sk-stored")
 
     delete_secret(_ENV_VAR)
 
     assert resolve_secret(_ENV_VAR) == ""
-    assert _ENV_VAR not in _fallback_contents()
-    assert backend.get_password("opensre.llm", _ENV_VAR) is None
+    assert _ENV_VAR not in _stored_contents()
 
 
-def test_provider_logout_clears_the_fallback_copy(use_backend, monkeypatch) -> None:
+def test_delete_raises_when_the_local_store_lock_times_out(monkeypatch) -> None:
+    """Logout must not report success while the local credential still resolves."""
+    save_secret(_ENV_VAR, "sk-stored")
+
+    def _locked(_name: str) -> None:
+        raise local_file.LocalStoreError("lock timed out")
+
+    monkeypatch.setattr(local_file, "delete", _locked)
+
+    with pytest.raises(KeyringUnavailableError) as excinfo:
+        delete_secret(_ENV_VAR)
+
+    assert excinfo.value.reason == KeyringUnavailableReason.BACKEND_ERROR
+    assert _ENV_VAR in _stored_contents()
+
+
+def test_provider_logout_clears_the_stored_copy(monkeypatch) -> None:
     """Regression: `opensre auth logout` reported success while the key still worked."""
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    use_backend(_NoBackendKeyring())
     save_api_key("deepseek", "sk-headless")
     assert resolve_for_request("deepseek").api_key == "sk-headless"
 
     delete_provider_auth("deepseek")
 
     assert resolve_for_request("deepseek").ok is False
-    assert _fallback_contents() == {}
+    assert _stored_contents() == {}
 
 
-def test_request_resolution_reports_the_fallback_tier(use_backend, monkeypatch) -> None:
+def test_request_resolution_reports_the_stored_tier(monkeypatch) -> None:
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-    use_backend(_NoBackendKeyring())
     save_api_key("deepseek", "sk-headless")
 
     resolution = resolve_for_request("deepseek")
@@ -231,8 +189,8 @@ def test_request_resolution_reports_the_fallback_tier(use_backend, monkeypatch) 
     assert resolution.source == "fallback"
 
 
-def test_save_raises_when_both_tiers_refuse(use_backend, monkeypatch) -> None:
-    use_backend(_NoBackendKeyring())
+def test_save_raises_when_the_file_refuses(monkeypatch) -> None:
+    """A caller that sees no exception must be able to trust the write landed."""
 
     def _refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("read-only file system")
@@ -242,11 +200,11 @@ def test_save_raises_when_both_tiers_refuse(use_backend, monkeypatch) -> None:
     with pytest.raises(KeyringUnavailableError) as excinfo:
         save_secret(_ENV_VAR, "sk-headless")
 
-    assert "also failed" in str(excinfo.value)
+    assert excinfo.value.reason == KeyringUnavailableReason.NO_BACKEND
 
 
-def test_disabling_the_keyring_stays_fail_closed(monkeypatch) -> None:
-    """OPENSRE_DISABLE_KEYRING opts out of local persistence, not into a weaker tier."""
+def test_disabling_local_storage_stays_fail_closed(monkeypatch) -> None:
+    """OPENSRE_DISABLE_KEYRING opts out of persistence, not into a weaker tier."""
     monkeypatch.setenv(OPENSRE_DISABLE_KEYRING_ENV, "1")
 
     with pytest.raises(KeyringUnavailableError) as excinfo:
@@ -256,58 +214,55 @@ def test_disabling_the_keyring_stays_fail_closed(monkeypatch) -> None:
     assert not Path(local_file.store_path()).exists()
 
 
-def test_one_backend_probe_per_process_after_a_failure(use_backend) -> None:
-    """#3295: repeated reads must not re-hit a backend that already failed.
+def test_disabled_local_storage_reads_only_the_environment(monkeypatch) -> None:
+    save_secret(_ENV_VAR, "sk-stored")
+    monkeypatch.setenv(OPENSRE_DISABLE_KEYRING_ENV, "1")
 
-    On macOS each hit is another Keychain authorization dialog; on a broken
-    D-Bus box each one costs a timeout.
-    """
-    calls = 0
+    assert resolve_secret(_ENV_VAR) == ""
 
-    class _CountingKeyring(MemoryKeyring):
-        def get_password(self, _service: str, _username: str) -> str | None:
-            nonlocal calls
-            calls += 1
-            raise keyring.errors.KeyringLocked("The keychain is locked")
-
-    use_backend(_CountingKeyring())
-
-    for _ in range(5):
-        lookup(_ENV_VAR)
-
-    assert calls == 1
+    monkeypatch.setenv(_ENV_VAR, "sk-from-env")
+    assert resolve_secret(_ENV_VAR) == "sk-from-env"
 
 
-def test_empty_value_clears_instead_of_storing(use_backend) -> None:
-    use_backend(_NoBackendKeyring())
+def test_empty_value_clears_instead_of_storing() -> None:
     save_secret(_ENV_VAR, "sk-headless")
 
     save_secret(_ENV_VAR, "   ")
 
     assert resolve_secret(_ENV_VAR) == ""
-    assert _ENV_VAR not in _fallback_contents()
+    assert _ENV_VAR not in _stored_contents()
 
 
-def test_a_failed_delete_does_not_lock_the_process_out_of_the_keyring(use_backend) -> None:
-    """A logout that could not reach the backend must not demote later writes.
+def test_unchanged_store_is_read_once_across_lookups(monkeypatch) -> None:
+    """Startup resolves credentials per tool; an unchanged file must not be re-parsed each time."""
+    # A store written moments ago is never cached; this one counts as settled.
+    monkeypatch.setattr(local_file, "_RACY_WINDOW_NS", 0)
+    save_secret(_ENV_VAR, "sk-stored")
+    local_file.clear_read_cache()
+    reads: list[Path] = []
+    real_load = local_file._load_unlocked
 
-    ``delete_secret`` already treats a failed keyring delete as non-fatal, so if
-    it also set the sticky unavailable flag, every subsequent read and write in
-    the run would skip the keychain and use the plaintext fallback instead.
-    """
-    delete_calls = 0
+    def _counting_load(path: Path) -> dict[str, str]:
+        reads.append(path)
+        return real_load(path)
 
-    class _DeleteFailsOnceKeyring(MemoryKeyring):
-        def delete_password(self, _service: str, _username: str) -> None:
-            nonlocal delete_calls
-            delete_calls += 1
-            raise keyring.errors.KeyringLocked("The keychain is locked")
+    monkeypatch.setattr(local_file, "_load_unlocked", _counting_load)
 
-    use_backend(_DeleteFailsOnceKeyring())
+    assert [resolve_secret(_ENV_VAR) for _ in range(5)] == ["sk-stored"] * 5
+    assert len(reads) == 1
 
-    delete_secret(_ENV_VAR)
-    result = save_secret(_ENV_VAR, "sk-after-failed-delete")
 
-    assert delete_calls == 1
-    assert result.tier == "keyring"
-    assert lookup(_ENV_VAR).tier == "keyring"
+def test_a_store_replaced_by_another_process_is_read_again(monkeypatch) -> None:
+    """The read cache must never hide a credential written outside this process."""
+    monkeypatch.setattr(local_file, "_RACY_WINDOW_NS", 0)
+    save_secret(_ENV_VAR, "sk-old")
+    local_file.clear_read_cache()
+    assert resolve_secret(_ENV_VAR) == "sk-old"
+
+    # Another process publishes the same way local_file does: a new file swapped in.
+    path = local_file.store_path()
+    replacement = path.with_name("replacement.json")
+    replacement.write_text(json.dumps({"version": 1, "secrets": {_ENV_VAR: "sk-new"}}))
+    os.replace(replacement, path)
+
+    assert resolve_secret(_ENV_VAR) == "sk-new"

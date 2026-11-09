@@ -72,7 +72,7 @@ def test_credits_and_usage_see_the_same_organization(
     """Metering and attribution read the same answer as everything else."""
     # Arrange
     from gateway.core.billing.credits_client import organization_id_for_silo
-    from platform.analytics.usage_context import get_organization_id
+    from infrastructure.analytics.usage_context import get_organization_id
 
     monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_fargate")
 

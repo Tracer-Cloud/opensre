@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-import surfaces.cli.wizard.env_sync as env_sync
-import surfaces.cli.wizard.store as wizard_store
-from surfaces.cli.wizard.config import PROJECT_ENV_PATH, PROJECT_ROOT, PROVIDER_BY_VALUE
+import config.setup_store as wizard_store
+import surfaces.shared.llm_setup.env_sync as env_sync
 from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.session import Session
+from surfaces.shared.llm_setup.catalog import PROJECT_ENV_PATH, PROJECT_ROOT, PROVIDER_BY_VALUE
 
 
 def _capture() -> tuple[Console, io.StringIO]:
@@ -290,3 +290,39 @@ class TestReplModelPersistence:
         )
         stored = wizard_store.load_local_config(persistence_paths["store"])
         assert stored["targets"]["local"]["model"] == model
+
+    @pytest.mark.parametrize("model", ["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])
+    def test_model_set_accepts_and_persists_new_claude_models(
+        self,
+        model: str,
+        persistence_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+
+        console, buf = _capture()
+        dispatch_slash(f"/model set anthropic {model}", Session(), console)
+
+        assert "unknown model" not in buf.getvalue()
+        assert f"ANTHROPIC_REASONING_MODEL={model}" in persistence_paths["env"].read_text(
+            encoding="utf-8"
+        )
+        stored = wizard_store.load_local_config(persistence_paths["store"])
+        assert stored["targets"]["local"]["model"] == model
+
+    def test_unavailable_ollama_model_does_not_persist(
+        self,
+        persistence_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "surfaces.shared.llm_setup.ollama.list_available_models",
+            lambda _host: ("llama3.2:latest",),
+        )
+        console, output = _capture()
+
+        dispatch_slash("/model set ollama ghost-model", Session(), console)
+
+        assert "Ollama model is not available: ghost-model" in output.getvalue()
+        assert not persistence_paths["env"].exists()
+        assert not persistence_paths["store"].exists()

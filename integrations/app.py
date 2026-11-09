@@ -13,6 +13,11 @@ from collections.abc import Callable
 
 from dotenv import load_dotenv
 
+from infrastructure.analytics.capture import capture_cli_invoked
+from infrastructure.analytics.event_properties import build_cli_invoked_properties
+from infrastructure.analytics.provider import capture_first_run_if_needed, shutdown_analytics
+from infrastructure.observability.errors.sentry import init_sentry
+from infrastructure.terminal.prompt_support import install_questionary_escape_cancel
 from integrations.cli import (
     cmd_list,
     cmd_remove,
@@ -22,10 +27,6 @@ from integrations.cli import (
     setup_services,
 )
 from integrations.verify import SUPPORTED_VERIFY_SERVICES
-from platform.analytics.cli import build_cli_invoked_properties, capture_cli_invoked
-from platform.analytics.provider import capture_first_run_if_needed, shutdown_analytics
-from platform.observability.errors.sentry import init_sentry
-from platform.terminal.prompt_support import install_questionary_escape_cancel
 
 _ENTRYPOINT = "python -m integrations"
 
@@ -45,10 +46,7 @@ def _run_remove(svc: str | None, _options: set[str]) -> None:
 
 
 def _run_setup(svc: str | None, _options: set[str]) -> None:
-    resolved_service = cmd_setup(svc)
-    if resolved_service in SUPPORTED_VERIFY_SERVICES:
-        print(f"  Verifying {resolved_service}...\n")
-        raise SystemExit(cmd_verify(resolved_service))
+    cmd_setup(svc)
 
 
 def _run_verify(svc: str | None, options: set[str]) -> None:
@@ -77,13 +75,14 @@ def _print_help() -> None:
     print(f"  Verify services: {', '.join(SUPPORTED_VERIFY_SERVICES)}\n")
 
 
-def _capture_invocation(command_parts: list[str]) -> None:
+def _capture_invocation(command: str) -> None:
     capture_first_run_if_needed()
     capture_cli_invoked(
         build_cli_invoked_properties(
             entrypoint=_ENTRYPOINT,
-            command_parts=command_parts,
-        )
+            command_parts=[command],
+        ),
+        ["integrations", command],
     )
 
 
@@ -112,7 +111,7 @@ def main() -> None:
         positional_args = [arg for arg in args[1:] if not arg.startswith("--")]
         svc = positional_args[0].lower() if positional_args else None
 
-        _capture_invocation([cmd, svc] if svc else [cmd])
+        _capture_invocation(cmd)
         handler(svc, option_args)
     finally:
         shutdown_analytics(flush=False)

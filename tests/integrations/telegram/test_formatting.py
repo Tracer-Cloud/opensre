@@ -141,3 +141,11 @@ def test_triple_star_bold_does_not_double_wrap() -> None:
     out = markdown_to_telegram_html("***Resolve***")
     assert out.count("<b>") == 1
     assert "<b><b>" not in out
+
+
+def test_padded_bold_strips_inner_spaces() -> None:
+    assert markdown_to_telegram_html("** I found: ** ok") == "<b>I found:</b> ok"
+
+
+def test_dunder_filenames_are_not_eaten_as_bold() -> None:
+    assert markdown_to_telegram_html("see __init__.py") == "see __init__.py"

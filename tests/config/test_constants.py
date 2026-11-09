@@ -1,10 +1,50 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from config.constants import get_store_path
+
+
+def test_importing_a_leaf_does_not_load_unrelated_vendor_modules() -> None:
+    """``from config.constants.product import …`` must not import every vendor leaf.
+
+    The package used to re-export all names at import time, so any
+    ``config.constants.*`` load paid for kubernetes/aws/datadog constants
+    (and ``paths`` filesystem setup) before the CLI could print ``--help``.
+    """
+    probe = (
+        "from config.constants.product import RELEASE_STAGE_BANNER; "
+        "import sys; "
+        "leaves = sorted("
+        "n.rsplit('.', 1)[-1] for n in sys.modules "
+        "if n.startswith('config.constants.') and n != 'config.constants' "
+        "and n != 'config.constants.exports'"
+        "); "
+        "print('LEAVES', ','.join(leaves)); "
+        "print('BANNER', bool(RELEASE_STAGE_BANNER))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "BANNER True" in result.stdout, result.stdout + result.stderr
+    loaded = result.stdout.split("LEAVES ", 1)[1].splitlines()[0].split(",")
+    assert loaded == ["product"], result.stdout
+
+
+def test_package_root_still_re_exports_and_submodules() -> None:
+    from config import constants
+
+    assert constants.RELEASE_STAGE_BANNER.startswith("🚧 OpenSRE is in ")
+    assert constants.billing.ORGANIZATION_ID_ENV == "ORGANIZATION_ID"
+    with pytest.raises(AttributeError, match="has no attribute"):
+        _ = constants.not_a_real_constant
 
 
 def test_billing_env_var_names_are_the_infra_contract() -> None:
@@ -19,6 +59,20 @@ def test_billing_env_var_names_are_the_infra_contract() -> None:
     assert billing.USAGE_SECRET_ENV == "AGENT_USAGE_SECRET"
     assert billing.ORGANIZATION_ID_ENV == "ORGANIZATION_ID"
     assert billing.CREDITS_HTTP_TIMEOUT_SECONDS == 5.0
+
+
+def test_gateway_stop_slices_fit_inside_the_process_budget() -> None:
+    """Web, reload-watcher, and Slack heartbeat joins must stay smaller than
+    DEFAULT_STOP_TIMEOUT_SECONDS or SIGTERM overruns the chat drain."""
+    from config.constants import gateway, slack
+
+    assert gateway.DEFAULT_STOP_TIMEOUT_SECONDS == 8.0
+    assert gateway.WEB_STOP_TIMEOUT_SECONDS == 5.0
+    assert gateway.SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS == 2.0
+    assert slack.SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS == 2.0
+    assert gateway.WEB_STOP_TIMEOUT_SECONDS < gateway.DEFAULT_STOP_TIMEOUT_SECONDS
+    assert gateway.SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS < gateway.DEFAULT_STOP_TIMEOUT_SECONDS
+    assert slack.SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS < gateway.DEFAULT_STOP_TIMEOUT_SECONDS
 
 
 def test_tenancy_env_var_names_are_the_infra_contract() -> None:
@@ -49,6 +103,50 @@ def test_the_organization_id_is_re_exported() -> None:
         assert name in constants.__all__
 
 
+def test_repl_sound_constants_are_re_exported() -> None:
+    """Callers may import the shell-sound names from the package root."""
+    from config import constants
+
+    assert constants.SOUND_NOTIFICATIONS_ENV == "OPENSRE_SOUND"
+    assert constants.SOUND_MIN_TURN_SECONDS == 8.0
+    assert "SOUND_NOTIFICATIONS_ENV" in constants.__all__
+    assert "SOUND_MIN_TURN_SECONDS" in constants.__all__
+
+
+def test_webapp_vault_ttl_is_public() -> None:
+    from config.constants import account
+
+    assert account.OPENSRE_WEBAPP_VAULT_TTL_SECONDS == 10.0
+    assert "OPENSRE_WEBAPP_VAULT_TTL_SECONDS" in account.__all__
+
+
+def test_remote_sync_endpoint_url_env_is_re_exported() -> None:
+    """Verify REMOTE_SYNC_ENDPOINT_URL_ENV is re-exported from config.constants."""
+    # Arrange / Act
+    from config import constants
+
+    # Assert
+    assert constants.REMOTE_SYNC_ENDPOINT_URL_ENV == "OPENSRE_REMOTE_SYNC_ENDPOINT_URL"
+    assert "REMOTE_SYNC_ENDPOINT_URL_ENV" in constants.__all__
+
+
+def test_split_config_constants_are_re_exported() -> None:
+    """The constants facade remains the canonical import path after the split."""
+    from config import constants
+
+    expected = {
+        "CLERK_ISSUER_ENV": "CLERK_ISSUER",
+        "CLERK_JWKS_URL_ENV": "CLERK_JWKS_URL",
+        "DEPLOYMENT_ENV_ENV": "ENV",
+        "TRACER_BASE_URL_DEV": "https://staging.tracer.cloud",
+        "TRACER_BASE_URL_PROD": "https://app.tracer.cloud",
+    }
+
+    for name, value in expected.items():
+        assert getattr(constants, name) == value
+        assert name in constants.__all__
+
+
 @pytest.mark.parametrize("module", ["billing", "tenancy"])
 def test_constants_module_stays_a_leaf(module: str) -> None:
     """``config`` sits at the bottom layer, so the constants must not
@@ -59,7 +157,7 @@ def test_constants_module_stays_a_leaf(module: str) -> None:
     source = _Path(f"config/constants/{module}.py").read_text(encoding="utf-8")
 
     # Assert: no upward import of a sibling top-level package.
-    for package in ("integrations", "gateway", "core", "platform", "tools", "surfaces"):
+    for package in ("integrations", "gateway", "core", "infrastructure", "tools", "surfaces"):
         assert f"import {package}" not in source
         assert f"from {package}" not in source
 
@@ -81,7 +179,7 @@ def test_provider_catalog_and_wizard_share_the_same_azure_constants() -> None:
     # Arrange
     from config.constants import llm
     from config.llm_auth.provider_catalog import require_provider_spec
-    from surfaces.cli.wizard.config import SUPPORTED_PROVIDERS
+    from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
 
     spec = require_provider_spec("azure-openai")
     (option,) = [opt for opt in SUPPORTED_PROVIDERS if opt.value == "azure-openai"]
@@ -90,6 +188,57 @@ def test_provider_catalog_and_wizard_share_the_same_azure_constants() -> None:
     assert spec.api_key_env == option.api_key_env == llm.AZURE_OPENAI_API_KEY_ENV
     assert spec.endpoint_env == option.endpoint_env == llm.AZURE_OPENAI_BASE_URL_ENV
     assert spec.api_version_env == option.api_version_env == llm.AZURE_OPENAI_API_VERSION_ENV
+
+
+def test_custom_gateway_env_var_names_are_the_infra_contract() -> None:
+    """Pin the custom OpenAI-/Anthropic-compatible gateway env-var names."""
+    from config.constants import llm
+
+    assert llm.CUSTOM_OPENAI_BASE_URL_ENV == "CUSTOM_OPENAI_BASE_URL"
+    assert llm.CUSTOM_OPENAI_API_KEY_ENV == "CUSTOM_OPENAI_API_KEY"
+    assert llm.CUSTOM_OPENAI_MODEL_ENV == "CUSTOM_OPENAI_MODEL"
+    assert llm.CUSTOM_OPENAI_REASONING_MODEL_ENV == "CUSTOM_OPENAI_REASONING_MODEL"
+    assert llm.CUSTOM_OPENAI_CLASSIFICATION_MODEL_ENV == "CUSTOM_OPENAI_CLASSIFICATION_MODEL"
+    assert llm.CUSTOM_OPENAI_TOOLCALL_MODEL_ENV == "CUSTOM_OPENAI_TOOLCALL_MODEL"
+    assert llm.CUSTOM_ANTHROPIC_BASE_URL_ENV == "CUSTOM_ANTHROPIC_BASE_URL"
+    assert llm.CUSTOM_ANTHROPIC_API_KEY_ENV == "CUSTOM_ANTHROPIC_API_KEY"
+    assert llm.CUSTOM_ANTHROPIC_MODEL_ENV == "CUSTOM_ANTHROPIC_MODEL"
+    assert llm.CUSTOM_ANTHROPIC_REASONING_MODEL_ENV == "CUSTOM_ANTHROPIC_REASONING_MODEL"
+    assert llm.CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL_ENV == "CUSTOM_ANTHROPIC_CLASSIFICATION_MODEL"
+    assert llm.CUSTOM_ANTHROPIC_TOOLCALL_MODEL_ENV == "CUSTOM_ANTHROPIC_TOOLCALL_MODEL"
+
+
+@pytest.mark.parametrize(
+    ("slug", "api_key_env", "base_url_env", "reasoning_env"),
+    [
+        (
+            "custom-openai",
+            "CUSTOM_OPENAI_API_KEY",
+            "CUSTOM_OPENAI_BASE_URL",
+            "CUSTOM_OPENAI_REASONING_MODEL",
+        ),
+        (
+            "custom-anthropic",
+            "CUSTOM_ANTHROPIC_API_KEY",
+            "CUSTOM_ANTHROPIC_BASE_URL",
+            "CUSTOM_ANTHROPIC_REASONING_MODEL",
+        ),
+    ],
+)
+def test_provider_catalog_and_wizard_share_the_same_custom_constants(
+    slug: str, api_key_env: str, base_url_env: str, reasoning_env: str
+) -> None:
+    """The custom spec + wizard option must reference one set of env names, so the
+    onboarding catalog and the runtime cannot drift apart for either gateway."""
+    from config.llm_auth.provider_catalog import require_provider_spec
+    from surfaces.shared.llm_setup.catalog import SUPPORTED_PROVIDERS
+
+    spec = require_provider_spec(slug)
+    (option,) = [opt for opt in SUPPORTED_PROVIDERS if opt.value == slug]
+
+    assert spec.api_key_env == option.api_key_env == api_key_env
+    assert spec.endpoint_env == option.endpoint_env == base_url_env
+    assert option.model_env == reasoning_env
 
 
 def test_get_store_path_honors_env_override(

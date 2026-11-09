@@ -6,12 +6,14 @@ import json
 import logging
 import os
 import secrets
+from collections.abc import Sequence
 from typing import Any
 
 from core.llm.shared.tool_schema_normalize import (
     BEDROCK_UNSUPPORTED_SCHEMA_KEYS,
     normalize_object_tool_input_schema,
 )
+from core.llm.types import SchemaDescribedTool
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +39,7 @@ def normalize_tool_input_schema(schema: dict[str, Any] | None) -> dict[str, Any]
     )
 
 
-def build_converse_tool_specs(tools: list[Any]) -> list[dict[str, Any]]:
+def build_converse_tool_specs(tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
     """Build ``toolConfig.tools`` entries from registered tool objects."""
     specs: list[dict[str, Any]] = []
     for tool in tools:
@@ -54,7 +56,7 @@ def build_converse_tool_specs(tools: list[Any]) -> list[dict[str, Any]]:
 
 
 def to_converse_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert investigation messages to Converse ``messages`` shape."""
+    """Convert agent messages to Converse ``messages`` shape."""
     converted: list[dict[str, Any]] = []
     for message in messages:
         content = message.get("content", "")

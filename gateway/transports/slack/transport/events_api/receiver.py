@@ -14,14 +14,18 @@ worker the caller hands it to.
 from __future__ import annotations
 
 import json
-import time
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import parse_qs
 
+from gateway.core.storage.events.repository import HandledSlackEventRepository
 from gateway.transports.slack.processing.events import SlackInboundMessage, parse_events_api_payload
+from gateway.transports.slack.processing.stop_requests import (
+    SlackStopRequest,
+    parse_agent_session_stopped_payload,
+)
 from gateway.transports.slack.transport.events_api.signature import verify_slack_signature
 
 SIGNATURE_HEADER = "x-slack-signature"
@@ -34,7 +38,6 @@ _EVENT_CALLBACK_TYPE = "event_callback"
 
 # Kept in step with the Postgres store so single-replica and multi-replica
 # deployments admit and refuse the same deliveries.
-ABANDONED_CLAIM_SECONDS = 30.0
 
 
 class SlackHttpStatus(StrEnum):
@@ -46,7 +49,8 @@ class SlackHttpStatus(StrEnum):
     REJECTED = "rejected"
     #: Verified, but no turn to run (already handled, or not a chat event).
     IGNORED = "ignored"
-    #: Verified and parsed — hand ``message`` to a worker, then answer 200.
+    #: Verified and parsed — hand ``message`` to a worker (or run ``stop``
+    #: after answering), then answer 200.
     ACCEPTED = "accepted"
 
 
@@ -57,72 +61,11 @@ class SlackHttpOutcome:
     status: SlackHttpStatus
     challenge: str = ""
     message: SlackInboundMessage | None = None
+    stop: SlackStopRequest | None = None
     #: Set on ACCEPTED so a caller that fails to start the turn can release
     #: the claim; otherwise the retry is refused and the event is lost.
     event_id: str = ""
     reason: str = ""
-
-
-class SlackEventDeduplicator(Protocol):
-    """Remembers which Slack ``event_id`` values already ran a turn.
-
-    Slack retries on any non-2xx or slow answer, and under HTTP every replica
-    can receive the retry, so this must be shared across processes to be
-    correct — an in-process implementation silently duplicates turns as soon
-    as a second replica exists.
-
-    Lifecycle: ``claim`` (provisional) → ``confirm`` after the turn is queued,
-    or ``release`` when the queue rejects the work. Uncommitted claims may be
-    reclaimed so a failed ``release`` does not permanently drop the event.
-    """
-
-    def claim(self, event_id: str) -> bool:
-        """Return True when this delivery may run the turn."""
-
-    def release(self, event_id: str) -> bool:
-        """Undo a claim whose turn never started; False when it could not be undone."""
-
-    def confirm(self, event_id: str) -> bool:
-        """Finalize a claim after the turn has been queued."""
-
-
-class InMemorySlackEventDeduplicator:
-    """Single-process dedup. Correct only while exactly one replica runs.
-
-    Mirrors the Postgres semantics so both behave alike: a claim is provisional
-    until confirmed, a provisional claim younger than the abandonment window is
-    refused (a concurrent duplicate must not queue a second turn), and an older
-    one is reclaimable (its delivery died before confirming).
-    """
-
-    def __init__(
-        self,
-        *,
-        abandoned_after_seconds: float = ABANDONED_CLAIM_SECONDS,
-        now: Callable[[], float] = time.monotonic,
-    ) -> None:
-        self._committed: set[str] = set()
-        self._provisional: dict[str, float] = {}
-        self._abandoned_after = abandoned_after_seconds
-        self._now = now
-
-    def claim(self, event_id: str) -> bool:
-        if event_id in self._committed:
-            return False
-        claimed_at = self._provisional.get(event_id)
-        if claimed_at is not None and self._now() - claimed_at < self._abandoned_after:
-            return False
-        self._provisional[event_id] = self._now()
-        return True
-
-    def release(self, event_id: str) -> bool:
-        self._provisional.pop(event_id, None)
-        return True
-
-    def confirm(self, event_id: str) -> bool:
-        self._provisional.pop(event_id, None)
-        self._committed.add(event_id)
-        return True
 
 
 def _header(headers: Mapping[str, str], name: str) -> str:
@@ -199,7 +142,7 @@ def admit_slack_http_request(
     headers: Mapping[str, str],
     body: bytes,
     signing_secret: str,
-    deduplicator: SlackEventDeduplicator,
+    handled_events: HandledSlackEventRepository,
     now: float | None = None,
 ) -> SlackHttpOutcome:
     """Verify one Slack HTTP delivery and return what the caller should do.
@@ -233,9 +176,12 @@ def admit_slack_http_request(
     event_id = str(payload.get("event_id") or "")
     if not event_id:
         return SlackHttpOutcome(SlackHttpStatus.REJECTED, reason="event_callback without event_id")
-    if not deduplicator.claim(event_id):
+    if not handled_events.claim(event_id):
         return SlackHttpOutcome(SlackHttpStatus.IGNORED, reason="duplicate delivery")
 
+    stop = parse_agent_session_stopped_payload(payload)
+    if stop is not None:
+        return SlackHttpOutcome(SlackHttpStatus.ACCEPTED, stop=stop, event_id=event_id)
     message = parse_events_api_payload(payload)
     if message is None:
         return SlackHttpOutcome(SlackHttpStatus.IGNORED, reason="not a chat event")
@@ -246,8 +192,6 @@ __all__ = [
     "RETRY_HEADER",
     "SIGNATURE_HEADER",
     "TIMESTAMP_HEADER",
-    "InMemorySlackEventDeduplicator",
-    "SlackEventDeduplicator",
     "SlackHttpOutcome",
     "SlackInteractivityOutcome",
     "SlackHttpStatus",

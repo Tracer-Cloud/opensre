@@ -1,32 +1,24 @@
-"""Injection contracts for the interactive-shell turn seams.
-
-These protocols describe exactly what ``execute_shell_turn`` requires from the
-action / gather / answer adapters it composes, so an injected test double is
-checked at type-time rather than at runtime. The default adapters
-(``action_turn``, ``answer_turn``, ``integration_tool_gathering``) satisfy them.
-"""
+"""Test-injection seam for the interactive-shell agent turn."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import Protocol
 
 from rich.console import Console
 
-from core.agent_harness.ports import AnswerRequest, OutputSink
-from core.agent_harness.turns.gather_observation import GatheredEvidence
-from core.agent_harness.turns.turn_plan import TurnPlan
-from core.agent_harness.turns.turn_results import ToolCallingTurnResult
-from core.execution import ToolExecutionHooks
+from core.agent_harness import OutputSink, ToolCallingTurnResult
+from core.agent_harness.runtime import HeadlessAgent, TurnPlan
+from core.tool import ToolExecutionHooks
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.utils.telemetry import LlmRunInfo
 
 
 class RunActionToolTurn(Protocol):
     """Action-selection seam driven by ``execute_shell_turn``.
 
-    ``deps`` is intentionally not part of the contract: ``execute_shell_turn``
-    never injects it, and the default adapter supplies its own LLM factory.
+    ``llm_factory`` is intentionally not part of the contract: ``execute_shell_turn``
+    never injects it, and the default adapter supplies its own.
     """
 
     def __call__(
@@ -45,37 +37,67 @@ class RunActionToolTurn(Protocol):
         """Run one action turn and return its facts."""
 
 
-class GatherEvidence(Protocol):
-    """Gather seam: collect read-only integration evidence, or None."""
+@dataclass(frozen=True)
+class _InjectedActionStage:
+    """Adapts an injected ``RunActionToolTurn`` seam to the ``ExecuteActions`` protocol."""
 
-    def __call__(
+    seam: RunActionToolTurn
+    session: Session
+    console: Console
+    output: OutputSink
+    request_exit: Callable[[], None] | None
+    tool_hooks: ToolExecutionHooks | None
+
+    def execute_actions(
         self,
-        message: str,
-        session: Session,
-        console: Console,
+        text: str,
         *,
-        resolved_integrations: dict[str, Any] | None = None,
-    ) -> str | GatheredEvidence | None:
-        """Gather evidence for the message, or return None when nothing applies."""
+        confirm_fn: Callable[[str], str] | None = None,
+        is_tty: bool | None = None,
+        turn_plan: TurnPlan | None = None,
+    ) -> ToolCallingTurnResult:
+        return self.seam(
+            text,
+            self.session,
+            self.console,
+            confirm_fn=confirm_fn,
+            is_tty=is_tty,
+            request_exit=self.request_exit,
+            turn_plan=turn_plan,
+            output=self.output,
+            tool_hooks=self.tool_hooks,
+        )
 
 
-class AnswerShellQuestion(Protocol):
-    """Answer seam: respond via the grounded conversational assistant."""
+def bind_injected_stages(
+    agent: HeadlessAgent,
+    session: Session,
+    console: Console,
+    output: OutputSink,
+    *,
+    execute_actions: RunActionToolTurn | None,
+    request_exit: Callable[[], None] | None,
+    tool_hooks: ToolExecutionHooks | None,
+) -> None:
+    """Bind an adapter over each injected seam (test-only); an omitted seam is the agent's own stage.
 
-    def __call__(
-        self,
-        message: str,
-        session: Session,
-        console: Console,
-        *,
-        request: AnswerRequest,
-        output: OutputSink | None = None,
-    ) -> LlmRunInfo | None:
-        """Answer the question, returning the LLM run info or None."""
+    Stated whole per turn, like :class:`TurnBinding`: a stage injected on one
+    turn does not carry into the next, so a long-lived REPL agent never keeps
+    a test's fake stage by omission. A caller that wants a stage across turns
+    passes the seam on every call.
+    """
+    agent.bind_stages(
+        execute_actions=(
+            _InjectedActionStage(
+                execute_actions, session, console, output, request_exit, tool_hooks
+            ).execute_actions
+            if execute_actions is not None
+            else None
+        ),
+    )
 
 
 __all__ = [
-    "AnswerShellQuestion",
-    "GatherEvidence",
     "RunActionToolTurn",
+    "bind_injected_stages",
 ]

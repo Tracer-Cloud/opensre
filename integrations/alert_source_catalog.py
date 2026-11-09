@@ -42,7 +42,6 @@ _ROUTING_TABLE: dict[str, AlertSourceRouting] = {
     "coralogix": routing(("coralogix",), ("coralogix",)),
     # tracer_web stays relevance-only — secondary web context, not pre-LLM seed.
     "airflow": routing(("airflow", "tracer_web"), ("airflow",)),
-    "hermes": routing(("hermes",), ("hermes",)),
     "kafka": routing(("kafka",), ("kafka",)),
     "postgresql": routing(("postgresql",), ("postgresql",)),
     "mysql": routing(("mysql",), ("mysql",)),
@@ -54,6 +53,7 @@ _ROUTING_TABLE: dict[str, AlertSourceRouting] = {
     "dagster": routing(("dagster",), ("dagster",)),
     "rabbitmq": routing(("rabbitmq",), ("rabbitmq",)),
     "supabase": routing(("supabase",), ("supabase",)),
+    "neon": routing(("neon", "postgresql"), ("neon", "postgresql")),
     "opensearch": routing(("opensearch",), ("opensearch",)),
     "openobserve": routing(("openobserve",), ("openobserve",)),
     "betterstack": routing(("betterstack",), ("betterstack",)),
@@ -68,6 +68,7 @@ _ROUTING_TABLE: dict[str, AlertSourceRouting] = {
     "jenkins": routing(("jenkins",), ("jenkins",)),
     "tempo": routing(("tempo",), ("tempo",)),
     "temporal": routing(("temporal",), ("temporal",)),
+    "new_relic": routing(("new_relic",), ("new_relic",)),
 }
 
 _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
@@ -108,6 +109,7 @@ _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
     "kafka": ("kafka",),
     "rabbitmq": ("rabbitmq", "amqp"),
     "supabase": ("supabase",),
+    "neon": ("neon", "neon.tech", "neon postgres", "neon branch", "neon compute"),
     "opensearch": ("opensearch", "elasticsearch"),
     "openobserve": ("openobserve",),
     "betterstack": ("betterstack", "better stack"),
@@ -116,6 +118,7 @@ _ALIASES_TABLE: dict[str, tuple[str, ...]] = {
     "jenkins": ("jenkins",),
     "tempo": ("tempo",),
     "temporal": ("temporal", "temporal workflow", "task queue"),
+    "new_relic": ("new relic", "newrelic", "nrql", "nr alert"),
 }
 
 

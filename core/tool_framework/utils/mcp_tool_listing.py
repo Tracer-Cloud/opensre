@@ -1,6 +1,6 @@
 """Bounded, model-safe rendering of MCP server tool catalogs.
 
-MCP servers (PostHog, Sentry, OpenClaw, ...) can expose dozens to hundreds of
+MCP servers (PostHog, Sentry, X, ...) can expose dozens to hundreds of
 tools, each carrying a full JSON input schema. A discovery tool that returns
 every tool *with* its schema produces a payload many times larger than any
 model's context window; the agent's context-budget enforcer then trims the

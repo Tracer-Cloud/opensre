@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse
 
 import httpx
 
 from config.constants.discord import DISCORD_ATTACHMENT_HOST_SUFFIXES
 from config.constants.gateway import ATTACHMENT_MAX_TOTAL_CHARS
 from core.llm.image_description import describe_image_via_provider, is_supported_image
+from gateway.core.attachments.fetch import is_allowed_host
 from gateway.core.attachments.inline import (
     budgeted_section,
     is_text_mimetype,
@@ -25,16 +25,7 @@ _MAX_BYTES = 256 * 1024
 
 def is_allowed_attachment_url(url: str) -> bool:
     """Reject non-Discord hosts so the bot token never leaves Discord CDN."""
-    try:
-        parsed = urlparse(url)
-    except ValueError:
-        return False
-    if parsed.scheme != "https":
-        return False
-    host = (parsed.hostname or "").lower()
-    return any(
-        host == suffix or host.endswith(f".{suffix}") for suffix in DISCORD_ATTACHMENT_HOST_SUFFIXES
-    )
+    return is_allowed_host(url, DISCORD_ATTACHMENT_HOST_SUFFIXES)
 
 
 def _download(url: str, bot_token: str) -> bytes | None:

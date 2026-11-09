@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from gateway.core.runtime.errors import GatewayTransportFailedError
-from gateway.core.runtime.sink_protocol import GatewayAgentCallback
+from gateway.core.lifecycle.errors import GatewayTransportFailedError
 from gateway.transports.discord.background import (
     DiscordGatewayBackground,
     start_discord_gateway_background,
@@ -14,12 +13,13 @@ from gateway.transports.discord.settings import (
     DiscordGatewaySettings,
     load_discord_gateway_settings,
 )
+from infrastructure.turn_host.turn_callback import TurnCallback
 
 
 def start_discord_worker(
     *,
     logger: logging.Logger,
-    handler: GatewayAgentCallback,
+    handler: TurnCallback,
 ) -> tuple[DiscordGatewayBackground, DiscordGatewaySettings]:
     """Load Discord settings and start the Gateway WebSocket background worker.
 

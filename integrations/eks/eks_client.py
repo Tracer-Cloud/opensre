@@ -6,7 +6,7 @@ from typing import Any
 
 import boto3
 
-from integrations.eks.utils import stored_credentials_to_aws_creds
+from integrations.eks.aws_credentials import stored_credentials_to_aws_creds
 
 
 class EKSClient:

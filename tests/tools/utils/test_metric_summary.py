@@ -7,7 +7,7 @@ without misreading spikes and baselines.
 
 from __future__ import annotations
 
-from platform.common.metric_summary import summarize_prometheus_metrics
+from infrastructure.evidence.metric_summary import summarize_prometheus_metrics
 
 
 def _series(metric_name: str, points: list[tuple[float, float]]) -> dict[str, object]:

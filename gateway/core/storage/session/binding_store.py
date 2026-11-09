@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from config.principal import Actor, Principal
-from gateway.core.storage.db import bindings_file_path, legacy_binding_dirs
 from gateway.core.storage.session.file_bindings import FileBindingStore
 from gateway.core.storage.session.legacy_sqlite import collect_legacy_bindings
+from gateway.core.storage.session.paths import bindings_file_path, legacy_binding_dirs
 
 logger = logging.getLogger(__name__)
 

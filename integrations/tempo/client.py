@@ -16,9 +16,9 @@ from typing import Any
 
 import httpx
 
-from core.tool_framework.utils.tool_availability import tool_unavailable
+from core.tool_framework.utils import tool_unavailable
+from infrastructure.observability.otlp_parser import parse_otlp_trace
 from integrations.tempo import TempoConfig
-from platform.observability.otlp_parser import parse_otlp_trace
 
 logger = logging.getLogger(__name__)
 

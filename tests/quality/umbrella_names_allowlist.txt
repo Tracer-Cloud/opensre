@@ -1,0 +1,62 @@
+# Shrink-only allowlist for tests/quality/test_no_umbrella_names.py.
+#
+# Format: <repo-relative path>|<module|class>|<offending name>
+#
+# One line per known umbrella-name offender as of the PR that added this
+# guard. Remove a line once the file/class is renamed away from the banned
+# word — do not add a new line to silence a new offender, rename it instead.
+
+# bare utils/helpers/common/misc
+integrations/github/helpers.py|module|helpers
+integrations/grafana/tools/_helpers.py|module|_helpers
+
+# engine
+infrastructure/filestorage/engine.py|module|engine
+
+# manager
+core/agent_harness/session/lifecycle.py|class|SessionManager
+gateway/core/lifecycle/credential_hydration.py|class|SecretsManagerClient
+
+# handler
+gateway/transports/buzz/inbound_handler.py|module|inbound_handler
+gateway/transports/telegram/inbound_handler.py|module|inbound_handler
+infrastructure/logging/shell_handler.py|class|ShellLogHandler
+infrastructure/logging/shell_handler.py|module|shell_handler
+
+# wrapper
+core/tool_framework/utils/sql_wrapper.py|module|sql_wrapper
+
+# port (hexagonal sense — not network ports)
+core/agent_harness/ports.py|module|ports
+surfaces/interactive_shell/runtime/llm_provider_adapter.py|class|LlmProviderPorts
+surfaces/interactive_shell/runtime/llm_provider_adapter.py|class|ReplLlmProviderPorts
+surfaces/interactive_shell/runtime/slash_adapter.py|class|HeadlessSlashPorts
+surfaces/interactive_shell/runtime/slash_adapter.py|class|ReplSlashPorts
+surfaces/interactive_shell/runtime/slash_adapter.py|class|SlashPorts
+surfaces/interactive_shell/runtime/task_cancel_adapter.py|class|ReplTaskCancelPorts
+surfaces/interactive_shell/runtime/task_cancel_adapter.py|class|TaskCancelPorts
+
+# context
+config/constants/paths.py|class|ContextRootOwnerMismatchError
+config/scope_context.py|module|scope_context
+core/agent_harness/ports.py|class|PromptContextProvider
+core/agent_harness/prompts/grounding/provider.py|class|DefaultPromptContextProvider
+core/agent_harness/tools/tool_context.py|module|tool_context
+core/agent_harness/turns/headless_adapters.py|class|EmptyPromptContextProvider
+core/agent_harness/turns/host_cancel.py|class|CancelProbeContext
+core/context_budget.py|module|context_budget
+core/tool/contracts.py|class|AgentToolContext
+core/tool_framework/utils/__init__.py|module|utils
+core/agent_harness/session/persistence/contracts.py|class|RestoreContextKey
+gateway/core/session/gateway_chat_context.py|module|gateway_chat_context
+infrastructure/analytics/repl_context.py|module|repl_context
+infrastructure/analytics/usage_context.py|module|usage_context
+infrastructure/harness_providers/message_context.py|module|message_context
+integrations/github/tools/ci_fix/context.py|class|CiFixContext
+integrations/github/tools/ci_fix/context.py|module|context
+integrations/github/tools/security_fix/context.py|class|SecurityAlertContext
+integrations/github/tools/security_fix/context.py|module|context
+integrations/slack/message_context.py|module|message_context
+surfaces/interactive_shell/runtime/context.py|module|context
+tools/cross_vendor/fix_sentry_issue/context.py|class|IssueContext
+tools/cross_vendor/fix_sentry_issue/context.py|module|context

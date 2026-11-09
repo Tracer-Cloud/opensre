@@ -1,148 +1,140 @@
-# CI Readiness — Mandatory Push/PR Harness
+# Local Feedback and Required PR Validation
 
-This file is the **single source of truth** for local CI readiness before any push or PR.
+This file is the **single source of truth** for required local validation before
+any push or pull request. Repository-wide validation runs in GitHub Actions.
+Feature- or package-specific validation required by an applicable contributor
+guide supplements this harness and is intentionally not duplicated here.
 
-## 0) Docs / process-only shortcut
+<!--
+Keep this document focused on required local checks and post-PR follow-through.
+Do not add optional commands, CI implementation details, or tool-specific
+procedures unless they change what contributors must do locally.
+Automated contributors must not invent or run additional local CI steps beyond
+the scoped checks below unless another applicable instruction or the user
+explicitly requires them.
+-->
 
-If your diff is **only** documentation or contributor-process files, you may
-skip the code-quality and test commands below.
+## 0) Setup and automatic push validation
 
-Examples of files that qualify:
+Run `make install` after cloning. It installs locked development dependencies
+and a blocking pre-push hook for this checkout. For an existing environment,
+run `make install-hooks`. Installation preserves existing hooks and keeps
+linked worktrees independent.
 
-- `AGENTS.md`
-- `CI.md`
-- `CONTRIBUTING.md`
-- `README.md`
-- `docs/**/*.md`
-- `docs/**/*.mdx`
-- `docs/docs.json`
+The hook runs **Ruff lint and formatting checks on changed Python files only**
+from the committed revisions being pushed. Temporary Git worktrees ensure an
+uncommitted source fix cannot hide a committed lint failure. It reuses the checkout's
+installed tooling. Like other local Git hooks, the validation implementation is
+trusted local tooling, not a tamper-proof security boundary. Required PR CI
+remains authoritative.
+It does not install dependencies or run tests, typechecking,
+registry checks, or import checks. Run `make install` if tooling is missing.
+Existing push hooks still run first with Git's original arguments and ref updates.
 
-You may use the shortcut only when **all** changed files are non-runtime and
-non-executable. If the diff touches application code, tests, build tooling,
-dependency manifests, CI workflows, scripts, or anything with runtime impact,
-run the normal harness.
+Run `make pre-push` (or `make check`) for the same fast checks on your working
+changes. Use `ARGS='--base upstream/main'` to select a base explicitly. Without
+an available remote base, all tracked Python files are checked. Deleted files
+are ignored; configuration-only changes are validated by PR CI.
 
-For docs/process-only changes, the minimum required local check is:
+## 2) Focused tests and complete CI
 
-```bash
-git status --short
-```
+Run focused regression tests while developing changed behavior. Use
+`uv run python -m pytest <test-path>` for a narrow selection or `make test-scope`
+for the affected package suites. The latter can select thousands of tests; it
+is not a mandatory pre-push step. Do not repeat a passing suite solely to push.
+Package-specific validation required by contributor guides still applies.
 
-If you are unsure whether the shortcut applies, do **not** use it — run the
-standard checks below.
+For an explicit full local validation run, use `make check-full`: all shared
+quality checks followed by the full test suite. This is opt-in, not a routine
+commit, push, or PR prerequisite.
 
-## 1) Mandatory baseline checks (every code change that is not docs/process-only)
+GitHub Actions runs all shared quality checks and the complete test matrix.
+The local gate does not replace repository-wide CI, Linux/Windows checks, CodeQL, packaging, or release validation. List the
+focused tests you ran in the PR description.
 
-Run all of these first:
+## 3) Emergency override
 
-1. Clean working tree
-
-   ```bash
-   git status --short
-   ```
-
-   - No accidental untracked files
-   - Never commit `.env` or secrets
-
-2. Lint
-
-   ```bash
-   make lint
-   ```
-
-3. Format check
-
-   ```bash
-   make format-check
-   ```
-
-   If it fails:
-
-   ```bash
-   make format && make format-check
-   ```
-
-4. Typecheck
-
-   ```bash
-   make typecheck
-   ```
-
-## 2) Mandatory test harness (scope by touched modules)
-
-Pick a focused test command for the modules you changed — do **not** default to
-the full unit suite.
-
-Map changed paths to targets using the `PathRule` entries in
-[`.github/ci/test_scope_rules.py`](.github/ci/test_scope_rules.py):
-
-- Rules with `always_escalate=True` identify high-blast-radius changes. Run the
-  focused package and contract tests affected by the change.
-- All other rules list a `test_targets` tuple — run those with
-  `uv run python -m pytest <targets>`
-- Changed files under `tests/` with no app rule run as-is
-
-Use a focused `-k` filter when you only need a subset of a package.
-
-## 3) Full suite runs in CI
-
-The focused suite from section 2 is the required local test gate. Do not run
-`make test-cov` as part of the normal local pre-push workflow; pull-request CI
-runs the repository test suite in parallel shards.
-
-List the focused tests you ran in the PR description. CI is the authoritative
-repository-wide test result.
-
-## 4) Conditional checks
-
-CI runs the fast registry smoke gate on every code change:
+For an intentional emergency bypass, supply a reason for that push only:
 
 ```bash
-make verify-integrations-smoke
+git -c opensre.prePushOverride='incident reference and reason' push
 ```
 
-If integration config, integration wiring, or related tools changed, also run the live check against your local store and environment:
+The hook prints the override and appends the reason, timestamp, and pushed
+revisions to `pre-push-overrides.jsonl` inside this checkout's Git directory.
+Existing user hooks still run. This bypass does not waive remote CI or merge
+requirements. Do not set the override permanently in Git configuration.
 
-```bash
-make verify-integrations
-```
+## 4) Pull-request latency and post-merge validation
 
-## 5) Optional extra confidence
+The required automated pull-request execution gate has a p90 target of 90
+seconds. Static checks, cached typechecking, duration-balanced pytest shards,
+and interactive-shell checks run concurrently. Automated and
+human review completion, including Greptile and Codex when available, remains a separate merge
+requirement and is not part of that execution-time SLO.
 
-You may run `make check` as a final pass, but it is heavier (`test-full`) than the required harness.
+Pull requests run the complete test selection without coverage instrumentation;
+the same matrix produces and combines the full coverage report on `main`.
 
-## 6) Interactive-shell turn tests
+Full CodeQL `security-and-quality` analysis runs after every merge to `main` and
+on the weekly schedule, not on ordinary pull requests. A production-only,
+default-query profile is available through the CodeQL workflow's manual
+`pr-fast` input for benchmarking. Do not make that profile required unless at
+least ten representative runs demonstrate p90 at or below 75 seconds.
 
-Interactive-shell live turn tests always run with live coverage enabled. Do not use deselection filters like `-k "not live_llm"`. Fix failures by improving planner/tool correctness or updating fixtures only when behavior changes are explicitly approved.
+Post-merge validation is part of delivery. Monitor the `main` CI, CodeQL, and
+release workflows for the merge commit; a failure requires an immediate fix or
+revert and must not be reported as successful delivery.
 
-For fast **local** iteration only, you can narrow the live suite with `--turn-select` (or the `TURN_SELECT` env var) without disabling live coverage:
+## 8) Post-PR follow-through
 
-- `--turn-select=complex:N` runs the N most complex scenarios (multi-step plans, `runs > 1`, gather contracts, and `@live` integrations score highest).
-- `--turn-select=sample:N` runs a random N; add `--turn-select-seed` (or `TURN_SELECT_SEED`) for reproducibility.
-- `N` may be a count (`5`), a fraction (`0.1`), or a percentage (`10%`); a bare `complex`/`sample` defaults to 5%.
+Opening a pull request does not end the validation cycle. Follow it through until
+the repository's merge requirements are satisfied: required GitHub checks are
+green, actionable human or automated review feedback (including Greptile and
+Codex when available) is
+addressed, and resolved conversations are closed out.
 
-```bash
-# Most complex five scenarios
-uv run python -m pytest tests/core/agent/test_turn_scenarios.py --turn-select=complex:5
-# Random ~5% sample, reproducible
-TURN_SELECT=sample:5% TURN_SELECT_SEED=7 uv run python -m pytest tests/core/agent/test_turn_scenarios.py
-```
+After every push to an open PR, run `gh pr checks --watch` or inspect
+`gh pr view --json statusCheckRollup,url`. On failure, retrieve the job log with
+`gh run view <id> --log-failed`, fix the root cause in product or test code,
+rerun focused checks for the touched modules, and push. Continue until required
+jobs are green (or skipped where appropriate); do not skip tests or use
+constant-condition toggles to hide failures.
 
-This is an iteration aid, not a substitute for full coverage: leave it unset for the pre-push/PR validation run, and never set it in CI (the sharded `turn-live` job runs every scenario).
+Tests that fail under CI load are real bugs: harden synchronization rather than
+ignoring flakes. For import/API-border failures, use the package API allowed by
+`.importlinter.strict` or the border allowlist, not an internal leaf unless the
+edge is explicitly exempted.
 
-In CI, [`.github/workflows/interactive-shell-live.yml`](.github/workflows/interactive-shell-live.yml) runs two jobs on same-repo PRs and post-merge `main` pushes: a no-LLM `turn-checks` gate (deterministic command detection + fixture integrity, `-m "not live_llm"`) and the sharded `turn-live` job (8 shards, live coverage). The no-LLM gate is a fast guardrail, not a substitute for live coverage.
+The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` re-prompts when an open
+PR still has failing checks. Treat that follow-up as blocking work, not a suggestion.
 
-`@live` gather scenarios **fail** (not skip) in GitHub Actions when integration credentials are missing; locally they may still skip. Natural-language investigation dispatch is **enabled** by default (`INTERACTIVE_SHELL_INVESTIGATION_ENABLED = True`). Investigation dispatch scenarios run in `turn-live`; if the flag is set to `False` for emergency rollback, those scenarios **skip** in live shards and `turn-checks` stays green. Require all `turn-checks` and `turn-live shard *` checks on `main` branch protection.
+A green check does not mean review feedback is clear. After checks complete,
+and again after every push, inspect all unresolved conversations and latest
+reviews. Validate each finding. For actionable feedback, push an appropriate
+fix, reply, and resolve the addressed thread. For an incorrect or non-actionable
+finding, reply with the rationale and resolve the thread without changing code.
 
-## 7) CI-only tests
+After each completed PR update, once commits are pushed, the PR description is
+current, and addressed threads are resolved, trigger the required automated
+reviews. Request Greptile with `@greptile review`; repeat until it reports 5/5
+with no unresolved comments. Reviews commonly take 5–10 minutes or longer. If
+Codex review is available for the repository, request it with `@codex review`
+and address its actionable feedback. Keep follow-up review cycles reviewer-specific:
+after a change that addresses only Codex feedback, re-trigger Codex only; after
+a change that addresses only Greptile feedback, re-trigger Greptile only. Trigger
+both only when the update addresses feedback from both reviewers. Do not
+re-trigger either reviewer while its review is already running.
 
-Some paths require live infrastructure and are excluded from `make test-cov`:
+When available, use the [greploop skill](https://skills.sh/greptileai/skills/greploop)
+to manage this review loop.
 
-- Kubernetes / EKS scenarios (`tests/e2e/`)
-- Chaos Mesh workflows (`tests/chaos_engineering/`)
-- Docker-dependent Grafana stack tests
-
-Mark CI-only tests with the appropriate pytest marker or place them in the correct folder so they do not run locally by default.
+Use relevant built-in capabilities or locally installed skills, when available,
+for PR monitoring, CI diagnosis, and review remediation rather than duplicating
+tool-specific procedures in this document. Keep monitoring after each update;
+do not treat creating or updating the PR as task completion. Validate review
+suggestions before applying them, and rerun the appropriately scoped local
+checks before pushing a fix.
 
 ## Precedence
 

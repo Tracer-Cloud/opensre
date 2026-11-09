@@ -23,6 +23,7 @@ def classify(
     webhook_url = str(credentials.get("webhook_url") or "").strip()
     bot_token = str(credentials.get("bot_token") or "").strip()
     app_token = str(credentials.get("app_token") or "").strip()
+    default_chat_id = str(credentials.get("default_chat_id") or "").strip()
     if not webhook_url and not bot_token:
         return None, None
 
@@ -43,6 +44,7 @@ def classify(
                     "app_token": app_token,
                     "signing_secret": str(credentials.get("signing_secret") or "").strip(),
                     "app_id": str(credentials.get("app_id") or "").strip(),
+                    "default_chat_id": default_chat_id,
                 }
             )
         except Exception as exc:
@@ -50,6 +52,9 @@ def classify(
         else:
             dumped = bot_cfg.model_dump(exclude_none=True)
             config.update({key: value for key, value in dumped.items() if value not in ("", None)})
+
+    if default_chat_id and "default_chat_id" not in config:
+        config["default_chat_id"] = default_chat_id
 
     if not config:
         return None, None

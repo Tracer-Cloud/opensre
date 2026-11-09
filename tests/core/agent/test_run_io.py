@@ -7,7 +7,7 @@ from typing import Any
 
 from core.agent.run_io import AgentRunInput
 from core.messages import UserRuntimeMessage
-from core.types import AgentTool
+from core.tool.contracts import AgentTool
 
 
 def _tool(name: str = "inspect") -> AgentTool:

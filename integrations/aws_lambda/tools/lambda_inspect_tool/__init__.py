@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from core.tool_framework.tool_decorator import tool
+from core.tool import SideEffectLevel
+from core.tool_framework import tool
 from integrations.aws.lambda_client import get_function_code, get_function_configuration
-from integrations.aws_lambda.tools.lambda_invocation_logs_tool import (
-    _lambda_available,
-    _lambda_name,
-)
+from integrations.aws_lambda.availability import lambda_available, lambda_name
 
 
 def _extract_inspect_lambda_params(sources: dict[str, dict]) -> dict:
-    return {"function_name": _lambda_name(sources), "include_code": True}
+    return {"function_name": lambda_name(sources), "include_code": True}
 
 
 @tool(
     name="inspect_lambda_function",
     display_name="Lambda config",
     source="cloudwatch",
+    side_effect_level=SideEffectLevel.READ_ONLY,
+    concurrency_safe=True,
     description="Inspect a Lambda function's configuration and optionally its code.",
     use_cases=[
         "Understanding function configuration (timeout, memory, env vars)",
@@ -34,7 +34,7 @@ def _extract_inspect_lambda_params(sources: dict[str, dict]) -> dict:
         },
         "required": ["function_name"],
     },
-    is_available=_lambda_available,
+    is_available=lambda_available,
     extract_params=_extract_inspect_lambda_params,
 )
 def inspect_lambda_function(function_name: str, include_code: bool = True) -> dict:

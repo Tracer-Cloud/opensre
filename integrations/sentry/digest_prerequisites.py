@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from platform.harness_ports import configured_integration_services
-from platform.scheduler.delivery import require_delivery_provider
+from infrastructure.harness_providers import configured_integration_services
+from infrastructure.scheduling.scheduler.delivery import require_delivery_provider
 
 _console = Console()
 
@@ -21,7 +21,7 @@ def require_sentry_integration() -> None:
     raise SystemExit(1)
 
 
-# Stable alias — delivery gate lives in platform.scheduler.delivery.
+# Stable alias — delivery gate lives in infrastructure.scheduling.scheduler.delivery.
 require_digest_delivery_provider = require_delivery_provider
 
 

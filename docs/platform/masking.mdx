@@ -1,0 +1,84 @@
+---
+title: "Masking Sensitive Identifiers"
+description: "Reversible masking of pod, cluster, and account identifiers before external LLM calls."
+---
+
+## Overview
+
+OpenSRE can mask sensitive infrastructure identifiers (pod names, cluster names,
+hostnames, account IDs, service names, IP addresses, emails) **before** sending
+text to an external LLM, then restore the originals in user-facing output. Teams
+can use external models while keeping raw identifiers inside the agent runtime.
+
+Masking is **off by default**. Turn it on with environment variables — no code
+changes required.
+
+## How it works
+
+1. When masking is enabled, call sites that send text to an external model
+   replace identifiers with stable placeholders such as `<POD_0>`,
+   `<NAMESPACE_0>`, or `<CLUSTER_1>`. The placeholder → original map can be
+   stored in session state as `masking_map`.
+2. The model sees masked text, so raw identifiers are not sent in that payload.
+3. Where a map is present, OpenSRE restores real identifiers in downstream state
+   and display output.
+4. Message delivery (for example Slack) can run a final unmask pass before
+   sending, as defence in depth.
+
+The same identifier always maps to the same placeholder within one session,
+so reasoning about `<POD_0>` stays consistent.
+
+Today, masking is applied at opt-in edges (for example selected GitHub / Sentry
+fix tools and CLI agent-exec paths) rather than as a single central step on
+every LLM call. Output still unmasks when a map is present. Env policy
+is read when masking runs — changes apply on the next run without a restart.
+
+## Environment variables
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_MASK_ENABLED` | `false` | Master switch. Set to `true` / `1` / `yes` / `on` to activate masking. |
+| `OPENSRE_MASK_KINDS` | `pod,namespace,cluster,hostname,account_id,ip_address,email,service_name` | Comma-separated list of identifier kinds to mask. Unknown kinds are ignored with a warning. Empty value uses all defaults. |
+| `OPENSRE_MASK_EXTRA_REGEX` | *(empty)* | Optional JSON object mapping a label → regex for custom identifiers. Example: `'{"jira_key": "\\\\b[A-Z]+-\\\\d+\\\\b"}'`. Group 1 of the regex, if present, defines the span to mask. |
+
+## Built-in identifier kinds
+
+| Kind | Example input | Example placeholder |
+| --- | --- | --- |
+| `pod` | `etl-worker-7d9f8b-xkp2q` | `<POD_0>` |
+| `namespace` | `kube_namespace:tracer-test` | `kube_namespace:<NAMESPACE_0>` |
+| `cluster` | `eks_cluster:prod-us-east-1` | `eks_cluster:<CLUSTER_0>` |
+| `service_name` | `service:checkout-api` | `service:<SERVICE_NAME_0>` |
+| `hostname` | `kind-control-plane`, `ip-10-0-1-23.ec2.internal` | `<HOSTNAME_0>` |
+| `account_id` | `123456789012` | `<ACCOUNT_ID_0>` |
+| `ip_address` | `192.168.1.50` | `<IP_ADDRESS_0>` |
+| `email` | `alice@example.com` | `<EMAIL_0>` |
+
+## Round-trip guarantee
+
+For the built-in detectors and extra regex patterns, `mask → unmask` restores
+the original payload byte-for-byte. See
+`tests/masking/test_integration_with_k8s_fixture.py` for a worked example against
+a realistic Datadog Kubernetes alert.
+
+## Relationship to guardrails
+
+Masking is complementary to the one-way `GuardrailEvaluator`. Guardrails handle
+hard-block rules (credit cards, API keys) and replace matches with `[REDACTED]`
+irreversibly. Masking handles infrastructure identifiers reversibly so they can
+be restored for user-facing output.
+
+Both can be active together: guardrails apply at the LLM client layer;
+masking applies at the call sites that opt in.
+
+## Example
+
+```bash
+export OPENSRE_MASK_ENABLED=true
+export OPENSRE_MASK_KINDS=pod,namespace,cluster,hostname
+opensre ask "why is the checkout pod crash-looping?"
+```
+
+When masking runs on a call path, the LLM sees masked identifiers; output
+paths that unmask show the original pod, namespace, and cluster names in the
+final answer.

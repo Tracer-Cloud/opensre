@@ -3,13 +3,8 @@
 Only the bot token is required — it is what the send-message tool and the
 gateway authenticate with, and the one field the verifier checks. The
 application id, public key, and default channel id are needed for specific
-features (slash-command registration, interaction verification, a default
-delivery target) and are optional at setup time.
-
-Registering the ``/investigate`` slash command has to happen after the app
-exists, so it is the spec's ``finalize`` step rather than part of persistence;
-it needs the application id, which is therefore validated as required before
-the command is pushed.
+features (interaction verification, a default delivery target) and are
+optional at setup time.
 """
 
 from __future__ import annotations
@@ -20,7 +15,6 @@ from config.constants.discord import (
     DISCORD_DEFAULT_CHANNEL_ID_ENV,
     DISCORD_PUBLIC_KEY_ENV,
 )
-from integrations.discord.slash_command import register_investigate_command
 from integrations.discord.verifier import verify_discord
 from integrations.setup_flow import IntegrationSetupSpec, SetupField
 
@@ -28,15 +22,6 @@ BOT_TOKEN_FIELD = "bot_token"
 APPLICATION_ID_FIELD = "application_id"
 PUBLIC_KEY_FIELD = "public_key"
 DEFAULT_CHANNEL_ID_FIELD = "default_channel_id"
-
-
-def _register_slash_command(credentials: dict[str, str | None]) -> str:
-    """Register ``/investigate`` when an application id is present."""
-    application_id = credentials.get(APPLICATION_ID_FIELD)
-    bot_token = credentials.get(BOT_TOKEN_FIELD)
-    if not application_id or not bot_token:
-        return ""
-    return register_investigate_command(application_id, bot_token)
 
 
 DISCORD_SETUP = IntegrationSetupSpec(
@@ -70,7 +55,6 @@ DISCORD_SETUP = IntegrationSetupSpec(
         ),
     ),
     verify=verify_discord,
-    finalize=_register_slash_command,
 )
 
 __all__ = [

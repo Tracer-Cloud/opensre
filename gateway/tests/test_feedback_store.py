@@ -6,7 +6,7 @@ import json
 import threading
 from pathlib import Path
 
-from gateway.core.feedback import append_feedback_entry
+from gateway.core.storage.feedback import append_feedback_entry
 
 _THREAD_TIMEOUT_SECONDS = 1.0
 

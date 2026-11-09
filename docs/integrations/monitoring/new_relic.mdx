@@ -1,0 +1,111 @@
+---
+title: "New Relic"
+description: "Connect New Relic so OpenSRE can query alerts and NRQL metrics during incidents"
+---
+
+OpenSRE queries New Relic when investigating alerts — pulling open and recent alert incidents (with the condition and policy that fired) and running NRQL metric queries correlated with incidents.
+
+## Prerequisites
+
+- New Relic account
+- A **User key** (starts with `NRAK-`) — **not** a License key. This is the most common setup mistake: License keys authenticate agents that *send* data to New Relic, not the NerdGraph API that OpenSRE reads from. A License key will fail verification.
+- Your account ID
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup new_relic
+```
+
+You will be prompted for the API key, account ID, and API URL.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+NEW_RELIC_API_KEY=NRAK-your-user-key
+NEW_RELIC_ACCOUNT_ID=your-account-id
+NEW_RELIC_API_URL=https://api.newrelic.com   # optional — default US endpoint; use https://api.eu.newrelic.com (EU) or https://api.jp.newrelic.com (JP) otherwise
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NEW_RELIC_API_KEY` | — | **Required.** New Relic User key (`NRAK-...`) |
+| `NEW_RELIC_ACCOUNT_ID` | — | **Required.** New Relic account ID |
+| `NEW_RELIC_API_URL` | `https://api.newrelic.com` | Override for EU (`https://api.eu.newrelic.com`) or JP (`https://api.jp.newrelic.com`) accounts |
+
+Both `NEW_RELIC_API_KEY` and `NEW_RELIC_ACCOUNT_ID` must be set — either one alone leaves the integration unconfigured.
+
+For multiple New Relic accounts, use [multi-instance](/platform/multi-instance-integrations) with `NEW_RELIC_INSTANCES`.
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "new-relic-prod",
+      "service": "new_relic",
+      "status": "active",
+      "credentials": {
+        "api_key": "NRAK-your-user-key",
+        "account_id": "your-account-id",
+        "base_url": "https://api.newrelic.com"
+      }
+    }
+  ]
+}
+```
+
+## Creating a User key
+
+1. In New Relic, go to your user menu → **API keys**
+2. Click **Create a key**
+3. Set the key type to **User key** (not **License key**)
+4. Copy the key — it starts with `NRAK-`
+
+## Finding your account ID
+
+Your account ID is shown in New Relic under **Administration** → **Account settings**, and also appears in the URL when you're viewing an account-scoped page (`.../accounts/<account_id>/...`).
+
+## Verify
+
+```bash
+opensre integrations verify new_relic
+```
+
+Expected output:
+
+```
+Service: new_relic
+Status: passed
+Detail: Connected to https://api.newrelic.com and validated account access
+```
+
+Inside the REPL: `/integrations verify new_relic` or `/verify new_relic`.
+
+## Alerts require an existing alert condition
+
+New Relic alert data becomes available only after at least one configured alert condition has fired. If your account has no alert policies and conditions yet, OpenSRE will correctly return zero incidents — that's not a misconfiguration, there's simply nothing to read yet. Set up an alert condition in New Relic first if you want alert investigations to return data.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized / invalid key** | Confirm you're using a User key (`NRAK-...`), not a License key |
+| **Valid key but account unreachable** | Double check `NEW_RELIC_ACCOUNT_ID` — the key is valid but doesn't have access to that account |
+| **429 Too Many Requests** | You've hit NerdGraph's rate limit; retry after a short wait |
+| **Alerts tool returns no incidents** | No alert condition has fired yet on this account — see above |
+| **Metrics query fails or times out** | NRQL queries via the API have a 5-second timeout; narrow the time window or simplify the query |
+| **EU account unreachable** | Set `NEW_RELIC_API_URL=https://api.eu.newrelic.com` |
+| **JP account unreachable** | Set `NEW_RELIC_API_URL=https://api.jp.newrelic.com` |
+| **Multiple New Relic accounts** | Use `NEW_RELIC_INSTANCES` — see [Multi-instance integrations](/platform/multi-instance-integrations) |
+
+## Security best practices
+
+- This integration is read-only: OpenSRE only ever runs NerdGraph `query` operations against your account, never a `mutation`.
+- Store the User key in `.env` or your secret manager — not in source control.

@@ -75,10 +75,10 @@ class TestSQSQueueAttributesToolContract(BaseToolContract):
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_tool_is_registered_on_both_surfaces() -> None:
+def test_tool_is_registered_on_chat_surface() -> None:
     assert _RT.name == "get_sqs_queue_attributes"
     assert _RT.source == "sqs"
-    assert set(_RT.surfaces) == {"investigation", "chat"}
+    assert set(_RT.surfaces) == {"chat"}
 
 
 def test_input_schema_exposes_expected_params() -> None:

@@ -15,7 +15,7 @@ def install_sigint_handler() -> None:
     """
 
     def _handler(_signum: int, _frame: object) -> None:
-        from platform.terminal.prompt_support import handle_ctrl_c_press
+        from infrastructure.terminal.prompt_support import handle_ctrl_c_press
 
         handle_ctrl_c_press()
 

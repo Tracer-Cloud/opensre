@@ -1,0 +1,98 @@
+---
+title: "Supabase"
+description: "Connect Supabase so OpenSRE can diagnose database, API, and authentication issues during incidents"
+---
+
+## Overview
+
+When something goes wrong with your Supabase-backed database, APIs, or authentication flows, OpenSRE can use your project configuration to investigate issues, inspect resources, and gather operational insights.
+
+## Prerequisites
+
+- A Supabase project
+- Your Supabase Project URL
+- A Supabase Service Role Key
+- Permissions to access project resources
+
+## Setup
+
+There is no dedicated `opensre integrations setup supabase` wizard today. Configure via environment variables or the persistent store, then verify.
+
+### Option 1: Environment variables
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your_service_role_key
+```
+
+| Variable | Description |
+| --- | --- |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_SERVICE_KEY` | Supabase service role key |
+
+### Option 2: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "supabase-prod",
+      "service": "supabase",
+      "status": "active",
+      "credentials": {
+        "url": "https://your-project.supabase.co",
+        "service_key": "your_service_role_key"
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+1. Log in to Supabase
+2. Open your project
+3. Navigate to **Settings** → **API**
+4. Copy the **Project URL**
+5. Copy the **Service Role Key** (not the anon key)
+
+<Info>
+The Service Role Key has elevated privileges. Store it securely and never expose it in client-side applications or public repositories.
+</Info>
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `get_supabase_service_health` | Health of PostgREST, Auth, Storage, and other services |
+| `get_supabase_storage_buckets` | Storage buckets and config (public/private, size limits, MIME types) |
+
+## Verify
+
+```bash
+opensre integrations verify supabase
+```
+
+Expected output:
+
+```
+Service: supabase
+Status: passed
+Detail: Connected to Supabase project ...
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **401 Unauthorized** | Confirm the **Service Role Key** (not the anon key) is set in `SUPABASE_SERVICE_KEY` |
+| **Invalid project URL** | Use the Project URL from Settings → API (`https://your-project.supabase.co`) |
+| **Health check shows degraded service** | Check the Supabase status page and project dashboard for the affected service |
+| **Storage bucket not found** | Verify the bucket name the agent queried matches an existing bucket |
+
+## Security
+
+- Use the **service role key** only on the server side — never in client apps or public repos.
+- Rotate the service role key if it is ever exposed.
+- Prefer a dedicated Supabase project or restricted key for OpenSRE when possible.

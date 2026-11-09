@@ -9,13 +9,13 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from platform.filestorage.config import RemoteSyncConfig
-from platform.filestorage.engine import content_tag, run_sync
-from platform.filestorage.enums import SyncRootName
-from platform.filestorage.errors import RemoteSyncUnavailableError
-from platform.filestorage.providers.registry import build_object_store, registered_providers
-from platform.filestorage.providers.vercel import VercelBlobObjectStore
-from platform.filestorage.syncable import SyncRoot
+from infrastructure.filestorage.config import RemoteSyncConfig
+from infrastructure.filestorage.engine import content_tag, run_sync
+from infrastructure.filestorage.enums import SyncRootName
+from infrastructure.filestorage.errors import RemoteSyncUnavailableError
+from infrastructure.filestorage.providers.registry import build_object_store, registered_providers
+from infrastructure.filestorage.providers.vercel import VercelBlobObjectStore
+from infrastructure.filestorage.syncable import SyncRoot
 
 _TOKEN = "vercel_blob_rw_TestStoreId_deadbeefsecret"
 _STORE_ID = "TestStoreId"
@@ -23,7 +23,7 @@ _STORE_ID = "TestStoreId"
 
 @pytest.fixture(autouse=True)
 def _restore_provider_registry() -> Iterator[None]:
-    from platform.filestorage.providers import registry as reg
+    from infrastructure.filestorage.providers import registry as reg
 
     with reg._REGISTRY_LOCK:
         snapshot = dict(reg._REGISTRY)
@@ -290,8 +290,8 @@ def test_engine_push_restore_via_registry(tmp_path_factory: pytest.TempPathFacto
     memory = home / "memory"
     sessions.mkdir()
     memory.mkdir()
-    (sessions / "a.jsonl").write_text('{"turn": 1}\n', encoding="utf-8")
-    (memory / "fact.md").write_text("remembered\n", encoding="utf-8")
+    (sessions / "a.jsonl").write_bytes(b'{"turn": 1}\n')
+    (memory / "fact.md").write_bytes(b"remembered\n")
     roots = (
         SyncRoot(name=SyncRootName.SESSIONS, path=sessions),
         SyncRoot(name=SyncRootName.MEMORY, path=memory),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+from http import HTTPStatus
 from typing import Any
 
 import httpx
@@ -58,6 +60,13 @@ class _FakeStreamResponse:
 
     def __exit__(self, *_args: object) -> None:
         return None
+
+    @property
+    def is_error(self) -> bool:
+        return self.status_code >= 400
+
+    def read(self) -> bytes:
+        return b""
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -313,7 +322,7 @@ def test_get_runtime_logs_stream_json_response(monkeypatch: pytest.MonkeyPatch) 
         "integrations.vercel.client.httpx.Client.stream",
         lambda _self, *_a, **_kw: _FakeStreamResponse(lines=lines),
     )
-    result = _client().get_runtime_logs("dpl_xyz")
+    result = _client().get_runtime_logs("dpl_xyz", project_id="proj_123")
     assert result["success"] is True
     assert result["total"] == 2
     assert result["logs"][0]["message"] == "Error loading resource"
@@ -321,15 +330,53 @@ def test_get_runtime_logs_stream_json_response(monkeypatch: pytest.MonkeyPatch) 
     assert result["logs"][1]["id"] == "log_2"
 
 
-def test_get_runtime_logs_404_returns_empty_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "integrations.vercel.client.httpx.Client.stream",
-        lambda _self, *_a, **_kw: _FakeStreamResponse(lines=[], status_code=404),
+def _recording_client(handler: Any) -> VercelClient:
+    client = _client(team_id="team_1")
+    client._client = httpx.Client(
+        base_url="https://api.vercel.com", transport=httpx.MockTransport(handler)
     )
-    result = _client().get_runtime_logs("dpl_xyz")
+    return client
+
+
+def test_get_runtime_logs_without_project_id_uses_the_deployment_project() -> None:
+    """Runtime logs only exist under a project; there is no deployment-only logs path."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/v13/deployments/dpl_xyz":
+            return httpx.Response(
+                HTTPStatus.OK, json={"id": "dpl_xyz", "projectId": "prj_abc"}, request=request
+            )
+        line = json.dumps({"rowId": "log_1", "message": "boom", "level": "error"})
+        return httpx.Response(HTTPStatus.OK, text=line + "\n", request=request)
+
+    result = _recording_client(handler).get_runtime_logs("dpl_xyz", limit=50)
+
+    assert [(r.method, r.url.path) for r in requests] == [
+        ("GET", "/v13/deployments/dpl_xyz"),
+        ("GET", "/v1/projects/prj_abc/deployments/dpl_xyz/runtime-logs"),
+    ]
+    assert dict(requests[1].url.params) == {"limit": "50", "teamId": "team_1"}
     assert result["success"] is True
-    assert result["total"] == 0
-    assert result["logs"] == []
+    assert [log["message"] for log in result["logs"]] == ["boom"]
+
+
+@pytest.mark.parametrize("status", [HTTPStatus.NOT_FOUND, HTTPStatus.FORBIDDEN])
+def test_get_runtime_logs_reports_streamed_error_instead_of_empty_logs(
+    status: HTTPStatus,
+) -> None:
+    """An error status means the logs could not be read, not that the deployment logged nothing."""
+    body = b'{"error":{"code":"denied"}}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # An iterator body stays unread until consumed, like a real streamed response.
+        return httpx.Response(status, content=iter([body]), request=request)
+
+    result = _recording_client(handler).get_runtime_logs("dpl_xyz", project_id="prj_abc")
+
+    assert result["success"] is False
+    assert result["error"] == f"HTTP {status.value}: {body.decode()}"
 
 
 def test_team_params_included_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -384,7 +431,7 @@ def test_get_runtime_logs_dict_wrapped_response(monkeypatch: pytest.MonkeyPatch)
             lines=_runtime_stream_lines_from_payload(payload)
         ),
     )
-    result = _client().get_runtime_logs("dpl_xyz")
+    result = _client().get_runtime_logs("dpl_xyz", project_id="proj_123")
     assert result["success"] is True
     assert result["total"] == 1
 
@@ -588,6 +635,30 @@ def test_make_vercel_client_forwards_team_id() -> None:
     client = make_vercel_client("tok_test", "team_xyz")
     assert client is not None
     assert client.config.team_id == "team_xyz"
+
+
+def _raise_runtime_error(**_kwargs: Any) -> None:
+    raise RuntimeError("construction failure")
+
+
+def test_make_vercel_client_logs_soft_fail_on_construction_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Arrange: force config construction inside the factory to raise, exercising
+    # the soft-fail `except Exception` path. The factory must still return None,
+    # but must no longer swallow the exception silently.
+    monkeypatch.setattr("integrations.vercel.client.VercelConfig", _raise_runtime_error)
+
+    # Act
+    with caplog.at_level(logging.WARNING, logger="integrations.vercel.client"):
+        result = make_vercel_client("tok_test")
+
+    # Assert
+    assert result is None
+    assert any(
+        record.levelno == logging.WARNING and record.exc_info is not None
+        for record in caplog.records
+    ), caplog.text
 
 
 def _raise_value_error() -> None:

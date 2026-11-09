@@ -12,6 +12,7 @@ then renders the accumulated totals for display.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -73,6 +74,9 @@ def resolve_provider_name(client: object) -> str | None:
     pattern-matching the client's class name for known substrings
     (``openai``, ``bedrock``, ``cli``, ``anthropic``/``llmclient``).
     Returns ``None`` if no match is found (no exceptions raised).
+
+    The result is an analytics label (``custom_openai``), not a provider id a
+    command accepts; use :func:`resolve_provider_id` to name the provider to a user.
     """
     provider_label = getattr(client, "_provider_label", None)
     if isinstance(provider_label, str) and provider_label:
@@ -87,6 +91,21 @@ def resolve_provider_name(client: object) -> str | None:
     if "anthropic" in name or "llmclient" in name:
         return "anthropic"
     return None
+
+
+def resolve_provider_id(client: object) -> str | None:
+    """Provider id (``custom-openai``) whose OpenSRE-managed API key ``client`` sends.
+
+    Read from the client's API-key env through the provider catalog, so the id is
+    one ``opensre auth login`` accepts. ``None`` when the client carries no such
+    env (Anthropic SDK, Bedrock and CLI-backed clients).
+    """
+    from config.llm_auth.provider_catalog import provider_for_api_key_env
+
+    api_key_env = getattr(client, "_api_key_env", None)
+    if not isinstance(api_key_env, str) or not api_key_env:
+        return None
+    return provider_for_api_key_env(api_key_env)
 
 
 def record_llm_turn(
@@ -125,6 +144,53 @@ def record_llm_turn(
     if tokens is not None and callable(getattr(tokens, "record", None)):
         tokens.record(input_tokens=inp, output_tokens=out, estimated=estimated)
     return inp, out, estimated
+
+
+def record_provider_usage(
+    session: Any | None,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+) -> None:
+    """Accumulate one model call's provider-reported usage onto ``session.tokens``.
+
+    Only exact counts are recorded: a call whose provider reported nothing adds
+    nothing rather than an estimate. This is what ``/cost`` and the ``/goal``
+    token delta read.
+    """
+    if session is None or (input_tokens <= 0 and output_tokens <= 0):
+        return
+    tokens = getattr(session, "tokens", None)
+    if tokens is not None and callable(getattr(tokens, "record", None)):
+        tokens.record(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated=False,
+            cache_read_tokens=max(0, cache_read_tokens),
+        )
+
+
+def tap_provider_usage(inner: Callable[[Any], None] | None, session: Any) -> Callable[[Any], None]:
+    """Wrap a runtime-event callback so every finished model call lands on ``session.tokens``.
+
+    Recording per call, not per run, keeps the spend of a run that raises on a
+    later call.
+    """
+
+    def _callback(event: Any) -> None:
+        if getattr(event, "type", "") == "provider_request_end":
+            data = getattr(event, "data", None) or {}
+            record_provider_usage(
+                session,
+                input_tokens=int(data.get("input_tokens", 0) or 0),
+                output_tokens=int(data.get("output_tokens", 0) or 0),
+                cache_read_tokens=int(data.get("cache_read_tokens", 0) or 0),
+            )
+        if inner is not None:
+            inner(event)
+
+    return _callback
 
 
 def record_invoke_response(
@@ -173,23 +239,23 @@ def build_llm_run_info(
     since no explicit counts are accepted here).
 
     ``latency_ms`` is computed from ``started`` (a ``time.monotonic()``
-    timestamp) if given, else defaults to ``0``.
+    timestamp) if given, else stays unknown. Estimated tokens update only the
+    session counters; the returned provider usage fields stay unknown.
 
     ``model``/``provider`` are used as-is if given; otherwise, if
     ``client`` is provided, they're resolved via ``resolve_model_name``/
     ``resolve_provider_name``; otherwise they're left as ``None``.
 
-    Returns a fully populated ``LlmRunInfo``, including the given
+    Returns an ``LlmRunInfo``, including the given
     ``response_text`` and ``final_system_prompt`` verbatim.
     """
-    inp, out, _estimated = record_llm_turn(session, prompt=prompt, response=response_text)
-    latency_ms = 0 if started is None else int((time.monotonic() - started) * 1000)
+    # Session estimates remain available for the UI but are not provider usage.
+    record_llm_turn(session, prompt=prompt, response=response_text)
+    latency_ms = None if started is None else int((time.monotonic() - started) * 1000)
     return LlmRunInfo(
         model=model or (resolve_model_name(client) if client is not None else None),
         provider=provider or (resolve_provider_name(client) if client is not None else None),
         latency_ms=latency_ms,
-        input_tokens=inp,
-        output_tokens=out,
         response_text=response_text,
         final_system_prompt=final_system_prompt,
     )
@@ -232,8 +298,11 @@ __all__ = [
     "build_llm_run_info",
     "estimate_tokens",
     "format_token_total",
+    "record_provider_usage",
+    "tap_provider_usage",
     "record_invoke_response",
     "record_llm_turn",
     "resolve_model_name",
+    "resolve_provider_id",
     "resolve_provider_name",
 ]

@@ -43,11 +43,11 @@ def _install_fake_client(monkeypatch: Any, responder: Any) -> None:
     )
 
 
-def test_metadata_requires_approval_for_external_send() -> None:
+def test_metadata_allows_external_send_without_approval() -> None:
     metadata = SlackReplyMessageTool.metadata()
     assert metadata.name == "slack_reply_message"
     assert metadata.side_effect_level == "external"
-    assert slack_reply_message.requires_approval is True
+    assert slack_reply_message.requires_approval is False
 
 
 def test_post_includes_thread_ts_only_when_given(monkeypatch: pytest.MonkeyPatch) -> None:

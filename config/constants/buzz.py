@@ -1,8 +1,8 @@
 """Buzz environment variable names.
 
 ``BUZZ_PRIVATE_KEY`` is the agent's Nostr identity and is routed to the
-keyring by ``config.env_file.is_sensitive_env_key`` (terminal token ``key``);
-the rest mirror to ``.env``.
+keyring by ``config.env_key_sensitivity.is_sensitive_env_key`` (terminal
+token ``key``); the rest mirror to ``.env``.
 """
 
 from __future__ import annotations

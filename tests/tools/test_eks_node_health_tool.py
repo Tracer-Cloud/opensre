@@ -50,7 +50,8 @@ def test_run_happy_path() -> None:
         items=[_make_node("node-1"), _make_node("node-2")]
     )
     with patch(
-        "integrations.eks.tools.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+        "integrations.eks.tools.eks_node_health_tool.build_k8s_clients",
+        return_value=(mock_core_v1, MagicMock()),
     ):
         result = get_eks_node_health(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is True
@@ -64,14 +65,18 @@ def test_run_detects_not_ready_nodes() -> None:
         items=[_make_node("node-1", "True"), _make_node("node-2", "False")]
     )
     with patch(
-        "integrations.eks.tools.build_k8s_clients", return_value=(mock_core_v1, MagicMock())
+        "integrations.eks.tools.eks_node_health_tool.build_k8s_clients",
+        return_value=(mock_core_v1, MagicMock()),
     ):
         result = get_eks_node_health(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["not_ready_count"] == 1
 
 
 def test_run_handles_exception() -> None:
-    with patch("integrations.eks.tools.build_k8s_clients", side_effect=Exception("auth error")):
+    with patch(
+        "integrations.eks.tools.eks_node_health_tool.build_k8s_clients",
+        side_effect=Exception("auth error"),
+    ):
         result = get_eks_node_health(cluster_name="c1", role_arn="arn:aws:iam::123:role/r")
     assert result["available"] is False
     assert "auth error" in result["error"]

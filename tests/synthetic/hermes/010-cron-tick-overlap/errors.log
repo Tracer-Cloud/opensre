@@ -1,5 +1,0 @@
-2026-05-11 22:18:33,000 WARNING cron.scheduler: tick skipped: .tick.lock held by pid=2914 for 47.2s (job=weekly_maintenance)
-2026-05-11 22:18:36,000 WARNING cron.scheduler: tick skipped: .tick.lock held by pid=2914 for 50.1s (job=weekly_maintenance)
-2026-05-11 22:18:39,000 WARNING cron.scheduler: tick skipped: .tick.lock held by pid=2914 for 53.0s (job=weekly_maintenance)
-2026-05-11 22:18:42,000 WARNING cron.scheduler: tick skipped: .tick.lock held by pid=2914 for 55.9s (job=weekly_maintenance)
-2026-05-11 22:18:45,000 ERROR cron.weekly_maintenance: hardcoded ~/.hermes path used; active profile $HERMES_HOME=/home/ubuntu/.hermes/profiles/work ignored — wrong state.db will be vacuumed

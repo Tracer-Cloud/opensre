@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gateway.core.runtime.attention import GateDecision, ThreadAttentionGate, is_addressed_to_bot
+from gateway.core.middleware.attention import GateDecision, ThreadAttentionGate, is_addressed_to_bot
 
 _KEY = "T1:C1:100.1"
 _BOT = "UBOT"

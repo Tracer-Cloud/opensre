@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import click
 
-from gateway.core.runtime.daemon import (
+from gateway.core.process import (
     GATEWAY_LOG_FILE,
     gateway_daemon_pid,
     read_component_status,
@@ -14,6 +15,8 @@ from gateway.core.runtime.daemon import (
     start_gateway_daemon,
     stop_gateway_daemon,
 )
+from infrastructure.process.runtime_flags import is_json_output
+from surfaces.cli.host import cli_host
 from surfaces.shared.gateway_entrypoint import gateway_entry_argv
 
 
@@ -34,13 +37,17 @@ def gateway_command() -> None:
     is_flag=True,
     help="Run attached to this terminal instead of as a background daemon.",
 )
-def gateway_start_command(foreground: bool) -> None:
+@click.pass_context
+def gateway_start_command(ctx: click.Context, foreground: bool) -> None:
     """Start the gateway daemon (background by default)."""
     if foreground:
+        start_gateway_foreground = cli_host(ctx).start_gateway_foreground
+        if start_gateway_foreground is None:
+            raise click.ClickException(
+                "Foreground mode needs the opensre entrypoint; run `opensre gateway start --foreground`."
+            )
         click.echo("Starting OpenSRE gateway (foreground)")
-        from surfaces.cli.gateway_entry import start_gateway
-
-        start_gateway()
+        start_gateway_foreground()
         return
 
     ok, message = start_gateway_daemon(argv=gateway_entry_argv())
@@ -50,6 +57,14 @@ def gateway_start_command(foreground: bool) -> None:
         raise SystemExit(1)
     _echo_components()
     click.echo("Stop: opensre gateway stop · Status: opensre gateway status")
+
+
+@gateway_command.command("web")
+def gateway_web_command() -> None:
+    """Serve the health and alert HTTP app in the foreground."""
+    from surfaces.gateway_entry import serve_web
+
+    serve_web()
 
 
 @gateway_command.command("stop")
@@ -65,8 +80,22 @@ def gateway_stop_command() -> None:
 def gateway_status_command() -> None:
     """Show the gateway daemon and its components (web, telegram, scheduler)."""
     pid = gateway_daemon_pid()
+    components = read_component_status()
+    if is_json_output():
+        click.echo(
+            json.dumps(
+                {
+                    "running": pid is not None,
+                    "pid": pid,
+                    "components": components,
+                    "log_file": str(GATEWAY_LOG_FILE),
+                }
+            )
+        )
+        return
     click.echo(f"OpenSRE gateway: {f'running (pid {pid})' if pid else 'stopped'}")
-    _echo_components()
+    for name, detail in components.items():
+        click.echo(f"  {name}: {detail}")
     click.echo(f"Logs: {GATEWAY_LOG_FILE}")
 
 

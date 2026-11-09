@@ -1,44 +1,86 @@
-"""Slash sugar for the SessionGoal API: /goal show|set|pause|resume|edit|clear.
+"""/goal slash command: show|set|pause|resume|edit|clear.
 
 ``/goal set`` attaches a completion condition and immediately queues that
-condition as the next turn (autosubmit). Status shows the paint progress line
-(``SESSION_GOAL_PAINT_MARK`` + ``/goal active``) with duration, turn budget,
-and token delta. User-facing copy never says ``SessionGoal`` — only ``/goal``.
+condition as the next turn (autosubmit). Status shows the progress line
+(``SESSION_GOAL_PROGRESS_MARK`` + ``/goal active``) with duration, optional
+turn budget (``--max-turns``), and token delta. User-facing copy never says
+``SessionGoal`` — only ``/goal``.
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 from rich.console import Console
 from rich.markup import escape as _rich_escape
 
-from core.agent_harness.session import SessionManager
-from core.agent_harness.session.terminal_access import (
-    clear_pending_autosubmit,
-    set_auto_command,
-)
-from core.agent_harness.session_goal.goal import (
-    MAX_GOAL_CONDITION_CHARS,
+from config.command_inputs import GOAL_EDIT_INPUT, GOAL_SET_INPUT
+from core.agent_harness import SessionManager
+from core.agent_harness.spi.cancel import HostCancelReason
+from core.agent_harness.spi.session_goal import (
+    SESSION_GOAL_UNBOUNDED_TURNS,
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
     attach_session_goal,
     clear_session_goal,
+    derive_session_goal_checklist,
+    edit_session_goal,
+    format_session_goal_progress,
+    goal_paint_signature,
     session_goal_is_active,
     session_goal_is_attached,
     session_goal_is_paused,
 )
-from core.agent_harness.session_goal.progress import format_session_goal_progress
-from platform.common.evidence_compaction import truncate_message
-from platform.terminal.theme import DIM, ERROR, HIGHLIGHT
-from surfaces.interactive_shell.runtime import Session
-
-_GOAL_SUBCOMMANDS = frozenset(
-    {"show", "status", "set", "clear", "unset", "pause", "resume", "edit"}
+from core.agent_harness.spi.session_state import (
+    clear_pending_autosubmit,
+    session_terminal,
+    set_auto_command,
 )
-_USAGE = "/goal [show|set|pause|resume|edit|clear]  or  /goal <condition>"
+from infrastructure.terminal.theme import DIM, ERROR, HIGHLIGHT
+from surfaces.interactive_shell.command_registry.input_collection import can_collect_input
+from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.runtime.goal_controls import consume_inflight_goal_control
+from surfaces.interactive_shell.ui.goal_input import (
+    build_goal_edit_form,
+    build_goal_set_form,
+    parse_max_turns,
+)
+from surfaces.shared.terminal.components.command_input import run_command_input
+from surfaces.shared.terminal.components.rendering import print_repl_text
+
+_USAGE = "/goal [show|set|pause|resume|edit|clear|help]  or  /goal <condition>"
+# A condition is plain prose describing the state to reach or the request to
+# finish; flags come before it. First entry doubles as the empty-state example.
+_SET_EXAMPLES: tuple[str, ...] = (
+    "/goal set gateway p95 latency back under 500ms",
+    "/goal set find out why checkout returns 502s and post the root cause",
+    "/goal set --max-turns 10 fix the failing delivering-morning-briefings delivery to Slack",
+)
+_EDIT_EXAMPLE = "/goal edit also confirm the fix reached prod-eu-42"
+
+# One example per subcommand, shown on the generic usage path.
+_COMMAND_EXAMPLES: tuple[tuple[str, str], ...] = (
+    ("/goal", "show the active goal and its progress"),
+    (_SET_EXAMPLES[0], "start working toward a condition"),
+    ("/goal pause", "hold the goal without losing it"),
+    ("/goal resume", "continue a paused goal"),
+    (_EDIT_EXAMPLE, "replace the condition, keep progress"),
+    ("/goal clear", "drop the goal"),
+)
 _HELP_FOOTER = "/goal · pause · resume · edit · clear"
+
+
+def _print_set_usage(console: Console) -> None:
+    console.print(f"[{ERROR}]usage:[/] /goal set [--max-turns N] <condition>")
+    console.print(f"[{DIM}]examples:[/]")
+    for example in _SET_EXAMPLES:
+        console.print(f"  [{HIGHLIGHT}]{example}[/]")
+
+
+def _print_goal_usage(console: Console) -> None:
+    console.print(f"[{ERROR}]usage:[/] {_rich_escape(_USAGE)}")
+    console.print(f"[{DIM}]examples:[/]")
+    for example, what in _COMMAND_EXAMPLES:
+        console.print(f"  [{HIGHLIGHT}]{example}[/] [{DIM}]— {what}[/]")
 
 
 def _persist_goal_state(session: Session) -> None:
@@ -55,54 +97,101 @@ def _show(session: Session, console: Console) -> bool:
     goal = getattr(session, "session_goal", None)
     if not isinstance(goal, SessionGoal) or not session_goal_is_attached(session):
         console.print(
-            f"[{DIM}]no active goal.[/] Set one with [{HIGHLIGHT}]/goal set <condition>[/]."
+            f"[{DIM}]no active goal.[/] Set one with [{HIGHLIGHT}]/goal set <condition>[/] "
+            f"[{DIM}]— e.g.[/] [{HIGHLIGHT}]{_SET_EXAMPLES[0]}[/]"
         )
         return True
-    console.print(format_session_goal_progress(goal, session=session), markup=False)
+    print_repl_text(console, format_session_goal_progress(goal, session=session), markup=False)
     return True
 
 
 def _set(session: Session, console: Console, args: list[str]) -> bool:
-    max_turns = 5
+    max_turns = SESSION_GOAL_UNBOUNDED_TURNS
     rest = list(args)
     while rest and rest[0].startswith("--"):
         flag = rest.pop(0)
         if flag in {"--max-turns", "--max_turns"} and rest:
             try:
-                max_turns = max(1, int(rest.pop(0)))
+                max_turns = parse_max_turns(rest.pop(0), allow_blank=False)
             except ValueError:
-                console.print(f"[{ERROR}]usage:[/] /goal set [--max-turns N] <condition>")
+                _print_set_usage(console)
                 return True
         else:
             console.print(f"[{ERROR}]unknown flag:[/] {_rich_escape(flag)}")
             return True
     condition = " ".join(rest).strip()
     if not condition:
-        console.print(f"[{ERROR}]usage:[/] /goal set [--max-turns N] <condition>")
+        _print_set_usage(console)
         return True
+    return _attach_goal(session, console, condition, max_turns)
+
+
+def _collect_goal_set(session: Session, console: Console, args: list[str]) -> bool:
+    """Open the styled form for a condition-less ``/goal set``.
+
+    Attach, persist, and autosubmit only after explicit Set goal; cancellation
+    leaves all goal state unchanged.
+    """
+    options: dict[str, str] = {}
+    index = 0
+    while index + 1 < len(args) and args[index] in {"--max-turns", "--max_turns"}:
+        options["max_turns"] = args[index + 1]
+        index += 2
+    values = run_command_input(build_goal_set_form(options))
+    if values is None:
+        return True
+    return _attach_goal(session, console, values.condition, values.max_turns)
+
+
+def _attach_goal(session: Session, console: Console, condition: str, max_turns: int) -> bool:
+    checklist = derive_session_goal_checklist(condition)
     goal = SessionGoal(
         condition=condition,
         max_outer_turns=max_turns,
         status=SessionGoalStatus.ACTIVE,
         host_owned=True,
+        checklist=checklist,
+        step_count=len(checklist) or None,
     )
     goal = attach_session_goal(session, goal)
-    # Setting starts work immediately: queue the condition on the REPL loop
-    # (no-op terminal → turn-outcome hint on headless SessionCore).
-    set_auto_command(session, condition)
+    _queue_condition(session, condition)
     _persist_goal_state(session)
-    console.print(format_session_goal_progress(goal, session=session), markup=False)
+    _print_goal_block(session, console, goal)
     console.print(
-        f"[{DIM}]→ starting now (condition queued as the next turn). [/][{DIM}]{_HELP_FOOTER}[/]"
+        f"[{DIM}]→ next: condition runs as its own prompt turn "
+        f"(look for [/][{HIGHLIGHT}][N] ❯[/][{DIM}] below). [/]"
+        f"[{DIM}]{_HELP_FOOTER}[/]"
     )
     return True
 
 
+def _queue_condition(session: Session, condition: str) -> None:
+    """Start the work: the REPL autosubmits the condition; headless hosts run it in-loop."""
+    if session_terminal(session) is not None:
+        set_auto_command(session, condition)
+
+
+def _print_goal_block(session: Session, console: Console, goal: SessionGoal) -> None:
+    """Print the full block once and remember it, so the loop repaints one line per turn."""
+    print_repl_text(console, format_session_goal_progress(goal, session=session), markup=False)
+    terminal = session_terminal(session)
+    if terminal is not None:
+        terminal.goal_paint_signature = goal_paint_signature(goal)
+
+
 def _pause(session: Session, console: Console) -> bool:
+    follows_inflight_pause = consume_inflight_goal_control(
+        session,
+        HostCancelReason.GOAL_PAUSE,
+    )
+    if follows_inflight_pause:
+        return True
     goal = getattr(session, "session_goal", None)
     if not isinstance(goal, SessionGoal) or not session_goal_is_active(session):
         if isinstance(goal, SessionGoal) and session_goal_is_paused(session):
-            console.print(format_session_goal_progress(goal, session=session), markup=False)
+            print_repl_text(
+                console, format_session_goal_progress(goal, session=session), markup=False
+            )
             console.print(f"[{DIM}]already paused.[/]")
             return True
         console.print(f"[{DIM}]no active goal to pause.[/]")
@@ -116,7 +205,7 @@ def _pause(session: Session, console: Console) -> bool:
     # before flush (or the next inbound message restores ACTIVE).
     clear_pending_autosubmit(session)
     _persist_goal_state(session)
-    console.print(format_session_goal_progress(paused, session=session), markup=False)
+    print_repl_text(console, format_session_goal_progress(paused, session=session), markup=False)
     console.print(f"[{DIM}]paused. {_HELP_FOOTER.replace('pause · ', '')}[/]")
     return True
 
@@ -125,7 +214,9 @@ def _resume(session: Session, console: Console) -> bool:
     goal = getattr(session, "session_goal", None)
     if not isinstance(goal, SessionGoal) or not session_goal_is_paused(session):
         if isinstance(goal, SessionGoal) and session_goal_is_active(session):
-            console.print(format_session_goal_progress(goal, session=session), markup=False)
+            print_repl_text(
+                console, format_session_goal_progress(goal, session=session), markup=False
+            )
             console.print(f"[{DIM}]already active.[/]")
             return True
         console.print(f"[{DIM}]no paused goal to resume.[/]")
@@ -136,11 +227,13 @@ def _resume(session: Session, console: Console) -> bool:
         else SessionGoalReason.WAITING_TOOL_EVIDENCE
     )
     resumed = attach_session_goal(session, resumed)
-    set_auto_command(session, resumed.condition)
+    _queue_condition(session, resumed.condition)
     _persist_goal_state(session)
-    console.print(format_session_goal_progress(resumed, session=session), markup=False)
+    _print_goal_block(session, console, resumed)
     console.print(
-        f"[{DIM}]→ resuming (condition queued as the next turn). [/][{DIM}]{_HELP_FOOTER}[/]"
+        f"[{DIM}]→ next: condition runs as its own prompt turn "
+        f"(look for [/][{HIGHLIGHT}][N] ❯[/][{DIM}] below). [/]"
+        f"[{DIM}]{_HELP_FOOTER}[/]"
     )
     return True
 
@@ -153,19 +246,33 @@ def _edit(session: Session, console: Console, args: list[str]) -> bool:
         )
         return True
     condition = " ".join(args).strip()
+    if not condition and can_collect_input(session, GOAL_EDIT_INPUT, ["edit", *args]):
+        draft_condition = run_command_input(
+            build_goal_edit_form(goal.condition, paused=session_goal_is_paused(session))
+        )
+        if draft_condition is None:
+            return True
+        condition = draft_condition
+        if session.session_goal is not goal:
+            console.print(f"[{ERROR}]goal changed while editing. Open /goal edit again.[/]")
+            return True
+        if condition == goal.condition:
+            console.print(f"[{DIM}]no changes.[/]")
+            return True
     if not condition:
         console.print(f"[{ERROR}]usage:[/] /goal edit <condition>")
+        console.print(f"[{DIM}]e.g.[/] [{HIGHLIGHT}]{_EDIT_EXAMPLE}[/]")
         return True
-    condition = truncate_message(condition, MAX_GOAL_CONDITION_CHARS)
-    edited = replace(goal, condition=condition)
-    edited = attach_session_goal(session, edited)
+    edited = edit_session_goal(session, goal, condition)
     if session_goal_is_active(session):
-        set_auto_command(session, condition)
+        _queue_condition(session, edited.condition)
     _persist_goal_state(session)
-    console.print(format_session_goal_progress(edited, session=session), markup=False)
+    _print_goal_block(session, console, edited)
     if session_goal_is_active(session):
         console.print(
-            f"[{DIM}]→ condition updated; queued as the next turn. [/][{DIM}]{_HELP_FOOTER}[/]"
+            f"[{DIM}]→ next: updated condition runs as its own prompt turn "
+            f"(look for [/][{HIGHLIGHT}][N] ❯[/][{DIM}] below). [/]"
+            f"[{DIM}]{_HELP_FOOTER}[/]"
         )
     else:
         console.print(f"[{DIM}]condition updated (still paused). {_HELP_FOOTER}[/]")
@@ -173,9 +280,17 @@ def _edit(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _clear(session: Session, console: Console) -> bool:
+    follows_inflight_clear = consume_inflight_goal_control(
+        session,
+        HostCancelReason.GOAL_CLEAR,
+    )
+    if follows_inflight_clear:
+        console.print(f"[{HIGHLIGHT}]goal cleared.[/]")
+        return True
     if getattr(session, "session_goal", None) is None:
         console.print(f"[{DIM}]no goal to clear.[/]")
         return True
+    clear_pending_autosubmit(session)
     clear_session_goal(session)
     _persist_goal_state(session)
     console.print(f"[{HIGHLIGHT}]goal cleared.[/]")
@@ -189,6 +304,8 @@ def _cmd_goal(session: Session, console: Console, args: list[str]) -> bool:
     if sub in {"show", "status"}:
         return _show(session, console)
     if sub == "set":
+        if can_collect_input(session, GOAL_SET_INPUT, args):
+            return _collect_goal_set(session, console, args[1:])
         return _set(session, console, args[1:])
     if sub == "pause":
         return _pause(session, console)
@@ -198,8 +315,8 @@ def _cmd_goal(session: Session, console: Console, args: list[str]) -> bool:
         return _edit(session, console, args[1:])
     if sub in {"clear", "unset"}:
         return _clear(session, console)
+    if sub == "help":
+        _print_goal_usage(console)
+        return True
     # ``/goal <condition>`` is sugar for ``/goal set <condition>``.
-    if sub not in _GOAL_SUBCOMMANDS:
-        return _set(session, console, args)
-    console.print(f"[{ERROR}]usage:[/] {_USAGE}")
-    return True
+    return _set(session, console, args)

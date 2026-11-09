@@ -1,4 +1,4 @@
-"""Discord delivery helper - posts investigation findings to Discord API."""
+"""Discord delivery helper - posts report messages to the Discord API."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ import logging
 from typing import Any
 
 from config.constants.discord import DISCORD_API_BASE
-from platform.common.truncation import truncate
-from platform.notifications.delivery_errors import extract_http_error
-from platform.notifications.delivery_transport import post_json
-from platform.notifications.limits import MAX_MESSAGE_SIZE
-from platform.notifications.redaction import redact_token
+from infrastructure.delivery.notifications.delivery_errors import extract_http_error
+from infrastructure.delivery.notifications.delivery_transport import post_json
+from infrastructure.delivery.notifications.limits import MAX_MESSAGE_SIZE
+from infrastructure.delivery.notifications.redaction import redact_token
+from infrastructure.text.truncation import truncate
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +88,10 @@ def send_discord_report(report: str, discord_ctx: dict[str, Any]) -> tuple[bool,
     thread_id: str = str(discord_ctx.get("thread_id") or "")
     bot_token: str = str(discord_ctx.get("bot_token") or "")
     embed = {
-        "title": truncate("Investigation Complete", _EMBED_TITLE_LIMIT, suffix="…"),
+        "title": truncate("OpenSRE Report", _EMBED_TITLE_LIMIT, suffix="…"),
         "color": 15158332,
         "description": truncate(report, _EMBED_DESCRIPTION_LIMIT, suffix="…"),
-        "footer": {"text": "OpenSRE Investigation"},
+        "footer": {"text": "OpenSRE"},
     }
     target = thread_id if thread_id else channel_id
     post_message_success, error, _ = post_discord_message(target, [embed], bot_token)

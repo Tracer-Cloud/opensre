@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from platform.observability.errors.sentry import (
+from infrastructure.observability.errors.sentry import (
     capture_exception,
     resolved_sentry_dsn_host,
     sentry_transport_enabled,

@@ -1,9 +1,10 @@
 """Tests for ``core.agent_harness.turns.source_circuit_breaker``.
 
-The breaker must skip further calls to a tool only after a transport-level
-failure, leave application errors and sibling tools alone, and steer the
-model through the block reason. Marks are tool-scoped so a concurrent success
-on the same vendor cannot race a source-wide poison.
+The breaker must skip further calls after a transport-level failure, leave
+application errors alone, mark the **source** when the host never answered
+(so sibling Grafana tools do not each re-pay connect timeout), and steer the
+model through the block reason. SessionGoal gathers seed from
+``gather_unreachable`` so marks survive across gathers.
 """
 
 from __future__ import annotations
@@ -11,21 +12,32 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
+from core.agent_harness.session.session_core import SessionCore
+from core.agent_harness.turns.gather_unreachable import (
+    load_gather_unreachable,
+    store_gather_unreachable,
+)
 from core.agent_harness.turns.source_circuit_breaker import SourceCircuitBreaker
-from core.execution import (
+from core.llm.types import ToolCall
+from core.tool.execution import (
     ToolExecutionHooks,
     ToolExecutionRequest,
     ToolExecutionResult,
     execute_tool_calls,
 )
-from core.llm.types import ToolCall
 
 _TIMEOUT_MARKER = "Connection to 172.29.99.99 timed out. (connect timeout=10)"
 _APP_ERROR_MARKER = "Mimir datasource not found"
 
 
+class _SourceToolStub:
+    def __init__(self, source: str) -> None:
+        self.source = source
+
+
 def _request(source: str, tool_name: str = "query_metrics") -> ToolExecutionRequest:
-    tool = type("T", (), {"source": source})()
+    tool = _SourceToolStub(source=source)
     return ToolExecutionRequest(
         tool_call=ToolCall(id="tc-1", name=tool_name, input={}),
         tool=tool,  # type: ignore[arg-type]
@@ -61,8 +73,8 @@ def test_connectivity_error_skips_later_calls_to_that_tool() -> None:
     assert _TIMEOUT_MARKER in decision.reason
 
 
-def test_connectivity_error_does_not_skip_sibling_tools_on_same_source() -> None:
-    # Arrange: metrics timed out; logs is a different endpoint on grafana.
+def test_connectivity_error_marks_source_and_skips_siblings() -> None:
+    # Arrange: one grafana tool fails at the transport level before any success.
     breaker = SourceCircuitBreaker()
     hooks = breaker.hooks()
     assert hooks.after_tool_call is not None
@@ -72,9 +84,14 @@ def test_connectivity_error_does_not_skip_sibling_tools_on_same_source() -> None
         _error_result(f"Max retries exceeded: {_TIMEOUT_MARKER}"),
     )
 
-    # Act + Assert: sibling tools still run — first failure must not poison the vendor.
-    assert hooks.before_tool_call(_request("grafana", tool_name="query_grafana_logs")) is None
-    assert hooks.before_tool_call(_request("grafana", tool_name="query_grafana_alerts")) is None
+    # Act: sibling tools on the same dead host must not each re-pay the timeout.
+    logs = hooks.before_tool_call(_request("grafana", tool_name="query_grafana_logs"))
+    alerts = hooks.before_tool_call(_request("grafana", tool_name="query_grafana_alerts"))
+
+    # Assert
+    assert logs is not None and logs.blocked
+    assert alerts is not None and alerts.blocked
+    assert "source 'grafana'" in (logs.reason or "")
 
 
 def test_application_error_does_not_trip_the_breaker() -> None:
@@ -297,7 +314,6 @@ class _ConnectTimeoutTool:
 
     name = "query_grafana_metrics"
     source = "grafana"
-    parallel_safe = False
 
     def validate_public_input(self, _payload: dict[str, Any]) -> str:
         return ""
@@ -326,3 +342,67 @@ def test_execute_tool_calls_blocks_second_call_through_real_seam() -> None:
     assert "query_grafana_metrics" in str(second[0].content)
     assert second[0].metadata.get("skipped_tool") == "query_grafana_metrics"
     assert second[0].metadata.get("skipped_source") == "grafana"
+
+
+def test_session_seed_blocks_sibling_on_next_gather_turn() -> None:
+    """Next SessionGoal gather must not re-hit a source marked dead earlier."""
+    session = SessionCore(store=InMemorySessionStore())
+    first = SourceCircuitBreaker()
+    hooks = first.hooks()
+    assert hooks.after_tool_call is not None
+    hooks.after_tool_call(
+        _request("grafana", tool_name="query_grafana_metrics"),
+        _error_result(f"Max retries exceeded: {_TIMEOUT_MARKER}"),
+    )
+    hooks.after_tool_call(
+        _request("kubernetes", tool_name="list_pods"),
+        _error_result("Connection refused to 127.0.0.1:50859"),
+    )
+    tools, sources = first.snapshot()
+    store_gather_unreachable(session, tools=tools, sources=sources)
+
+    seeded_tools, seeded_sources = load_gather_unreachable(session)
+    second = SourceCircuitBreaker(seed_tools=seeded_tools, seed_sources=seeded_sources)
+    again = second.hooks()
+    assert again.before_tool_call is not None
+
+    # Fresh gather turn — siblings on marked sources must skip immediately.
+    g = again.before_tool_call(_request("grafana", tool_name="query_grafana_annotations"))
+    k = again.before_tool_call(_request("kubernetes", tool_name="get_events"))
+    assert g is not None and g.blocked
+    assert k is not None and k.blocked
+    assert "session" in (g.reason or "")
+    # Unrelated source still open.
+    assert again.before_tool_call(_request("sentry", tool_name="sentry_issues")) is None
+
+
+def test_session_core_clear_drops_gather_unreachable_carry() -> None:
+    session = SessionCore(store=InMemorySessionStore())
+    store_gather_unreachable(
+        session,
+        tools={"query_grafana_metrics": "timeout"},
+        sources={"grafana": "timeout"},
+    )
+    assert load_gather_unreachable(session)[0]
+    session.clear()
+    tools, sources = load_gather_unreachable(session)
+    assert tools == {}
+    assert sources == {}
+
+
+def test_prior_source_success_keeps_later_timeout_tool_scoped() -> None:
+    breaker = SourceCircuitBreaker()
+    hooks = breaker.hooks()
+    assert hooks.after_tool_call is not None
+    assert hooks.before_tool_call is not None
+    hooks.after_tool_call(
+        _request("grafana", tool_name="query_grafana_metrics"),
+        ToolExecutionResult(content="ok", is_error=False),
+    )
+    hooks.after_tool_call(
+        _request("grafana", tool_name="query_grafana_logs"),
+        _error_result(f"Max retries exceeded: {_TIMEOUT_MARKER}"),
+    )
+    logs = hooks.before_tool_call(_request("grafana", tool_name="query_grafana_logs"))
+    assert logs is not None and logs.blocked
+    assert hooks.before_tool_call(_request("grafana", tool_name="query_grafana_alerts")) is None

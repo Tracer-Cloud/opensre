@@ -1,11 +1,10 @@
 """What Telegram needs before it is considered configured.
 
-Both credentials are required. A bot token alone verifies happily against
-``getMe``, but every delivery path — the watchdog, Hermes incident sinks, the
-send-message tool — resolves a chat id through
+Both credentials are required. A bot token alone verifies successfully, but
+the send-message tool resolves a chat id through
 :func:`integrations.telegram.credentials.load_credentials_from_env` and raises
 without one. Accepting a token-only setup produces an integration that looks
-healthy in ``opensre integrations list`` and fails at the first alert.
+healthy in ``opensre integrations list`` and fails at the first delivery.
 
 The chat id is resolved rather than trusted: users can supply the ``@username``
 of a public channel, which is far easier to obtain than a numeric id, and
@@ -18,6 +17,7 @@ from __future__ import annotations
 from config.constants.telegram import TELEGRAM_BOT_TOKEN_ENV, TELEGRAM_DEFAULT_CHAT_ID_ENV
 from integrations.setup_flow import IntegrationSetupSpec, ResolvedCredentials, SetupField
 from integrations.telegram.chat_lookup import resolve_chat_id
+from integrations.telegram.setup_guide import guide_telegram
 from integrations.telegram.verifier import verify_telegram
 
 BOT_TOKEN_FIELD = "bot_token"
@@ -40,6 +40,7 @@ def _resolve_default_chat_id(credentials: dict[str, str | None]) -> ResolvedCred
 
 TELEGRAM_SETUP = IntegrationSetupSpec(
     service="telegram",
+    guide=guide_telegram,
     fields=(
         SetupField(
             name=BOT_TOKEN_FIELD,

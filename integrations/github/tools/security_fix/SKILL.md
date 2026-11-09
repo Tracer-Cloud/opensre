@@ -1,11 +1,11 @@
 ---
-name: github-security-fix
+name: operating-github-security-fixer
 description: Use when the user asks OpenSRE to fix GitHub security and quality issues, Security and quality page findings, Code Quality standard findings, Dependabot alerts, code-scanning or CodeQL alerts, vulnerable dependencies, repo security issues, or to fix findings and optionally open a pull request.
 tools:
   - fix_github_security_alert
 ---
 
-# GitHub Security And Quality Fix
+# operating-github-security-fixer
 
 Use `fix_github_security_alert` for GitHub security remediation requests, not
 `github_cli` or `shell_run`.
@@ -33,6 +33,9 @@ Rules:
   commands, or ask a broad follow-up question.
 - Set `open_pr=true` only when the user asks to open, raise, create, or ship a
   pull request.
+- With `open_pr=true` and a named repository, omit `workspace` for an isolated
+  checkout. Local-only fixes use the configured workspace; an explicit checkout
+  must match the target repository.
 - The tool runs one alert per call. Do not loop over multiple alerts unless the
   user explicitly asks to continue after the first result.
 - Report the result from `summary`, `changed_files`, `branch_name`, and `pr_url`.

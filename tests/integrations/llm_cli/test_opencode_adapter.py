@@ -556,7 +556,7 @@ def test_opencode_registry_entry() -> None:
 
 def test_opencode_model_options_in_wizard() -> None:
     """Verify OpenCode model options are properly defined in wizard config."""
-    from surfaces.cli.wizard.config import OPENCODE_MODELS, SUPPORTED_PROVIDERS
+    from surfaces.shared.llm_setup.catalog import OPENCODE_MODELS, SUPPORTED_PROVIDERS
 
     # Find OpenCode provider
     opencode_provider = None

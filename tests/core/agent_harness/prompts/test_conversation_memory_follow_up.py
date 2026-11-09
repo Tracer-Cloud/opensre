@@ -128,8 +128,6 @@ def test_run_turn_expands_yes_before_execute_actions() -> None:
         "[Slack channel_id=C1]\nyes",
         session,
         execute_actions=execute_actions,
-        answer=lambda *_a, **_k: None,
-        gather=lambda *_a, **_k: None,
         accounting=NoopTurnAccounting(),
     )
 
@@ -147,7 +145,7 @@ def test_an_offer_from_an_earlier_turn_is_never_reachable() -> None:
     """
     # Arrange
     history = [
-        ("assistant", "Want me to: fix kubernetes and run nvm install 22 for openclaw?"),
+        ("assistant", "Want me to: fix kubernetes and run the MCP bridge setup?"),
         ("user", "give me a morning report"),
         ("assistant", "Good morning! Here is your briefing.\nDelivered to Slack."),
     ]
