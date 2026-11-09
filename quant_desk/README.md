@@ -24,7 +24,7 @@ python -m venv .venv            # ou: uv venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_desk.py              # baixa dados novos e roda tudo (~20 s)
 .venv/bin/python run_desk.py --no-fetch   # reaproveita as barras já gravadas no ArcticDB
-.venv/bin/python run_history.py           # estudo completo + robustez + outras moedas (~7 min)
+.venv/bin/python run_history.py           # tudo: estudo, robustez, moedas, universo, corretoras (~35 min)
 .venv/bin/python run_history.py --no-fetch
 .venv/bin/python run_paper.py             # paper trading: um passo (ver abaixo)
 .venv/bin/python run_paper.py --loop      # paper trading 24/7
@@ -86,8 +86,11 @@ barra vizinhos (15m → 1h → 4h → 8h → 1d).
 Saídas em `output/history/`: `HISTORY_REPORT.md`, **`ROBUSTNESS_REPORT.md`**, `summary.csv`,
 `sweeps/` (uma tabela por variante e barra), `candidates.csv`, `execution_test.csv`,
 `meta_walk_forward.csv`, `deflated_sharpe.csv`, `sensitivity.csv`, `assets.csv`,
-`portfolio.csv` e os gráficos `wf_sharpe.png`, `heatmaps_trend.png`,
-`heatmaps_mean_reversion.png`, `wf_equity.png`, `candidates.png`, `portfolio.png`.
+`portfolio.csv`, `long_short_holdout.csv`, `universe.csv`, `universe_membership.csv`,
+`universe_casualties.csv`, `venues.csv` e os gráficos `wf_sharpe.png`, `heatmaps_trend.png`,
+`heatmaps_mean_reversion.png`, `wf_equity.png`, `candidates.png`, `portfolio.png`, `holdouts.png`.
+
+Rede necessária: `data-api.binance.vision`, `www.bitstamp.net`, `api.exchange.coinbase.com`.
 
 ### Custos e execução (premissas principais)
 
@@ -106,6 +109,9 @@ amostra inclui o bear de 2018 e o crash de 2022.
 | 2 bps é otimista | 15 bps + execução na abertura seguinte em todos os números principais |
 | um ativo, amostra de alta | BTC desde 2017, os mesmos livros (sem reajuste) em 9 moedas e num portfólio igual-peso |
 | execução idealizada | teste com fechamento, abertura seguinte e uma barra de atraso |
+| long-only escolhido depois de ver os dados | cada livro long/short comparado ao seu gêmeo long/flat só em dados que a decisão nunca viu: BTC Bitstamp 2013–2017, BTC Binance 2017–2021, outras moedas e o universo sem viés |
+| viés de sobrevivência | universo point-in-time: todo mês, top 10 por volume entre **todos** os pares USDT que a Binance já listou (incl. deslistados); tickers reaproveitados (LUNA antiga → nova) são separados |
+| só Binance | os mesmos livros de BTC na Bitstamp (desde 2013) e na Coinbase (desde 2015) |
 
 ### Paper trading
 

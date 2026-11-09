@@ -19,6 +19,9 @@ from desk import (
     robustness,
     strategy,
     sweep,
+    universe,
+    universe_portfolio,
+    venues,
 )
 from desk import variants as V
 
@@ -349,3 +352,79 @@ def test_vol_matched_excess_is_zero_mean_when_sharpes_are_equal() -> None:
     bench = pd.Series(np.random.default_rng(2).normal(0.001, 0.02, 1000))
     excess = robustness.vol_matched_excess(0.5 * bench, bench)
     np.testing.assert_allclose(excess, 0.0, atol=1e-15)
+
+
+def test_coinbase_candles_are_time_low_high_open_close_volume_newest_first() -> None:
+    rows = [[7200, 9.0, 12.0, 10.0, 11.0, 5.0], [3600, 8.0, 10.5, 9.5, 10.0, 4.0]]
+    bars = venues.parse_coinbase(rows, 3600)
+    assert list(bars.index) == list(pd.to_datetime([7200, 10800], unit="s", utc=True))
+    assert bars["open"].tolist() == [9.5, 10.0]
+    assert bars["low"].tolist() == [8.0, 9.0]
+    assert bars["close"].tolist() == [10.0, 11.0]
+
+
+def test_a_trading_halt_splits_a_ticker_and_is_never_bridged() -> None:
+    idx = pd.DatetimeIndex(
+        list(pd.date_range("2022-01-01", periods=5, freq="1D", tz="UTC"))
+        + list(pd.date_range("2022-03-01", periods=5, freq="1D", tz="UTC"))
+    )
+    bars = pd.DataFrame({"close": [80.0, 60, 1, 0.01, 0.0001, 5, 6, 7, 6, 5]}, index=idx)
+    segments = universe.split_segments(bars, pd.Timedelta(days=7))
+    assert [len(s) for s in segments] == [5, 5]
+    assert segments[0]["close"].iloc[-1] == 0.0001 and segments[1]["close"].iloc[0] == 5
+    assert universe.instrument_name("LUNAUSDT", 1) == "LUNAUSDT_2"
+
+
+def test_universe_excludes_stablecoins_and_leveraged_tokens_but_not_lookalikes() -> None:
+    bases = {"BTC", "ETH", "JUP", "BTCUP", "ETHDOWN", "USDC", "SUPER"}
+    assert universe.is_risk_asset("BTC", bases)
+    assert universe.is_risk_asset("JUP", bases)  # ends in UP, but "J" is not an asset
+    assert universe.is_risk_asset("SUPER", bases)
+    assert not universe.is_risk_asset("BTCUP", bases)
+    assert not universe.is_risk_asset("ETHDOWN", bases)
+    assert not universe.is_risk_asset("USDC", bases)
+
+
+def test_monthly_universe_uses_only_the_past_and_drops_dead_coins(monkeypatch) -> None:
+    monkeypatch.setattr(config, "UNIVERSE_SIZE", 2)
+    monkeypatch.setattr(config, "UNIVERSE_START", "2021-01-01")
+    idx = pd.date_range("2020-06-01", "2021-04-30", freq="1D", tz="UTC")
+    close = pd.DataFrame(1.0, index=idx, columns=["AAA", "BBB", "CCC"])
+    qvol = pd.DataFrame({"AAA": 300.0, "BBB": 200.0, "CCC": 100.0}, index=idx)
+    close.loc[close.index > "2021-02-10", "AAA"] = np.nan  # AAA dies in February
+    qvol.loc[qvol.index > "2021-02-10", "AAA"] = np.nan
+    table = universe.membership(close, qvol)
+    month = table.groupby("month")["instrument"].apply(list)
+    assert month[pd.Timestamp("2021-02-01", tz="UTC")] == ["AAA", "BBB"]
+    assert month[pd.Timestamp("2021-03-01", tz="UTC")] == ["BBB", "CCC"]
+
+    future = qvol.copy()
+    future.loc[future.index > "2021-03-01", "CCC"] = 1e9  # CCC explodes *after* March 1st
+    again = universe.membership(close, future).groupby("month")["instrument"].apply(list)
+    assert again[pd.Timestamp("2021-03-01", tz="UTC")] == ["BBB", "CCC"]
+    assert again[pd.Timestamp("2021-04-01", tz="UTC")][0] == "CCC"
+
+
+def test_a_delisted_sleeve_exits_once_at_its_last_price_with_costs() -> None:
+    idx = pd.date_range("2022-05-01 04:00", periods=6, freq="4h", tz="UTC")
+    bars = pd.DataFrame({"open": 10.0, "close": 10.0}, index=idx)
+    r = universe_portfolio.sleeve_returns(
+        bars, pd.Series(1.0, index=idx), pd.Series(1.0, index=idx), 10
+    )
+    cost = config.COST_BPS * 1e-4 * 0.1
+    np.testing.assert_allclose(r.iloc[1], -cost)  # entry
+    np.testing.assert_allclose(r.iloc[-1], -cost)  # forced exit when the data stops
+    assert (r.iloc[2:-1] == 0).all()
+
+
+def test_short_side_contribution_is_exactly_additive() -> None:
+    bars = _bars(900)
+    ls = V.run_variant(bars, V.BY_NAME["always_in"])
+    lf = V.run_variant(bars, V.BY_NAME["long_flat"])
+    e_ls = ensemble.ensemble_exposure(ls, bars.index)
+    e_lf = ensemble.ensemble_exposure(lf, bars.index)
+    whole = execution.net_returns(bars, e_ls, 0.0, "close")
+    parts = execution.net_returns(bars, e_lf, 0.0, "close") + execution.net_returns(
+        bars, e_ls - e_lf, 0.0, "close"
+    )
+    np.testing.assert_allclose(whole, parts, atol=1e-15)

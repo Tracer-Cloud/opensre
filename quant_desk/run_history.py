@@ -1,4 +1,5 @@
-"""Multi-year study + every robustness check + multi-coin test + one paper-trading step.
+"""Multi-year study + robustness checks + other coins + survivorship-free universe + other
+venues + long-only hold-out test + one paper-trading step.
 
 .venv/bin/python run_history.py              # fetch fresh data, then everything
 .venv/bin/python run_history.py --no-fetch   # reuse the data stored in ArcticDB
@@ -13,16 +14,23 @@ import warnings
 import pandas as pd
 
 from desk import (
+    books,
     config,
+    cross_venue,
     data,
     history,
     history_chart,
     history_report,
+    long_short,
     multi_asset,
+    open_issues_report,
     paper,
     robustness,
     robustness_report,
     sweep,
+    universe,
+    universe_portfolio,
+    venues,
 )
 
 warnings.filterwarnings("ignore", category=SyntaxWarning)  # gs-quant docstring escapes
@@ -36,12 +44,16 @@ def main() -> None:
     logging.getLogger("desk.data").setLevel(logging.WARNING)
     log = logging.getLogger("desk")
 
+    lib = data.library()
     if args.no_fetch:
-        lib = data.library()
         symbols = [s for s in config.ASSETS if lib.has_symbol(multi_asset.arctic_symbol(s))]
+        venue_ok = [v for v in ("bitstamp", "coinbase") if lib.has_symbol(venues.arctic_symbol(v))]
     else:
         data.ingest_history()
         symbols = multi_asset.ingest_assets()
+        venue_ok = venues.ingest_venues()
+        universe.ingest_daily()
+        universe.build_membership()
 
     out = config.OUTPUT_DIR / "history"
     sweeps = out / "sweeps"
@@ -86,6 +98,47 @@ def main() -> None:
     port.to_csv(out / "portfolio.csv", index=False)
     history_chart.portfolio_chart(curves, out / "portfolio.png")
 
+    log.info("open issues: long-only hold-outs, survivorship-free universe, other venues")
+    members = universe.load_membership()
+    survivors = universe_portfolio.survivors_table()
+    both = pd.concat([members, survivors])
+    missing = both[~both["instrument"].map(lambda i: lib.has_symbol(universe.arctic_symbol(i)))]
+    if args.no_fetch and not missing.empty:
+        universe.ingest_members_4h(missing)
+    elif not args.no_fetch:
+        universe.ingest_members_4h(both)
+    stored = [i for i in both["instrument"].unique() if lib.has_symbol(universe.arctic_symbol(i))]
+    jobs = (
+        [(multi_asset.arctic_symbol(s), tf) for s in symbols for tf in config.ASSET_TIMEFRAMES]
+        + [(venues.arctic_symbol(v), tf) for v in venue_ok for tf in config.ASSET_TIMEFRAMES]
+        + [(universe.arctic_symbol(i), tf) for i in stored for tf in config.UNIVERSE_TIMEFRAMES]
+    )
+    log.info("exposures: %d series x %d books", len(jobs), len(books.ALL_BOOKS))
+    expos = books.run_exposures(jobs)
+
+    ls_table = long_short.compare(expos, long_short.datasets(symbols))
+    ls_table.to_csv(out / "long_short_holdout.csv", index=False)
+    verdict = long_short.verdict(ls_table)
+    univ, univ_curves = universe_portfolio.evaluate(
+        expos, {"point-in-time": members, "survivors only": survivors}
+    )
+    univ.to_csv(out / "universe.csv", index=False)
+    members.to_csv(out / "universe_membership.csv", index=False)
+    dead = universe_portfolio.casualties(expos, members)
+    dead.to_csv(out / "universe_casualties.csv", index=False)
+    cmp = cross_venue.compare(expos)
+    cmp.to_csv(out / "venues.csv", index=False)
+    corr = cross_venue.correlations(expos)
+    history_chart.holdouts_chart(univ_curves, expos, out / "holdouts.png")
+    sections = "\n".join(
+        [
+            open_issues_report.long_short_section(ls_table, verdict, univ),
+            open_issues_report.survivorship_section(univ, members, dead),
+            open_issues_report.venue_section(cmp, corr),
+            open_issues_report.still_open(ls_table, univ, cmp),
+        ]
+    )
+
     log.info("paper trading: one step for %s", [b.key for b in paper.paper_books()])
     status = paper.run_once()
 
@@ -102,6 +155,7 @@ def main() -> None:
         per,
         status,
         out / "ROBUSTNESS_REPORT.md",
+        extra_sections=sections,
     )
     log.info("wrote %s", report)
 

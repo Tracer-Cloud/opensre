@@ -270,9 +270,8 @@ benchmark is the equal-weight buy & hold portfolio sized the same way):
 
 {_md(pd.DataFrame(prow, columns=["bars", "book", "sizing", "Sharpe", "CAGR", "max DD", "years > 0", "passes"]))}
 
-Survivorship bias: coins delisted since 2018 cannot be downloaded, so the basket is made of
-survivors. That flatters buy & hold more than trend following (which exits collapsing coins),
-but it still means the coin list was chosen with hindsight.
+This 9-coin basket is made of today's survivors, so it carries survivorship bias; section 9
+rebuilds the test on a point-in-time universe that includes the coins that died.
 """
 
 
@@ -311,6 +310,7 @@ def write(
     per: pd.DataFrame,
     paper_status: str,
     path: Path,
+    extra_sections: str = "",
 ) -> Path:
     start = study.bars["15m"].index[0]
     text = f"""# Robustness report — every caveat, tested
@@ -326,12 +326,6 @@ shallower than buy & hold sized the same way. Details per sweep: `HISTORY_REPORT
 {_wf_zero_section(study)}
 {_assets_section(counts, port, per)}
 {_paper_section(paper_status)}
-## What is still not solved
-
-- Long/flat was added after seeing that shorting BTC lost money: hindsight that no backtest can
-  remove. Paper trading is the fix, and it needs months.
-- Binance only: other exchanges are blocked by this environment's network policy.
-- Survivorship in the coin list (above).
-"""
+{extra_sections}"""
     path.write_text(text)
     return path

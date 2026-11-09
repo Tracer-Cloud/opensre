@@ -249,3 +249,55 @@ def portfolio_chart(curves: dict[tuple[str, str, str], pd.Series], path: Path) -
     fig.savefig(path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     return path
+
+
+def holdouts_chart(univ_curves: dict, expos: dict, path: Path) -> Path:
+    """Left: survivorship-free universe (8h). Right: Bitstamp BTC 2013–2017 (4h), never seen."""
+    from desk import books, cross_venue  # local: only this chart needs the hold-out plumbing
+
+    fig, axes = plt.subplots(1, 2, figsize=(17, 5.6))
+    lines = (
+        ("buy & hold", "raw", MUTED, "--", "buy & hold"),
+        ("buy & hold", "vol", CATEGORICAL[0], "-", "buy & hold (vol-targeted)"),
+        ("long_flat_gap_cd", "vol", CATEGORICAL[1], "-", "long_flat_gap_cd (vol-targeted)"),
+        ("gap_cooldown", "vol", CATEGORICAL[2], "-", "gap_cooldown long/short (vol-targeted)"),
+    )
+    ax = axes[0]
+    for book, sizing, colour, ls, label in lines:
+        r = univ_curves[("point-in-time", "8h", book, sizing)]
+        ax.plot(r.index, (1 + r).cumprod(), color=colour, ls=ls, lw=1.5, label=label)
+    surv = univ_curves[("survivors only", "8h", "long_flat_gap_cd", "vol")]
+    ax.plot(
+        surv.index,
+        (1 + surv).cumprod(),
+        color=CATEGORICAL[1],
+        ls=":",
+        lw=1.3,
+        label="long_flat_gap_cd, survivors-only universe",
+    )
+    ax.set_title(
+        "Point-in-time top-10 universe incl. delisted coins, 8h, W2–W8", loc="left", fontsize=11
+    )
+
+    ax = axes[1]
+    bars, exp = expos[(cross_venue.venue_symbol("bitstamp"), "4h")]
+    mask = books.span_mask(bars.index, None, cross_venue.PRE_BINANCE_END)
+    for book, sizing, colour, ls, label in lines:
+        base = pd.Series(1.0, index=bars.index) if book == "buy & hold" else exp[book]
+        r = books.returns(bars, books.sized(bars, base, sizing, "4h"))[mask]
+        ax.plot(r.index, (1 + r).cumprod(), color=colour, ls=ls, lw=1.5, label=label)
+    ax.set_title(
+        "BTC/USD on Bitstamp 2013–2017, 4h — never seen by any decision", loc="left", fontsize=11
+    )
+    for ax in axes:
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
+        ax.yaxis.set_minor_formatter(NullFormatter())
+        ax.axhline(1.0, color=AXIS, lw=0.8)
+        ax.set_ylabel("equity (×, log)")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper left", ncols=3, fontsize=9, bbox_to_anchor=(0.04, 1.06))
+    fig.text(0.04, -0.02, config.COST_LABEL, fontsize=9, color=MUTED)
+    fig.savefig(path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return path

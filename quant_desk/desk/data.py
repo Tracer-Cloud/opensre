@@ -51,7 +51,13 @@ def library(name: str = config.ARCTIC_LIBRARY) -> adb.library.Library:
     return _library(config.ARCTIC_URI, name)
 
 
-_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000}
+_INTERVAL_MS = {
+    "1m": 60_000,
+    "15m": 900_000,
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+    "1d": 86_400_000,
+}
 
 
 def fetch_klines(

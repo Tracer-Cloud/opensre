@@ -124,3 +124,62 @@ COST_LABEL = (
     f"{COST_BPS:g} bps ({TAKER_FEE_BPS:g} fee + {SLIPPAGE_BPS:g} slippage), next-open fills"
 )
 OPTIMISTIC_LABEL = f"{OPTIMISTIC_COST_BPS:g} bps (VIP/maker), next-open fills"
+
+# --- Other venues (BTC/USD) ---------------------------------------------------------------------
+VENUE_BITSTAMP_START = "2013-01-01"  # earlier Bitstamp bars are mostly empty
+VENUE_COINBASE_START = "2015-07-21"
+VENUES = ("binance", "bitstamp", "coinbase")
+DECISION_DATA_START = "2022-01-01"  # long/flat was chosen after looking at BTC from here on
+
+# --- Point-in-time (survivorship-free) universe ------------------------------------------------
+UNIVERSE_SIZE = 10  # top-N by trailing 30-day USDT volume, re-chosen every month
+UNIVERSE_MIN_HISTORY_DAYS = 120  # a coin must have traded this long before it can be chosen
+UNIVERSE_VOLUME_DAYS = 30
+UNIVERSE_START = "2018-01-01"
+UNIVERSE_SPLIT_GAP_DAYS = 7  # a longer trading halt splits a ticker into separate instruments
+UNIVERSE_TIMEFRAMES = ("4h", "8h", "1d")
+# Bases that are not risk assets: stablecoins, fiat, gold, wrapped BTC. Leveraged tokens
+# (BTCUP, ETHDOWN, ...) are excluded by suffix.
+NON_RISK_BASES = frozenset(
+    {
+        "USDC",
+        "BUSD",
+        "TUSD",
+        "PAX",
+        "USDP",
+        "USDS",
+        "USDSB",
+        "DAI",
+        "FDUSD",
+        "UST",
+        "SUSD",
+        "USD1",
+        "AEUR",
+        "EURI",
+        "EUR",
+        "GBP",
+        "AUD",
+        "TRY",
+        "BRL",
+        "RUB",
+        "UAH",
+        "NGN",
+        "ZAR",
+        "IDRT",
+        "BIDR",
+        "BVND",
+        "PAXG",
+        "WBTC",
+        "WBETH",
+        "BFUSD",
+        "XUSD",
+        "USDE",
+        "RLUSD",
+    }
+)
+LEVERAGED_SUFFIXES = ("UP", "DOWN", "BULL", "BEAR")
+LONG_SHORT_PAIRS = (
+    ("always_in", "long_flat"),
+    ("gap_cooldown", "long_flat_gap_cd"),
+    ("flat_adx", "long_flat_adx"),
+)
