@@ -10,6 +10,8 @@ import pandas as pd
 from desk import config
 from desk.strategy import ComboRun
 
+EMA_AXES = ("fast", "slow")
+
 
 def grid() -> list[tuple[int, int]]:
     """fast 4..24 x slow 12..96 with slow >= 1.5 * fast (212 combos)."""
@@ -24,11 +26,15 @@ def grid() -> list[tuple[int, int]]:
     return combos
 
 
-def sharpe(returns: pd.Series) -> float:
-    sd = returns.std(ddof=1)
-    if not np.isfinite(sd) or sd == 0.0:
+def sharpe_np(r: np.ndarray, ann: float) -> float:
+    if len(r) < 2:
         return 0.0
-    return float(returns.mean() / sd * config.ANNUALIZATION)
+    sd = r.std(ddof=1)
+    return 0.0 if not np.isfinite(sd) or sd == 0.0 else float(r.mean() / sd * ann)
+
+
+def sharpe(returns: pd.Series, ann: float = config.ANNUALIZATION) -> float:
+    return sharpe_np(returns.to_numpy(dtype=float), ann)
 
 
 def max_drawdown(returns: pd.Series) -> float:
@@ -36,81 +42,104 @@ def max_drawdown(returns: pd.Series) -> float:
     return float((equity / equity.cummax() - 1.0).min())
 
 
+def window_slices(n_bars: int, n: int) -> list[slice]:
+    edges = np.linspace(0, n_bars, n + 1).round().astype(int)
+    return [slice(int(a), int(b)) for a, b in zip(edges[:-1], edges[1:], strict=True)]
+
+
 def window_bounds(index: pd.DatetimeIndex, n: int = config.N_WINDOWS) -> list[pd.DatetimeIndex]:
     """Split the bar index into ``n`` contiguous, equal-length windows."""
-    return [index[chunk] for chunk in np.array_split(np.arange(len(index)), n)]
+    return [index[s] for s in window_slices(len(index), n)]
 
 
-def summarise(runs: dict[tuple[int, int], ComboRun], index: pd.DatetimeIndex) -> pd.DataFrame:
+def summarise(
+    runs: dict[tuple[float, float], ComboRun],
+    index: pd.DatetimeIndex,
+    n_windows: int = config.N_WINDOWS,
+    ann: float = config.ANNUALIZATION,
+    axes: tuple[str, str] = EMA_AXES,
+) -> pd.DataFrame:
     """One row per combo: full-period stats plus return and Sharpe in each window."""
-    windows = window_bounds(index)
+    slices = window_slices(len(index), n_windows)
     rows = []
-    for (fast, slow), run in runs.items():
-        r = run.returns.reindex(index, fill_value=0.0)
+    for (a, b), run in runs.items():
+        r = run.returns.reindex(index, fill_value=0.0).to_numpy(dtype=float)
+        pos = run.positions.reindex(index, fill_value=0).to_numpy()
         row: dict[str, float | int] = {
-            "fast": fast,
-            "slow": slow,
-            "sharpe": sharpe(r),
-            "total_return": float((1.0 + r).prod() - 1.0),
-            "max_drawdown": max_drawdown(r),
+            axes[0]: a,
+            axes[1]: b,
+            "sharpe": sharpe_np(r, ann),
+            "total_return": float(np.prod(1.0 + r) - 1.0),
+            "max_drawdown": max_drawdown(pd.Series(r)),
             "trades": len(run.fills),
             "fees_paid": float(run.fills["fee"].sum()) if len(run.fills) else 0.0,
+            "exposure": float(np.mean(pos != 0)),
         }
-        for i, w in enumerate(windows, start=1):
-            rw = r.loc[w]
-            row[f"w{i}_return"] = float((1.0 + rw).prod() - 1.0)
-            row[f"w{i}_sharpe"] = sharpe(rw)
+        for i, s in enumerate(slices, start=1):
+            row[f"w{i}_return"] = float(np.prod(1.0 + r[s]) - 1.0)
+            row[f"w{i}_sharpe"] = sharpe_np(r[s], ann)
         rows.append(row)
     table = pd.DataFrame(rows).sort_values("sharpe", ascending=False).reset_index(drop=True)
     table.insert(0, "rank", np.arange(1, len(table) + 1))
-    window_cols = [f"w{i}_return" for i in range(1, len(windows) + 1)]
+    window_cols = [f"w{i}_return" for i in range(1, n_windows + 1)]
     table["positive_windows"] = (table[window_cols] > 0).sum(axis=1)
     return table
 
 
-def label_plateaus(table: pd.DataFrame) -> pd.DataFrame:
+def label_plateaus(
+    table: pd.DataFrame,
+    axes: tuple[str, str] = EMA_AXES,
+    min_positive_windows: int = config.PLATEAU_MIN_POSITIVE_WINDOWS,
+    n_windows: int = config.N_WINDOWS,
+) -> pd.DataFrame:
     """Label each combo as a *plateau* (robust) or a *peak* (isolated/fragile).
 
     A plateau needs both:
-      * its grid neighbours (+-1 step in fast and/or slow) keep a median Sharpe of at least
-        ``PLATEAU_NEIGHBOUR_RATIO`` x its own (and positive) -> the good result is not a
-        knife-edge parameter choice;
-      * it is profitable in at least ``PLATEAU_MIN_POSITIVE_WINDOWS`` of the windows -> the
-        result is not one lucky week.
-    Anything else is a peak. Combos with Sharpe <= 0 are labelled "loser".
+      * its grid neighbours (+-1 step on either axis, diagonals included) keep a median
+        Sharpe of at least ``PLATEAU_NEIGHBOUR_RATIO`` x its own (and positive) -> the good
+        result is not a knife-edge parameter choice;
+      * it is profitable in at least ``min_positive_windows`` windows -> not one lucky stretch.
+    Anything else with Sharpe > 0 is a peak; Sharpe <= 0 is a "loser".
     """
-    by_key = {(int(f), int(s)): float(sh) for f, s, sh in table[["fast", "slow", "sharpe"]].values}
-    fast_step = config.FAST_SPANS[1] - config.FAST_SPANS[0]
-    slow_step = config.SLOW_SPANS[1] - config.SLOW_SPANS[0]
+    a_vals = sorted(table[axes[0]].unique())
+    b_vals = sorted(table[axes[1]].unique())
+    a_pos = {v: i for i, v in enumerate(a_vals)}
+    b_pos = {v: i for i, v in enumerate(b_vals)}
+    by_cell = {
+        (a_pos[a], b_pos[b]): float(sh)
+        for a, b, sh in table[[axes[0], axes[1], "sharpe"]].itertuples(index=False)
+    }
     neigh_median, neigh_count, labels, reasons = [], [], [], []
-    for row in table.itertuples(index=False):
+    for a, b, sh, pw in table[[axes[0], axes[1], "sharpe", "positive_windows"]].itertuples(
+        index=False
+    ):
+        i, j = a_pos[a], b_pos[b]
         neighbours = [
-            by_key[k]
-            for df in (-fast_step, 0, fast_step)
-            for ds in (-slow_step, 0, slow_step)
-            if (df, ds) != (0, 0) and (k := (row.fast + df, row.slow + ds)) in by_key
+            by_cell[(i + di, j + dj)]
+            for di in (-1, 0, 1)
+            for dj in (-1, 0, 1)
+            if (di, dj) != (0, 0) and (i + di, j + dj) in by_cell
         ]
         med = float(np.median(neighbours)) if neighbours else float("nan")
         neigh_median.append(med)
         neigh_count.append(len(neighbours))
-        if row.sharpe <= 0:
+        if sh <= 0:
             labels.append("loser")
             reasons.append("Sharpe <= 0")
             continue
-        stable_grid = med > 0 and med >= config.PLATEAU_NEIGHBOUR_RATIO * row.sharpe
-        stable_time = row.positive_windows >= config.PLATEAU_MIN_POSITIVE_WINDOWS
+        stable_grid = med > 0 and med >= config.PLATEAU_NEIGHBOUR_RATIO * sh
+        stable_time = pw >= min_positive_windows
         if stable_grid and stable_time:
             labels.append("plateau")
             reasons.append(
-                f"neighbours hold {med / row.sharpe:.0%} of Sharpe; "
-                f"{row.positive_windows}/{config.N_WINDOWS} windows positive"
+                f"neighbours hold {med / sh:.0%} of Sharpe; {pw}/{n_windows} windows positive"
             )
         else:
             why = []
             if not stable_grid:
-                why.append(f"neighbours median Sharpe {med:.2f} vs own {row.sharpe:.2f}")
+                why.append(f"neighbours median Sharpe {med:.2f} vs own {sh:.2f}")
             if not stable_time:
-                why.append(f"only {row.positive_windows}/{config.N_WINDOWS} windows positive")
+                why.append(f"only {pw}/{n_windows} windows positive")
             labels.append("peak")
             reasons.append("; ".join(why))
     out = table.copy()
@@ -121,34 +150,61 @@ def label_plateaus(table: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _change_bars(run: ComboRun, index: pd.DatetimeIndex) -> np.ndarray:
+    """Bar numbers at which ``run`` changed position."""
+    if run.fills is not None and len(run.fills):
+        return index.searchsorted(run.fills.index)
+    pos = run.positions.reindex(index, fill_value=0).to_numpy()
+    return np.flatnonzero(np.diff(pos, prepend=0) != 0)
+
+
 @dataclass(frozen=True)
 class WalkForward:
     steps: pd.DataFrame  # one row per (train window -> test window)
     oos_returns: pd.Series  # stitched out-of-sample returns
 
 
-def walk_forward(runs: dict[tuple[int, int], ComboRun], index: pd.DatetimeIndex) -> WalkForward:
+def walk_forward(
+    runs: dict[tuple[float, float], ComboRun],
+    index: pd.DatetimeIndex,
+    n_windows: int = config.N_WINDOWS,
+    ann: float = config.ANNUALIZATION,
+    min_trades: int = 0,
+) -> WalkForward:
     """Rolling walk-forward: pick the best-Sharpe combo on window k, trade it on window k+1.
 
     Each strategy runs continuously, so the position entering window k+1 depends only on
     data up to the end of window k; the choice of combo only uses window-k returns.
+    Only combos with at least ``min_trades`` position changes inside window k are eligible,
+    so "never traded" cannot win by default (a 0.00 Sharpe beats every losing combo).
     """
-    windows = window_bounds(index)
-    full = {k: run.returns.reindex(index, fill_value=0.0) for k, run in runs.items()}
+    slices = window_slices(len(index), n_windows)
+    keys = list(runs)
+    matrix = np.column_stack(
+        [runs[k].returns.reindex(index, fill_value=0.0).to_numpy(dtype=float) for k in keys]
+    )
+    # Position changes per window, counted from each combo's fill times (no big matrix).
+    bar_of_change = [_change_bars(runs[k], index) for k in keys]
     steps, oos_parts = [], []
-    for k in range(len(windows) - 1):
-        train, test = windows[k], windows[k + 1]
-        in_sample = {key: sharpe(r.loc[train]) for key, r in full.items()}
-        best = max(in_sample, key=lambda key: in_sample[key])
-        test_r = full[best].loc[test]
+    for k in range(n_windows - 1):
+        train, test = slices[k], slices[k + 1]
+        in_sample = np.array([sharpe_np(matrix[train, c], ann) for c in range(len(keys))])
+        eligible = np.array(
+            [((b >= train.start) & (b < train.stop)).sum() >= min_trades for b in bar_of_change]
+        )
+        if eligible.any():
+            in_sample = np.where(eligible, in_sample, -np.inf)
+        best = int(np.argmax(in_sample))
+        test_r = pd.Series(matrix[test, best], index=index[test])
         oos_parts.append(test_r)
+        a, b = keys[best]
         steps.append(
             {
                 "train": f"W{k + 1}",
                 "test": f"W{k + 2}",
-                "picked": f"{best[0]}/{best[1]}",
+                "picked": f"{a:g}/{b:g}",
                 "in_sample_sharpe": in_sample[best],
-                "oos_sharpe": sharpe(test_r),
+                "oos_sharpe": sharpe_np(test_r.to_numpy(), ann),
                 "oos_return": float((1.0 + test_r).prod() - 1.0),
             }
         )
