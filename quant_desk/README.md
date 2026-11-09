@@ -31,7 +31,7 @@ python -m venv .venv            # ou: uv venv .venv
 .venv/bin/python -m pytest                # testes (dados sintéticos, sem rede)
 ```
 
-Saídas em `output/`:
+Saídas em `output/` (geradas a cada execução; não são versionadas, ficam fora do git):
 
 | arquivo | conteúdo |
 |---|---|
@@ -152,7 +152,8 @@ paper trading rodando por semanas **na sua máquina** (`run_paper.py --loop`).
 - As barras são carimbadas no **fechamento**. O cruzamento na barra *t* executa no fechamento
   de *t* e só ganha o movimento de *t* → *t+1*. Um teste injeta lookahead e verifica que ele é pego.
 - A taxa é 2 bps por unidade de mudança de posição: entrada 2 bps, virada long↔short 4 bps.
-- A estratégia fica sempre posicionada depois do primeiro cruzamento (stop-and-reverse).
+- A estratégia abre na direção das EMAs na primeira barra após o aquecimento (sem esperar um
+  cruzamento) e depois vira a cada cruzamento: está sempre long ou short (stop-and-reverse).
 - Sharpe anualizado com √(365 × 96) sobre retornos de 15m, já descontadas as taxas.
 - **Platô**: os vizinhos na grade (±1 passo) mantêm ≥ 50% do Sharpe **e** o combo é positivo
   em ≥ 3 de 4 janelas. **Pico**: qualquer outro combo com Sharpe > 0.
