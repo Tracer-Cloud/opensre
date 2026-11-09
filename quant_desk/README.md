@@ -16,7 +16,7 @@ Pipeline completo e local (sem caixa preta: código e dados ficam com você):
 
 ## Rodar
 
-Pré-requisitos: Python 3.10+ (testado em 3.13) e acesso de rede a `data-api.binance.vision`.
+Pré-requisitos: Python 3.11+ (testado em 3.13) e acesso de rede a `data-api.binance.vision`.
 
 ```bash
 cd quant_desk
