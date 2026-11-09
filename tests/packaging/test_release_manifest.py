@@ -168,6 +168,13 @@ def test_release_workflow_does_not_run_on_pull_requests() -> None:
     assert 'echo "channel=pr" >> "$GITHUB_OUTPUT"' not in workflow
     assert "opensre_pr_" not in workflow
 
+    # A fork PR from its own `main` passes the branches filter, so the CI run
+    # must also be a push to this repository and the commit must be on main.
+    prepare_if = yaml.load(workflow, Loader=yaml.BaseLoader)["jobs"]["prepare"]["if"]
+    assert "github.event.workflow_run.event == 'push'" in prepare_if
+    assert "github.event.workflow_run.head_repository.full_name == github.repository" in prepare_if
+    assert 'git merge-base --is-ancestor "$source_sha" refs/remotes/origin/main' in workflow
+
 
 def test_release_workflow_does_not_publish_python_distributions_to_pypi() -> None:
     raw = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
