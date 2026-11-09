@@ -35,10 +35,14 @@ concurrency:
 
 jobs:
   prepare:
+    # The workflow_run branches filter matches the head branch name, which a
+    # fork PR opened from its own `main` shares; only a push here may publish.
     if: >-
       github.repository == 'Tracer-Cloud/opensre' &&
       (github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success')
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-24.04
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
@@ -81,6 +85,10 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if ! git merge-base --is-ancestor "$source_sha" refs/remotes/origin/main; then
+              echo "Release source commit is not on main: ${source_sha}" >&2
+              exit 1
+            fi
             released_sha="$(git rev-parse -q --verify "refs/tags/main-build^{commit}" || true)"
             if [ -n "$released_sha" ]; then
               if ! git merge-base --is-ancestor "$released_sha" "$source_sha"; then

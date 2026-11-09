@@ -265,6 +265,8 @@ constraint-dependencies = [
     "setuptools>=84.1.0",
     # GHSA-45c3-73f7-pv4m (via pymongo).
     "dnspython>=2.9.0",
+    # GHSA-3jp2-3mrg-2vxc (via kubernetes).
+    "oauthlib>=4.0.1",
 ]
 # litellm caps filelock below 4, and GHSA-v4x8-3wr5-3wq8 (high), GHSA-9vhv-jxww-xfm5
 # and GHSA-567q-5qvw-pf92 have no 3.x fix. 4.0 changed only SoftReadWriteLock's

@@ -8,7 +8,6 @@ changes a project.
 
 from __future__ import annotations
 
-import logging
 import re
 from http import HTTPStatus
 from typing import Any
@@ -18,8 +17,6 @@ import httpx
 from infrastructure.delivery.notifications.redaction import redact_token
 from integrations.neon.config import NeonConfig
 from integrations.probes import ProbeResult
-
-logger = logging.getLogger(__name__)
 
 _MAX_PATH_SEGMENT_LEN = 128
 # Neon project/branch IDs and bucket names are lowercase slugs: letters,
