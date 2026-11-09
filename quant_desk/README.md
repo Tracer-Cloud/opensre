@@ -24,7 +24,7 @@ python -m venv .venv            # ou: uv venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_desk.py              # baixa dados novos e roda tudo (~20 s)
 .venv/bin/python run_desk.py --no-fetch   # reaproveita as barras já gravadas no ArcticDB
-.venv/bin/python run_history.py           # tudo: estudo, robustez, moedas, universo, corretoras (~35 min)
+.venv/bin/python run_history.py           # tudo: estudo, robustez, moedas, universo, corretoras (~30 min)
 .venv/bin/python run_history.py --no-fetch
 .venv/bin/python run_paper.py             # paper trading: um passo (ver abaixo)
 .venv/bin/python run_paper.py --loop      # paper trading 24/7
@@ -49,10 +49,9 @@ O ArcticDB fica em `data/arctic` (símbolos `BTCUSDT_1m`, `BTCUSDT_15m`,
 
 ## Estudo de vários anos (`run_history.py`)
 
-Barras de 15m de BTC/USDT desde jan/2022 (bear de 2022, recuperação, bull de 2024–25 e a
-lateralização recente), reamostradas para 1h, 4h, 8h e 1d e gravadas no ArcticDB. Roda em 4
-processos (~2,5 min). Cada variante é
-varrida na grade inteira em cada tamanho de barra:
+Barras de 15m de BTC/USDT desde ago/2017 (bear de 2018, bull de 2021, crash de 2022, bull de
+2024–25 e a lateralização recente), reamostradas para 1h, 4h, 8h e 1d e gravadas no ArcticDB.
+Roda em processos paralelos. Cada variante é varrida na grade inteira em cada tamanho de barra:
 
 | variante | o que faz |
 |---|---|
@@ -68,8 +67,8 @@ varrida na grade inteira em cada tamanho de barra:
 | `mr_chop` | igual, mas só quando o mercado está lateral (ER < 0,30) |
 
 Os filtros usam valores de livro e **não foram otimizados**. A história é dividida em 8 janelas;
-platô exige vizinhos com ≥ 50% do Sharpe e lucro em ≥ 6 de 8 janelas. Tudo é recalculado com
-taxa de 10 bps (taker padrão da Binance) e passa por walk-forward de 7 passos.
+platô exige vizinhos com ≥ 50% do Sharpe e lucro em ≥ 6 de 8 janelas. Tudo é recalculado a
+15 bps com execução na abertura seguinte (ver abaixo) e passa por walk-forward de 7 passos.
 
 ### Construção robusta (sem escolher parâmetro)
 
@@ -79,7 +78,7 @@ avaliada em tamanho cheio e com **alvo de volatilidade** (exposição × min(1, 
 dias), ajustada 1×/dia, sem alavancagem). O buy & hold recebe o mesmo alvo de vol, então a
 comparação é justa.
 
-Regra definida **antes** de ver os resultados: em W2–W8 a 10 bps, Sharpe maior **e** drawdown
+Regra definida **antes** de ver os resultados: em W2–W8 a 15 bps, Sharpe maior **e** drawdown
 máximo menor que o buy & hold equivalente. **Robusto** = passa em pelo menos dois tamanhos de
 barra vizinhos (15m → 1h → 4h → 8h → 1d).
 
@@ -126,7 +125,29 @@ nohup .venv/bin/python run_paper.py --loop >> output/paper/paper.log 2>&1 &   # 
 # ou cron a cada 4h:  2 */4 * * *  cd /caminho/quant_desk && .venv/bin/python run_paper.py
 ```
 
-## Regras de execução (para não se enganar)
+## Resultado da última execução completa
+
+Tudo a 15 bps com execução na abertura seguinte, fora da amostra (W2–W8). Detalhes em
+`output/history/ROBUSTNESS_REPORT.md`.
+
+- **Escolha sem hindsight** (meta walk-forward entre 80 livros): Sharpe 0,96 vs 0,81 do buy &
+  hold, drawdown −44% vs −77% — mas retorno total **menor** (+632% vs +1080%). O ganho é risco
+  menor, não mais dinheiro.
+- **Pode ser sorte?** Deflated Sharpe: 1 de 80 livros é significativo sozinho e **nenhum** tem
+  Sharpe significativamente acima do buy & hold.
+- **Long-only escolhido depois de ver os dados**: em dados que a decisão nunca viu, long/flat
+  teve Sharpe ≥ long/short em 98% de 180 comparações e o lado vendido perdeu dinheiro em 87%.
+  Exceção: Bitstamp 2014 (bear), onde vender rendeu mais, com Sharpe menor.
+- **Viés de sobrevivência**: universo point-in-time com 199 pares deslistados de volta. Todos os
+  livros long/flat passam (8h com alvo de vol: Sharpe 1,10 vs 0,52, drawdown −30% vs −61%); o
+  buy & hold igual-peso do mesmo top 10 caiu até −94%. O viés antigo era pequeno (~0,05 de Sharpe).
+- **Outras corretoras**: BTC 2013–2017 na Bitstamp, que nenhuma decisão viu: 18/18 livros passam.
+
+Continua aberto: a escolha long-only pode ser testada mas não "desvista"; moedas que nunca
+foram listadas na Binance não entram; tudo é cripto e histórico. O único teste limpo é o
+paper trading rodando por semanas **na sua máquina** (`run_paper.py --loop`).
+
+## Regras de execução da tela de 30 dias (`run_desk.py`)
 
 - As barras são carimbadas no **fechamento**. O cruzamento na barra *t* executa no fechamento
   de *t* e só ganha o movimento de *t* → *t+1*. Um teste injeta lookahead e verifica que ele é pego.
@@ -148,4 +169,5 @@ nohup .venv/bin/python run_paper.py --loop >> output/paper/paper.log 2>&1 &   # 
   após o lançamento. Confira os termos da versão que você usa antes de qualquer uso comercial.
 - gs-quant não tem função de perfil de volume; aquele cálculo é um histograma próprio
   (`desk/indicators.py`).
-- Os dados são BTC/**USDT** da Binance, usado como proxy de BTC/USD.
+- O BTC/**USDT** da Binance é o dado principal. BTC/USD da Bitstamp e da Coinbase confirmam o
+  resultado no BTC (correlação diária 0,997); as altcoins continuam só na Binance.
