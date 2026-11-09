@@ -24,7 +24,7 @@ python -m venv .venv            # ou: uv venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_desk.py              # baixa dados novos e roda tudo (~20 s)
 .venv/bin/python run_desk.py --no-fetch   # reaproveita as barras já gravadas no ArcticDB
-.venv/bin/python run_history.py           # estudo completo + robustez + outras moedas (~10 min)
+.venv/bin/python run_history.py           # estudo completo + robustez + outras moedas (~7 min)
 .venv/bin/python run_history.py --no-fetch
 .venv/bin/python run_paper.py             # paper trading: um passo (ver abaixo)
 .venv/bin/python run_paper.py --loop      # paper trading 24/7

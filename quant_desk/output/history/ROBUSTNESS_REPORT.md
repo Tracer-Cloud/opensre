@@ -80,28 +80,34 @@ would have earned by "picking the best row" without hindsight.
 
 ## 3. Deflated Sharpe Ratio — how much of it could be luck?
 
-DSR (Bailey & López de Prado, 2014) is the probability that a book's true Sharpe is above zero
-after accounting for having tried **80** books (and, strictest column, all
-**9,040** parameter sets). "vs B&H" applies it to the book's daily return *minus* the
-matching buy & hold. ≥ 0.95 = significant. Daily returns, W2–W8.
+DSR (Bailey & López de Prado, 2014) is the probability that a Sharpe ratio is real after
+accounting for how many strategies were tried: **80** books, or (strictest) all
+**9,040** parameter sets of the study. "vs B&H" tests the claim actually made — a *higher
+Sharpe* than buy & hold — on the book's daily return minus buy & hold scaled to the same
+volatility. ≥ 0.95 = significant. Daily returns, W2–W8.
 
-| bars | book | sizing | Sharpe | DSR | excess Sharpe vs B&H | DSR vs B&H | DSR vs B&H, all trials |
-|---|---|---|---|---|---|---|---|
-| 8h | long_flat | vol-target | 1.24 | 0.00 | +0.09 | **0.00** | 0.00 |
-| 8h | always_in | vol-target | 0.97 | 0.00 | +0.10 | **0.00** | 0.00 |
-| 8h | long_flat_gap_cd | vol-target | 1.26 | 0.00 | +0.08 | **0.00** | 0.00 |
-| 1d | long_flat | vol-target | 1.15 | 0.00 | +0.01 | **0.00** | 0.00 |
-| 1d | always_in | vol-target | 0.87 | 0.00 | -0.00 | **0.00** | 0.00 |
-| 1d | long_flat_adx | vol-target | 1.44 | 0.00 | -0.01 | **0.00** | 0.00 |
-| 1d | long_flat_gap_cd | vol-target | 1.13 | 0.00 | -0.04 | **0.00** | 0.00 |
-| 1d | always_in | full | 0.81 | 0.00 | -0.05 | **0.00** | 0.00 |
-| 1d | long_flat | full | 1.15 | 0.00 | -0.05 | **0.00** | 0.00 |
-| 4h | always_in | vol-target | 0.66 | 0.00 | -0.11 | **0.00** | 0.00 |
-| 4h | long_flat_gap_cd | vol-target | 1.10 | 0.00 | -0.10 | **0.00** | 0.00 |
-| 1d | long_flat_adx | full | 1.36 | 0.00 | -0.08 | **0.00** | 0.00 |
+How lucky the best of N could look is measured with the no-skill dispersion of Sharpe
+estimates (√(1/T) = 0.018 per day). The raw spread across books (0.141 per day) is
+not used: it comes from 15m books losing to costs deterministically, and with it no book could
+pass at all (an earlier version of this report did that and showed 0.00 everywhere).
 
-- Significantly positive on their own: **0/80** books.
-- Significantly better than buy & hold: **0/80** books.
+| bars | book | sizing | Sharpe | B&H Sharpe | DSR (80 books) | DSR (9,040 sets) | DSR vs B&H | DSR vs B&H (9,040 sets) |
+|---|---|---|---|---|---|---|---|---|
+| 1d | long_flat_adx | vol-target | 1.44 | 0.78 | 0.96 | 0.61 | **0.33** | 0.03 |
+| 8h | long_flat_gap_cd | vol-target | 1.26 | 0.77 | 0.88 | 0.39 | **0.27** | 0.02 |
+| 8h | long_flat | vol-target | 1.24 | 0.77 | 0.87 | 0.37 | **0.25** | 0.02 |
+| 1d | long_flat_adx | full | 1.36 | 0.81 | 0.93 | 0.51 | **0.22** | 0.02 |
+| 1d | long_flat | vol-target | 1.15 | 0.78 | 0.80 | 0.28 | **0.17** | 0.01 |
+| 8h | long_flat_adx | vol-target | 1.25 | 0.77 | 0.88 | 0.38 | **0.16** | 0.01 |
+| 1d | long_flat_gap_cd | vol-target | 1.13 | 0.78 | 0.78 | 0.26 | **0.14** | 0.01 |
+| 1d | long_flat | full | 1.15 | 0.81 | 0.80 | 0.29 | **0.13** | 0.01 |
+| 1d | long_flat_gap_cd | full | 1.14 | 0.81 | 0.79 | 0.27 | **0.11** | 0.00 |
+| 8h | long_flat_adx | full | 1.23 | 0.81 | 0.86 | 0.35 | **0.11** | 0.00 |
+| 4h | long_flat_gap_cd | vol-target | 1.10 | 0.78 | 0.76 | 0.23 | **0.10** | 0.00 |
+| 8h | long_flat_gap_cd | full | 1.12 | 0.81 | 0.77 | 0.25 | **0.09** | 0.00 |
+
+- Significantly positive on their own (80 books tried): **1/80**.
+- Sharpe significantly above buy & hold: **0/80**.
 
 ## 4. Untuned thresholds — what if the textbook values were different?
 
