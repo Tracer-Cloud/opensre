@@ -55,7 +55,7 @@ def test_otlp_evidence_queries_against_local_stack(request: pytest.FixtureReques
                 comparison.data is not None
                 and comparison.data.incident.eligible
                 and patterns.data
-                and len(patterns.data) == 4
+                and len(patterns.data) == 5
             ):
                 break
             if time.monotonic() >= deadline:
@@ -68,14 +68,25 @@ def test_otlp_evidence_queries_against_local_stack(request: pytest.FixtureReques
         assert comparison.data.baseline.measurement.total == 30
         assert comparison.data.baseline.measurement.errors == 0
         assert comparison.data.error_ratio_delta == 1
-        assert sum(pattern.span_count for pattern in patterns.data) == 4
+        assert sum(pattern.span_count for pattern in patterns.data) == 5
         messages = {pattern.message for pattern in patterns.data}
         assert {
             "Invalid token",
             "Token expired",
             "Upstream deadline exceeded",
             "getaddrinfo ENOTFOUND provider.invalid",
+            "[OMITTED:oversize]",
         } == messages
+        oversized_pattern = next(
+            pattern
+            for pattern in patterns.data
+            if pattern.example_trace_id == identifiers["oversize"]
+        )
+        assert oversized_pattern.operation == "[OMITTED:oversize]" and patterns.truncated
+        oversized_trace = reader.get_trace(identifiers["oversize"])
+        assert oversized_trace.data is not None and oversized_trace.truncated
+        assert oversized_trace.data[0].operation == "[OMITTED:oversize]"
+        assert oversized_trace.data[0].message == "[OMITTED:oversize]"
         trace = reader.get_trace(identifiers["auth"])
         assert trace.status == "ok" and trace.data is not None and len(trace.data) == 2
         assert any(span.parent_span_id == identifiers["root_span"] for span in trace.data)
@@ -85,7 +96,8 @@ def test_otlp_evidence_queries_against_local_stack(request: pytest.FixtureReques
             "included_end"
         ]
         logs = reader.get_trace_logs(identifiers["auth"], span_id=identifiers["child_span"])
-        assert logs.data is not None and len(logs.data) == 2 and logs.truncated
+        assert logs.data is not None and len(logs.data) == 3 and logs.truncated
+        assert [log.message for log in logs.data[1:]] == ["[OMITTED:oversize]"] * 2
         assert "fixture-secret" not in str(asdict(logs)) and "alice@example.com" not in str(
             asdict(logs)
         )

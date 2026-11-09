@@ -33,9 +33,11 @@ class InvestigationScope:
                 or len(window.environment) > 200
                 or not math.isfinite(window.start)
                 or not math.isfinite(window.end)
+                or window.start != math.trunc(window.start)
+                or window.end != math.trunc(window.end)
                 or not 0 < window.end - window.start <= TELEMETRY_INVESTIGATION_MAX_WINDOW_SECONDS
             ):
-                raise ValueError("Invalid investigation scope")
+                raise ValueError("Invalid investigation scope; use bounded whole-second windows")
         if (
             isinstance(self.minimum_requests, bool)
             or not isinstance(self.minimum_requests, int)

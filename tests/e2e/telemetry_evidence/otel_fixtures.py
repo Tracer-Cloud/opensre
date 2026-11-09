@@ -15,7 +15,9 @@ def _attributes(values: dict[str, str]) -> list[dict[str, Any]]:
 def payloads(scope: InvestigationScope) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     """Emit controlled symptoms, correlated logs and explicit historical delta counters."""
     window, baseline = scope.incident, scope.window("baseline")
-    identifiers = {name: uuid.uuid4().hex for name in ("auth", "timeout", "dns", "boundary")}
+    identifiers = {
+        name: uuid.uuid4().hex for name in ("auth", "timeout", "dns", "boundary", "oversize")
+    }
     root_span, child_span = uuid.uuid4().hex[:16], uuid.uuid4().hex[:16]
     identifiers.update(root_span=root_span, child_span=child_span)
     resource = {
@@ -70,6 +72,10 @@ def payloads(scope: InvestigationScope) -> tuple[dict[str, dict[str, Any]], dict
         span(identifiers["boundary"], "included_end", window.end, error=False),
         span(identifiers["boundary"], "excluded_after", window.end + 1, error=False),
     ]
+    boundary_token = "ghp_" + "A" * 36
+    oversized = span(identifiers["oversize"], "x" * 380 + " " + boundary_token, window.start + 9)
+    oversized["name"] = "x" * 180 + " " + boundary_token
+    spans.append(oversized)
     trace_resources = [
         {
             "resource": {"attributes": _attributes(resource)},
@@ -109,7 +115,13 @@ def payloads(scope: InvestigationScope) -> tuple[dict[str, dict[str, Any]], dict
                             "Validator: token expired. password=fixture-secret alice@example.com",
                             window.start + 6,
                         ),
-                        log("Details: " + "x" * 450, window.start + 7),
+                        log("x" * 380 + " " + boundary_token, window.start + 7),
+                        log(
+                            "-----BEGIN PRIVATE KEY-----\n"
+                            + "A" * 450
+                            + "\n-----END PRIVATE KEY-----",
+                            window.start + 8,
+                        ),
                         log("excluded_start", window.start),
                         log("excluded_after", window.end + 1),
                     ]

@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from clickhouse_connect.driver import Client  # type: ignore[import-untyped]
 from clickhouse_connect.driver.exceptions import ClickHouseError  # type: ignore[import-untyped]
+from urllib3.exceptions import HTTPError
 
 from config.constants.telemetry import TELEMETRY_INVESTIGATION_MAX_ITEMS
 from core.telemetry.evidence_queries import (
@@ -49,6 +50,11 @@ def _text(row: dict[str, Any], name: str) -> str:
     if not isinstance(value, str):
         raise ValueError("Malformed telemetry text")
     return sanitize(value)
+
+
+def _bounded_text(column: str, maximum: int) -> str:
+    """Project trusted SQL columns without exposing unrecognizable credential fragments."""
+    return f"if(lengthUTF8({column}) > {maximum}, '[OMITTED:oversize]', {column})"
 
 
 def _count(value: Any) -> int:
@@ -121,6 +127,7 @@ class ClickHouseInvestigationReader(ClickHouseEvidenceReader):
             )
         except (
             ClickHouseError,
+            HTTPError,
             OSError,
             ValueError,
             TypeError,
@@ -191,8 +198,8 @@ class ClickHouseInvestigationReader(ClickHouseEvidenceReader):
 
         def read() -> tuple[tuple[FailurePattern, ...], bool]:
             rows = self._query(
-                "SELECT substringUTF8(SpanName, 1, 200) AS operation, "
-                "substringUTF8(StatusMessage, 1, 400) AS message, "
+                f"SELECT {_bounded_text('SpanName', 200)} AS operation, "
+                f"{_bounded_text('StatusMessage', 400)} AS message, "
                 "hex(SHA256(concat(SpanName, '\\0', StatusMessage))) AS pattern_hash, "
                 "count() AS span_count, uniqExact(TraceId) AS trace_count, min(TraceId) AS example_trace_id, "
                 "lengthUTF8(SpanName) > 200 OR lengthUTF8(StatusMessage) > 400 AS text_truncated "
@@ -237,12 +244,12 @@ class ClickHouseInvestigationReader(ClickHouseEvidenceReader):
         def read() -> tuple[tuple[SpanEvidence, ...], bool]:
             rows = self._query(
                 "SELECT toString(Timestamp) AS timestamp, TraceId AS trace_id, SpanId AS span_id, "
-                "ParentSpanId AS parent_span_id, substringUTF8(SpanName, 1, 200) AS operation, "
-                "SpanKind AS span_kind, StatusCode AS status, substringUTF8(StatusMessage, 1, 400) AS message, "
-                "Duration / 1e6 AS duration_ms, substringUTF8(SpanAttributes['peer.service'], 1, 200) AS peer_service, "
-                "substringUTF8(SpanAttributes['server.address'], 1, 200) AS server_address, "
-                "substringUTF8(SpanAttributes['error.type'], 1, 200) AS error_type, "
-                "substringUTF8(ResourceAttributes['service.version'], 1, 200) AS service_version, "
+                f"ParentSpanId AS parent_span_id, {_bounded_text('SpanName', 200)} AS operation, "
+                f"SpanKind AS span_kind, StatusCode AS status, {_bounded_text('StatusMessage', 400)} AS message, "
+                f"Duration / 1e6 AS duration_ms, {_bounded_text("SpanAttributes['peer.service']", 200)} AS peer_service, "
+                f"{_bounded_text("SpanAttributes['server.address']", 200)} AS server_address, "
+                f"{_bounded_text("SpanAttributes['error.type']", 200)} AS error_type, "
+                f"{_bounded_text("ResourceAttributes['service.version']", 200)} AS service_version, "
                 "lengthUTF8(SpanName) > 200 OR lengthUTF8(StatusMessage) > 400 "
                 "OR lengthUTF8(SpanAttributes['peer.service']) > 200 OR lengthUTF8(SpanAttributes['server.address']) > 200 "
                 "OR lengthUTF8(SpanAttributes['error.type']) > 200 OR lengthUTF8(ResourceAttributes['service.version']) > 200 AS text_truncated "
@@ -302,8 +309,8 @@ class ClickHouseInvestigationReader(ClickHouseEvidenceReader):
         def read() -> tuple[tuple[LogEvidence, ...], bool]:
             rows = self._query(
                 "SELECT toString(Timestamp) AS timestamp, TraceId AS trace_id, SpanId AS span_id, "
-                "SeverityText AS severity, substringUTF8(Body, 1, 400) AS message, "
-                "lengthUTF8(Body) > 400 AS text_truncated FROM otel_logs"
+                f"{_bounded_text('SeverityText', 200)} AS severity, {_bounded_text('Body', 400)} AS message, "
+                "lengthUTF8(Body) > 400 OR lengthUTF8(SeverityText) > 200 AS text_truncated FROM otel_logs"
                 + self._where()
                 + "AND TraceId = {trace_id:String} AND ({span_id:String} = '' OR SpanId = {span_id:String}) "
                 "ORDER BY Timestamp, SpanId, SeverityText, Body LIMIT {fetch_limit:UInt32}",

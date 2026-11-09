@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from clickhouse_connect.driver import Client
 from clickhouse_connect.driver.exceptions import DatabaseError
+from urllib3.response import HTTPResponse
 
 from core.telemetry.evidence_queries import InvestigationScope
 from core.telemetry.models import MetricMapping, Scope
@@ -148,9 +149,18 @@ def test_cross_scope_overlapping_or_unbounded_baselines_are_rejected(baseline: S
 
 
 @pytest.mark.parametrize(
-    "start,end", [(float("nan"), 180), (150, float("inf")), (180, 150), (0, 301)]
+    "start,end",
+    [
+        (float("nan"), 180),
+        (150, float("inf")),
+        (180, 150),
+        (0, 301),
+        (150.0005, 180),
+        (150, 180.0005),
+        (150.001, 180.001),
+    ],
 )
-def test_windows_have_finite_bounded_time_ranges(start: float, end: float) -> None:
+def test_windows_have_finite_bounded_whole_second_ranges(start: float, end: float) -> None:
     with pytest.raises(ValueError, match="scope"):
         InvestigationScope(Scope("payment", "demo", start, end))
 
@@ -211,6 +221,30 @@ def test_dedicated_readonly_check_precedes_evidence_access() -> None:
     )
     assert reader.get_trace("a" * 32).status == "unavailable"
     assert client.raw_stream.call_count == 1
+
+
+@pytest.mark.parametrize("error_type", ["ProtocolError", "ReadTimeoutError"])
+def test_interrupted_http_response_is_unavailable_without_partial_evidence(error_type: str) -> None:
+    class TimedOutBody(BytesIO):
+        def read(self, _size: int | None = -1, /) -> bytes:
+            raise TimeoutError("backend details and secret")
+
+    client = _client([{"readonly": 2}])
+    interrupted = HTTPResponse(
+        body=TimedOutBody() if error_type == "ReadTimeoutError" else BytesIO(b'{"data":['),
+        headers={"Content-Length": "100"},
+        preload_content=False,
+    )
+    client.raw_stream.side_effect = [BytesIO(b'{"data":[{"readonly":2}]}'), interrupted]
+    reader = ClickHouseInvestigationReader(
+        ClickHouseEvidenceConfig(), "secret", _scope(), client=client
+    )
+    result = reader.get_trace_logs("a" * 32)
+    assert result.status == "unavailable" and result.data is None
+    assert result.error_type == error_type
+    assert "IncompleteRead" not in str(asdict(result)) and "backend details" not in str(
+        asdict(result)
+    )
 
 
 @pytest.mark.parametrize("total,errors", [(float("nan"), 1), (30, float("inf")), (30, 31)])
