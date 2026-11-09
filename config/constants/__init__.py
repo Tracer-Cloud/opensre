@@ -1516,6 +1516,15 @@ if TYPE_CHECKING:
         TELEMETRY_EVIDENCE_MAX_CHARS as TELEMETRY_EVIDENCE_MAX_CHARS,
     )
     from config.constants.telemetry import (
+        TELEMETRY_INVESTIGATION_MAX_ITEMS as TELEMETRY_INVESTIGATION_MAX_ITEMS,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_INVESTIGATION_MAX_LOOKBACK_SECONDS as TELEMETRY_INVESTIGATION_MAX_LOOKBACK_SECONDS,
+    )
+    from config.constants.telemetry import (
+        TELEMETRY_INVESTIGATION_MAX_WINDOW_SECONDS as TELEMETRY_INVESTIGATION_MAX_WINDOW_SECONDS,
+    )
+    from config.constants.telemetry import (
         TELEMETRY_MODEL_TIMEOUT_SECONDS as TELEMETRY_MODEL_TIMEOUT_SECONDS,
     )
     from config.constants.telemetry import (
