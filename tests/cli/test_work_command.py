@@ -105,7 +105,7 @@ def test_work_complete_reports_already_completed_items(
     """Completing an already-completed item must provide feedback instead of silent no-op."""
     monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
     runner = CliRunner()
-    added = runner.invoke(work_command, ["add", "Inspect database indices"])
+    added = runner.invoke(work_command, ["add", "[bold]Inspect database[/bold]"])
     assert added.exit_code == 0, added.output
     items = list_work_items(status=None)
     assert len(items) == 1
@@ -114,10 +114,12 @@ def test_work_complete_reports_already_completed_items(
     first = runner.invoke(work_command, ["complete", item.display_id])
     assert first.exit_code == 0, first.output
     assert f"Completed {item.display_id}" in first.output
+    assert "[bold]Inspect database[/bold]" in first.output
 
     second = runner.invoke(work_command, ["complete", item.display_id])
     assert second.exit_code == 0, second.output
     assert f"Already completed {item.display_id}" in second.output
+    assert "[bold]Inspect database[/bold]" in second.output
 
 
 def test_work_complete_partial_failure_reports_both_and_fails(

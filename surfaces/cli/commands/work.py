@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import (
@@ -186,14 +187,18 @@ def work_complete(selectors: tuple[str, ...]) -> None:
     """Mark one or more work items completed."""
     result = complete_work_items(selectors)
     for item in result.completed:
-        _console.print(f"[green]Completed {item.display_id}[/green] {item.title}")
+        _console.print(
+            f"[green]Completed {item.display_id}[/green] [bold]{escape(item.title)}[/bold]"
+        )
     for item in result.already_completed:
-        _console.print(f"[dim]Already completed {item.display_id}[/dim] {item.title}")
+        _console.print(
+            f"[dim]Already completed {item.display_id}[/dim] [bold]{escape(item.title)}[/bold]"
+        )
     for selector in result.not_found:
-        _console.print(f"[red]Not found:[/red] {selector}")
+        _console.print(f"[red]Not found:[/red] {escape(selector)}")
     for selector, candidates in result.ambiguous.items():
-        choices = ", ".join(f"{item.display_id}:{item.title}" for item in candidates)
-        _console.print(f"[red]Ambiguous:[/red] {selector} ({choices})")
+        choices = ", ".join(f"{item.display_id}:{escape(item.title)}" for item in candidates)
+        _console.print(f"[red]Ambiguous:[/red] {escape(selector)} ({choices})")
     if not result.completed and not result.already_completed:
         _console.print("[red]No work items were completed.[/red]")
         raise SystemExit(1)
