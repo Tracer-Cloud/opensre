@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "review_status": "pending_sre_review",
+  "examples": [
+    {
+      "case_id": "auth_rejection",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nThe selected trace trace-001/span-001 reports Invalid token. Token validation rejection is indicated for that request. Why the token is invalid and how many other failures share this mechanism remain unknown. Next check: compare affected callers and inspect token validation configuration.",
+      "author_note": "Proposed useful supported report; SRE assessment pending."
+    },
+    {
+      "case_id": "auth_rejection",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nThere is an incident. Cause unknown. Next check: investigate.",
+      "author_note": "Proposed underhelpful abstention; SRE assessment pending."
+    },
+    {
+      "case_id": "auth_rejection",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nThe latest deployment rotated the provider credential incorrectly. All 30 requests failed because of that rotation. Roll back the deployment to fix the incident.",
+      "author_note": "Proposed unsupported causal narrative; SRE assessment pending."
+    },
+    {
+      "case_id": "auth_expiry_supported",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nTrace trace-001/span-001 reports Invalid token. Its validator log says request_timestamp=170 and token_expiry_timestamp=140 and explicitly rejects the expired token. Expiry explains that selected rejection. Why refresh failed and whether other requests share this cause remain unknown. Next check: inspect token refresh and other failed requests.",
+      "author_note": "Proposed useful finding from decisive evidence; SRE assessment pending."
+    },
+    {
+      "case_id": "auth_expiry_supported",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nCause unknown. There are too few logs to say anything useful. Next check: inspect the logs.",
+      "author_note": "Proposed unnecessary abstention despite evidence; SRE assessment pending."
+    },
+    {
+      "case_id": "auth_expiry_supported",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nThe token expired because the last release disabled automatic refresh. Every payment is affected. Revert that release and the system will recover.",
+      "author_note": "Proposed partly matching symptom with unsupported underlying cause; SRE assessment pending."
+    },
+    {
+      "case_id": "no_evidence",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nNo traces or logs were supplied. The cause cannot be established from request counts alone. Next check: verify the scoped telemetry source and retrieve failed-request traces and related logs. Recovery is not established.",
+      "author_note": "Proposed useful uncertainty with targeted evidence request; SRE assessment pending."
+    },
+    {
+      "case_id": "no_evidence",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nCause unknown.",
+      "author_note": "Proposed supported but minimally useful answer; SRE assessment pending."
+    },
+    {
+      "case_id": "no_evidence",
+      "report": "Observed: 30/30 failed requests in the configured service/window.\nThe payment provider is experiencing a regional outage. Roll back the application and close the incident after the rollback succeeds.",
+      "author_note": "Proposed fabricated cause and invalid recovery advice; SRE assessment pending."
+    }
+  ]
+}

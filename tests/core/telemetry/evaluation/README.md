@@ -154,3 +154,8 @@ then compare structured-report v1 on identical evidence/models. Add the scoped
 tool-calling investigator only after those comparisons. Improvements must be
 shown per case alongside completion/abstention behavior; an agent that always
 says "unknown" must not win by avoiding every diagnosis.
+
+The stacked [calibration workflow](CALIBRATION.md) prepares neutral review
+material, compares attributed human ratings with judge scores, and produces
+failure-class scorecards from saved investigator runs. Its authored examples
+are explicitly separate from live investigator results.
