@@ -10,10 +10,13 @@ from desk import (
     config,
     data,
     ensemble,
+    execution,
     filters,
-    history,
     indicators,
     mean_reversion,
+    multi_asset,
+    paper,
+    robustness,
     strategy,
     sweep,
 )
@@ -112,12 +115,13 @@ def test_fees_are_two_bps_per_unit_of_position_change() -> None:
     assert set(run.fills["position"]) <= {-1, 1}
 
 
-def test_fee_stress_repricing_matches_a_real_run_at_that_fee() -> None:
+def test_repricing_matches_a_real_run_at_that_cost() -> None:
     bars = _bars()
     cheap = strategy.run(bars, [(4, 16)])
-    real = strategy.run(bars, [(4, 16)], fee_bps=history.STRESS_FEE_BPS)[(4, 16)]
-    repriced = history.at_fee(cheap, history.STRESS_FEE_BPS)[(4, 16)]
+    real = strategy.run(bars, [(4, 16)], fee_bps=config.COST_BPS)[(4, 16)]
+    repriced = execution.reprice(cheap, bars, config.COST_BPS, "close")[(4, 16)]
     np.testing.assert_allclose(repriced.returns, real.returns, atol=1e-15)
+    np.testing.assert_allclose(repriced.fills["fee"], real.fills["fee"])
 
 
 def test_filtered_strategy_is_flat_outside_the_trend_regime_and_respects_cooldown() -> None:
@@ -211,9 +215,7 @@ def test_exposure_accounting_matches_fill_accounting_for_whole_positions() -> No
     """The ensemble's fee-on-net-change maths equals the per-trade maths for one combo."""
     bars = _bars()
     run = strategy.run(bars, [(4, 16)])[(4, 16)]
-    via_exposure = ensemble.returns_from_exposure(
-        bars["close"], run.positions.astype(float), config.FEE_BPS
-    )
+    via_exposure = execution.net_returns(bars, run.positions, config.FEE_BPS, "close")
     np.testing.assert_allclose(via_exposure, run.returns, atol=1e-15)
 
 
@@ -250,3 +252,93 @@ def test_robust_needs_adjacent_bar_sizes_not_just_two_passes() -> None:
     verdict = robust_books(stress).set_index("book")["robust"]
     assert bool(verdict["ensemble a"]) is True
     assert bool(verdict["ensemble b"]) is False
+
+
+def test_next_open_execution_fills_after_the_signal_bar_and_pays_the_cost_then() -> None:
+    """Decision at bar 1's close fills at bar 2's open: the old position (flat) keeps the
+    close->open gap, the new one earns open->close of bar 2; one bar late shifts it again."""
+    idx = pd.date_range("2026-01-01 04:00", periods=4, freq="4h", tz="UTC")
+    bars = pd.DataFrame(
+        {"open": [100.0, 100.0, 102.0, 121.0], "close": [100.0, 100.0, 110.0, 121.0]}, index=idx
+    )
+    decided = pd.Series([0.0, 1.0, 1.0, 1.0], index=idx)
+    cost = 1e-4 * 10
+    nxt = execution.net_returns(bars, decided, 10, "next_open")
+    np.testing.assert_allclose(nxt, [0.0, 0.0, 110 / 102 - 1 - cost, 0.10])
+    late = execution.net_returns(bars, decided, 10, "next_close")
+    np.testing.assert_allclose(late, [0.0, 0.0, -cost, 0.10])
+    ideal = execution.net_returns(bars, decided, 10, "close")
+    np.testing.assert_allclose(ideal, [0.0, -cost, 0.10, 0.10])
+
+
+def test_walk_forward_cannot_pick_a_combo_that_never_traded() -> None:
+    idx = pd.date_range("2026-01-01", periods=400, freq="1h", tz="UTC")
+    rng = np.random.default_rng(1)
+    losing = pd.Series(rng.normal(-0.001, 0.01, 400), index=idx)
+    pos = pd.Series(np.arange(400) % 10 < 5, index=idx).astype(int)
+    idle = strategy.ComboRun((1, 2), pd.Series(0.0, index=idx), pd.Series(0, index=idx), None)
+    active = strategy.ComboRun((3, 4), losing, pos, None)
+    runs = {(1, 2): idle, (3, 4): active}
+    assert sweep.walk_forward(runs, idx, 4, 1.0).steps["picked"].eq("1/2").all()
+    wf = sweep.walk_forward(runs, idx, 4, 1.0, min_trades=3)
+    assert wf.steps["picked"].eq("3/4").all()
+
+
+def test_deflated_sharpe_falls_as_more_strategies_are_tried() -> None:
+    r = np.random.default_rng(7).normal(0.001, 0.01, 2000)
+    few = robustness.deflated_sharpe(r, 2, 1e-4)
+    many = robustness.deflated_sharpe(r, 5000, 1e-4)
+    assert 0 <= many < few <= 1
+
+
+def test_paper_ledger_is_append_only_and_late_decisions_never_trade_in_the_past(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(config, "ARCTIC_URI", f"lmdb://{tmp_path / 'arctic'}")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "out")
+    monkeypatch.setattr(config, "PAPER_BOOKS", (("TEST", "4h", "long_flat", "raw"),))
+    full = _bars(700, seed=5)
+    full.index = pd.date_range("2026-01-01 04:00", periods=700, freq="4h", tz="UTC")
+
+    def upto(n: int):
+        def fetch(_book, _now):
+            return full.iloc[:n]
+
+        return fetch
+
+    t1 = full.index[599].to_pydatetime() + pd.Timedelta(minutes=2)
+    paper.run_once(now=t1, fetch=upto(600))
+    lib = paper.library()
+    first = lib.read("TEST_4h_long_flat_raw").data
+    assert len(first) == 1 and not first["late"].any()
+
+    t2 = full.index[629].to_pydatetime() + pd.Timedelta(minutes=2)  # offline for 29 bars
+    paper.run_once(now=t2, fetch=upto(630))
+    ledger = lib.read("TEST_4h_long_flat_raw").data
+    pd.testing.assert_frame_equal(ledger.iloc[:1], first)
+    assert len(ledger) == 31  # 1 + the 30 bars closed while it was offline
+    assert ledger["late"].sum() == 29  # catch-up bars; only the newest one is on time
+    exposure = paper.effective_exposure(ledger, full.index[599:630])
+    assert (exposure.iloc[1:-1] == first["exposure"].iloc[0]).all()
+
+
+def test_portfolio_only_averages_coins_that_are_already_trading() -> None:
+    a_idx = pd.date_range("2025-01-01 04:00", periods=6 * 400, freq="4h", tz="UTC")
+    b_idx = a_idx[6 * 200 :]
+    a = pd.DataFrame({"open": 100.0, "close": 100.0 * 1.001 ** np.arange(len(a_idx))}, index=a_idx)
+    a["open"] = a["close"].shift(1).fillna(100.0)
+    b = pd.DataFrame({"close": 50.0, "open": 50.0}, index=b_idx)
+    zeros = dict.fromkeys(config.ASSET_BOOKS)
+    study = multi_asset.AssetStudy(
+        bars={("A", "4h"): a, ("B", "4h"): b},
+        exposures={
+            **{("A", "4h", n): pd.Series(0.0, index=a_idx) for n in zeros},
+            **{("B", "4h", n): pd.Series(0.0, index=b_idx) for n in zeros},
+        },
+    )
+    daily = multi_asset.portfolio_daily(study, "4h", "buy & hold", "raw")
+    b_starts = b_idx[0].normalize() + pd.Timedelta(days=multi_asset.WARMUP_DAYS + 1)
+    before = daily.loc[daily.index < b_starts]
+    after = daily.loc[daily.index > b_starts + pd.Timedelta(days=2)]
+    np.testing.assert_allclose(before.iloc[-1], 1.001**6 - 1, rtol=1e-9)  # A alone
+    np.testing.assert_allclose(after.iloc[0], (1.001**6 - 1) / 2, rtol=1e-9)  # A and flat B

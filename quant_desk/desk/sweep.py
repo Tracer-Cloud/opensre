@@ -26,7 +26,7 @@ def grid() -> list[tuple[int, int]]:
     return combos
 
 
-def _sharpe_np(r: np.ndarray, ann: float) -> float:
+def sharpe_np(r: np.ndarray, ann: float) -> float:
     if len(r) < 2:
         return 0.0
     sd = r.std(ddof=1)
@@ -34,7 +34,7 @@ def _sharpe_np(r: np.ndarray, ann: float) -> float:
 
 
 def sharpe(returns: pd.Series, ann: float = config.ANNUALIZATION) -> float:
-    return _sharpe_np(returns.to_numpy(dtype=float), ann)
+    return sharpe_np(returns.to_numpy(dtype=float), ann)
 
 
 def max_drawdown(returns: pd.Series) -> float:
@@ -68,7 +68,7 @@ def summarise(
         row: dict[str, float | int] = {
             axes[0]: a,
             axes[1]: b,
-            "sharpe": _sharpe_np(r, ann),
+            "sharpe": sharpe_np(r, ann),
             "total_return": float(np.prod(1.0 + r) - 1.0),
             "max_drawdown": max_drawdown(pd.Series(r)),
             "trades": len(run.fills),
@@ -77,7 +77,7 @@ def summarise(
         }
         for i, s in enumerate(slices, start=1):
             row[f"w{i}_return"] = float(np.prod(1.0 + r[s]) - 1.0)
-            row[f"w{i}_sharpe"] = _sharpe_np(r[s], ann)
+            row[f"w{i}_sharpe"] = sharpe_np(r[s], ann)
         rows.append(row)
     table = pd.DataFrame(rows).sort_values("sharpe", ascending=False).reset_index(drop=True)
     table.insert(0, "rank", np.arange(1, len(table) + 1))
@@ -150,6 +150,14 @@ def label_plateaus(
     return out
 
 
+def _change_bars(run: ComboRun, index: pd.DatetimeIndex) -> np.ndarray:
+    """Bar numbers at which ``run`` changed position."""
+    if run.fills is not None and len(run.fills):
+        return index.searchsorted(run.fills.index)
+    pos = run.positions.reindex(index, fill_value=0).to_numpy()
+    return np.flatnonzero(np.diff(pos, prepend=0) != 0)
+
+
 @dataclass(frozen=True)
 class WalkForward:
     steps: pd.DataFrame  # one row per (train window -> test window)
@@ -161,21 +169,31 @@ def walk_forward(
     index: pd.DatetimeIndex,
     n_windows: int = config.N_WINDOWS,
     ann: float = config.ANNUALIZATION,
+    min_trades: int = 0,
 ) -> WalkForward:
     """Rolling walk-forward: pick the best-Sharpe combo on window k, trade it on window k+1.
 
     Each strategy runs continuously, so the position entering window k+1 depends only on
     data up to the end of window k; the choice of combo only uses window-k returns.
+    Only combos with at least ``min_trades`` position changes inside window k are eligible,
+    so "never traded" cannot win by default (a 0.00 Sharpe beats every losing combo).
     """
     slices = window_slices(len(index), n_windows)
     keys = list(runs)
     matrix = np.column_stack(
         [runs[k].returns.reindex(index, fill_value=0.0).to_numpy(dtype=float) for k in keys]
     )
+    # Position changes per window, counted from each combo's fill times (no big matrix).
+    bar_of_change = [_change_bars(runs[k], index) for k in keys]
     steps, oos_parts = [], []
     for k in range(n_windows - 1):
         train, test = slices[k], slices[k + 1]
-        in_sample = [_sharpe_np(matrix[train, c], ann) for c in range(len(keys))]
+        in_sample = np.array([sharpe_np(matrix[train, c], ann) for c in range(len(keys))])
+        eligible = np.array(
+            [((b >= train.start) & (b < train.stop)).sum() >= min_trades for b in bar_of_change]
+        )
+        if eligible.any():
+            in_sample = np.where(eligible, in_sample, -np.inf)
         best = int(np.argmax(in_sample))
         test_r = pd.Series(matrix[test, best], index=index[test])
         oos_parts.append(test_r)
@@ -186,7 +204,7 @@ def walk_forward(
                 "test": f"W{k + 2}",
                 "picked": f"{a:g}/{b:g}",
                 "in_sample_sharpe": in_sample[best],
-                "oos_sharpe": _sharpe_np(test_r.to_numpy(), ann),
+                "oos_sharpe": sharpe_np(test_r.to_numpy(), ann),
                 "oos_return": float((1.0 + test_r).prod() - 1.0),
             }
         )

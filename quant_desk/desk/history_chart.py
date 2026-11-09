@@ -10,7 +10,7 @@ import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from matplotlib.ticker import FuncFormatter, NullFormatter
 
-from desk import config, ensemble, history
+from desk import config, history
 from desk.chart import AXIS, INK, LONG, MUTED, NEUTRAL, SHORT
 
 # Reference categorical palette, fixed order (never cycled).
@@ -29,15 +29,15 @@ SHARPE_FLOOR = 3.0  # bars below -3 are clipped and labelled with their value
 
 
 def wf_sharpe_chart(summary: pd.DataFrame, path: Path) -> Path:
-    """Out-of-sample walk-forward Sharpe per variant and timeframe, at 2 and 10 bps."""
+    """Out-of-sample walk-forward Sharpe per variant and timeframe, headline vs optimistic cost."""
     variant_names = list(dict.fromkeys(summary["variant"]))
     groups = [*variant_names, "buy & hold"]
     tfs = list(config.TIMEFRAMES)
     width = 0.8 / len(tfs)
     fig, axes = plt.subplots(1, 2, figsize=(16, 5.6), sharey=True)
     for ax, col, title in (
-        (axes[0], "wf_oos_sharpe", f"fees {config.FEE_BPS:g} bps"),
-        (axes[1], "wf_oos_sharpe_10bps", "fees 10 bps (standard taker)"),
+        (axes[0], "wf_oos_sharpe", config.COST_LABEL),
+        (axes[1], "wf_oos_sharpe_optimistic", config.OPTIMISTIC_LABEL),
     ):
         for i, tf in enumerate(tfs):
             sub = summary[summary["timeframe"] == tf].set_index("variant")
@@ -61,7 +61,7 @@ def wf_sharpe_chart(summary: pd.DataFrame, path: Path) -> Path:
         ax.set_ylim(-SHARPE_FLOOR - 0.5, 1.6)
         ax.axhline(0, color=AXIS, lw=1.0, zorder=2)
         ax.set_xticks(range(len(groups)), groups, rotation=30, ha="right")
-        ax.set_title(f"Walk-forward out-of-sample Sharpe, {title}", loc="left")
+        ax.set_title(f"Walk-forward OOS Sharpe — {title}", loc="left", fontsize=10)
         ax.grid(axis="x", visible=False)
     axes[0].set_ylabel(f"annualised Sharpe, stitched W2–W8 (axis clipped at −{SHARPE_FLOOR:g})")
     axes[1].legend(title="bar size", loc="lower right", fontsize=9, title_fontsize=9)
@@ -116,7 +116,7 @@ def heatmaps_chart(study: history.Study, family: str, path: Path) -> Path:
         if tfs.index(cell.timeframe) == len(tfs) - 1:
             ax.set_xlabel(b, fontsize=8)
     cb = fig.colorbar(im, ax=axes, fraction=0.015, pad=0.01)
-    cb.set_label(f"annualised Sharpe, fees {config.FEE_BPS:g} bps (clipped at ±{lim:.1f})")
+    cb.set_label(f"annualised Sharpe at {config.COST_BPS:g} bps (clipped at ±{lim:.1f})")
     cb.outline.set_visible(False)
     label = (
         "EMA trend variants (fast × slow)" if family == "trend" else "Bollinger fade (window × k)"
@@ -155,7 +155,7 @@ def wf_equity_chart(study: history.Study, path: Path) -> Path:
         ax.set_ylabel("equity (×, log)")
         ax.set_title(
             f"{tf} bars — walk-forward out-of-sample equity (each window traded with the combo "
-            f"that was best on the previous window), fees {config.FEE_BPS:g} bps",
+            f"that was best on the previous window), {config.COST_BPS:g} bps",
             loc="left",
             fontsize=11,
         )
@@ -174,7 +174,7 @@ CANDIDATE_BOOKS = (
 )
 
 
-def candidates_chart(study: history.Study, fee_bps: float, path: Path) -> Path:
+def candidates_chart(study: history.Study, path: Path) -> Path:
     """Out-of-sample equity of fixed, pre-chosen grid ensembles vs both buy & holds (log)."""
     tfs = list(study.bars)
     fig, axes = plt.subplots(len(tfs), 1, figsize=(16, 4.2 * len(tfs)), sharex=True)
@@ -182,15 +182,15 @@ def candidates_chart(study: history.Study, fee_bps: float, path: Path) -> Path:
         bars = study.bars[tf]
         span = history.oos_span(bars)
         by_key = {(n, s): e for n, s, e in history.books(study, tf)}
-        hold = (
-            1
-            + ensemble.returns_from_exposure(
-                bars["close"], by_key[("buy & hold", "raw")], fee_bps
-            ).loc[span]
-        ).cumprod()
+        hold_r = history.book_returns(
+            bars, by_key[("buy & hold", "raw")], config.COST_BPS, config.EXECUTION
+        )
+        hold = (1 + hold_r.loc[span]).cumprod()
         ax.plot(hold.index, hold, color=MUTED, lw=1.2, ls="--", label="buy & hold")
         for (name, sizing), colour in zip(CANDIDATE_BOOKS, CATEGORICAL, strict=False):
-            r = ensemble.returns_from_exposure(bars["close"], by_key[(name, sizing)], fee_bps)
+            r = history.book_returns(
+                bars, by_key[(name, sizing)], config.COST_BPS, config.EXECUTION
+            )
             eq = (1 + r.loc[span]).cumprod()
             label = f"{name} ({'vol-targeted' if sizing == 'vol' else 'full size'})"
             ax.plot(eq.index, eq, color=colour, lw=1.5, label=label)
@@ -200,13 +200,52 @@ def candidates_chart(study: history.Study, fee_bps: float, path: Path) -> Path:
         ax.axhline(1.0, color=AXIS, lw=0.8)
         ax.set_ylabel("equity (×, log)")
         ax.set_title(
-            f"{tf} bars — whole-grid ensembles (no parameter picked), W2–W8, fees {fee_bps:g} bps",
+            f"{tf} bars — whole-grid ensembles (no parameter picked), W2–W8, {config.COST_BPS:g} bps, next-open fills",
             loc="left",
             fontsize=11,
         )
     handles, labels = np.atleast_1d(axes)[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper left", ncols=3, fontsize=9, bbox_to_anchor=(0.06, 1.0))
     fig.subplots_adjust(top=0.95)
+    fig.savefig(path, dpi=130, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
+PORTFOLIO_LINES = (
+    ("buy & hold", "vol"),
+    ("ensemble long_flat", "vol"),
+    ("ensemble long_flat_gap_cd", "vol"),
+    ("ensemble long_flat_adx", "vol"),
+)
+
+
+def portfolio_chart(curves: dict[tuple[str, str, str], pd.Series], path: Path) -> Path:
+    """Equal-weight multi-coin portfolios (W2–W8, daily) vs the buy & hold portfolio, log."""
+    tfs = list(dict.fromkeys(tf for tf, _, _ in curves))
+    fig, axes = plt.subplots(len(tfs), 1, figsize=(16, 4.2 * len(tfs)), sharex=True)
+    for ax, tf in zip(np.atleast_1d(axes), tfs, strict=True):
+        hold = (1 + curves[(tf, "buy & hold", "raw")]).cumprod()
+        ax.plot(hold.index, hold, color=MUTED, lw=1.2, ls="--", label="buy & hold (full size)")
+        for (book, sizing), colour in zip(
+            PORTFOLIO_LINES, CATEGORICAL[: len(PORTFOLIO_LINES)], strict=True
+        ):
+            eq = (1 + curves[(tf, book, sizing)]).cumprod()
+            ax.plot(eq.index, eq, color=colour, lw=1.5, label=f"{book} (vol-targeted)")
+        ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}×"))
+        ax.yaxis.set_minor_formatter(NullFormatter())
+        ax.axhline(1.0, color=AXIS, lw=0.8)
+        ax.set_ylabel("equity (×, log)")
+        ax.set_title(
+            f"{tf} bars — equal-weight portfolio of {len(config.ASSETS)} coins, W2–W8, "
+            f"{config.COST_LABEL}",
+            loc="left",
+            fontsize=11,
+        )
+    handles, labels = np.atleast_1d(axes)[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper left", ncols=3, fontsize=9, bbox_to_anchor=(0.06, 1.0))
+    fig.subplots_adjust(top=0.93)
     fig.savefig(path, dpi=130, bbox_inches="tight")
     plt.close(fig)
     return path

@@ -49,7 +49,7 @@ PLATEAU_MIN_POSITIVE_WINDOWS = 3
 TOP_N_LABELLED = 15
 
 # --- Multi-year study (run_history.py) --------------------------------------------------------
-HISTORY_START = "2022-01-01"  # 2022 bear, 2023 recovery, 2024-25 bull, 2026 chop
+HISTORY_START = "2017-08-17"  # first Binance BTCUSDT day: 2018 bear, 2021 boom, 2022 bust, ...
 HISTORY_INTERVAL = "15m"  # fetched directly as 15m klines (same OHLCV as resampled 1m)
 SYMBOL_HISTORY = f"{SYMBOL}_15m_history"
 TIMEFRAMES = {"15m": 15, "1h": 60, "4h": 240, "8h": 480, "1d": 1440}  # label -> minutes
@@ -80,3 +80,47 @@ VOL_TARGET = 0.40  # annualised; BTC's own realised vol is usually 40-80%
 VOL_WINDOW_DAYS = 30
 VOL_MAX_WEIGHT = 1.0  # never lever up, only scale down in high volatility
 STUDY_WORKERS = 4  # processes for run_history.py
+
+# --- Costs and execution (the study's headline assumptions) ----------------------------------
+TAKER_FEE_BPS = 10.0  # Binance spot taker fee without VIP/BNB discounts
+SLIPPAGE_BPS = 5.0  # crossing the spread + impact for a small account
+COST_BPS = TAKER_FEE_BPS + SLIPPAGE_BPS  # charged per unit of position change
+OPTIMISTIC_COST_BPS = 2.0  # VIP / maker: shown only as an optimistic reference
+EXECUTION = "next_open"  # decide at bar t's close, fill at bar t+1's open
+EXECUTION_MODES = ("close", "next_open", "next_close")  # idealised / realistic / 1-bar late
+WF_MIN_TRADES = 3  # walk-forward may only pick combos that traded in the training window
+
+# --- Robustness checks -------------------------------------------------------------------------
+SENS_VOL_TARGETS = (0.30, 0.40, 0.50, 0.60)
+SENS_GAP_ATR = (0.10, 0.25, 0.50)
+SENS_COOLDOWN = (2, 4, 8)
+SENS_ADX = (20.0, 25.0, 30.0)
+SENS_TIMEFRAMES = ("4h", "8h", "1d")
+DSR_SIGNIFICANCE = 0.95
+
+# --- Other assets (same untuned books, same rules) --------------------------------------------
+# Large, liquid Binance USDT pairs listed by early 2019. Survivorship bias: coins delisted since
+# (e.g. BCHSV, XMR) cannot be downloaded any more, so the basket is biased towards survivors.
+ASSETS = (
+    "BTCUSDT",
+    "ETHUSDT",
+    "BNBUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "LTCUSDT",
+    "TRXUSDT",
+    "XLMUSDT",
+    "LINKUSDT",
+)
+ASSET_INTERVAL = "4h"
+ASSET_TIMEFRAMES = ("4h", "8h", "1d")
+ASSET_BOOKS = ("long_flat", "long_flat_gap_cd", "long_flat_adx")
+
+# --- Paper trading (pre-registered: the strongest robust BTC book before any of the above) ---
+PAPER_BOOKS = (("BTCUSDT", "4h", "long_flat_gap_cd", "vol"),)
+PAPER_LOOKBACK_DAYS = 400  # enough for the slowest EMA, ADX and 30-day vol to warm up
+PAPER_LIBRARY = "paper"
+COST_LABEL = (
+    f"{COST_BPS:g} bps ({TAKER_FEE_BPS:g} fee + {SLIPPAGE_BPS:g} slippage), next-open fills"
+)
+OPTIMISTIC_LABEL = f"{OPTIMISTIC_COST_BPS:g} bps (VIP/maker), next-open fills"

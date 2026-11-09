@@ -23,6 +23,7 @@ class Variant:
     cooldown: int = 0
     description: str = ""
     allow_short: bool = True
+    adx_level: float = config.ADX_TREND
 
     @property
     def axes(self) -> tuple[str, str]:
@@ -109,14 +110,16 @@ VARIANTS: tuple[Variant, ...] = (
 BY_NAME = {v.name: v for v in VARIANTS}
 
 
-def regime_mask(regime: Regime, inputs: pd.DataFrame) -> pd.Series:
+def regime_mask(
+    regime: Regime, inputs: pd.DataFrame, adx_level: float = config.ADX_TREND
+) -> pd.Series:
     """Boolean regime per bar; False while the filter is still warming up (NaN)."""
     if regime == "none":
         return pd.Series(True, index=inputs.index)
     if regime == "er_trend":
         return inputs["er"] >= config.ER_TREND
     if regime == "adx_trend":
-        return inputs["adx"] >= config.ADX_TREND
+        return inputs["adx"] >= adx_level
     return inputs["er"] < config.ER_TREND  # er_chop (NaN compares False -> no trading)
 
 
@@ -137,7 +140,7 @@ def run_variant(
     return strategy.run(
         bars,
         combos,
-        trend_ok=regime_mask(variant.regime, inputs),
+        trend_ok=regime_mask(variant.regime, inputs, variant.adx_level),
         atr=inputs["atr"],
         min_gap_atr=variant.min_gap_atr,
         cooldown=variant.cooldown,

@@ -233,7 +233,9 @@ def fills_frame(points: list[tuple[datetime, Fill]], refs: dict[str, str]) -> pd
 
 def returns_from_fills(close: pd.Series, fills: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     """Per-bar net return and position: previous bar's position x this bar's move - fee."""
-    position = fills["position"].astype(float).reindex(close.index).ffill().fillna(0.0).astype(int)
+    position = (
+        fills["position"].astype(float).reindex(close.index).ffill().fillna(0.0).astype("int8")
+    )
     fee = fills["fee"].reindex(close.index, fill_value=0.0)
     ret = position.shift(1, fill_value=0) * close.pct_change().fillna(0.0) - fee
     return ret.rename("ret"), position.rename("position")

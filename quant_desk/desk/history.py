@@ -1,4 +1,9 @@
-"""Multi-year study: every variant x every timeframe -> sweep, plateaus, fee stress, walk-forward."""
+"""Multi-year study: every variant x every timeframe -> sweep, plateaus, walk-forward.
+
+Every number is priced at the headline assumptions (``config.EXECUTION`` fills and
+``config.COST_BPS`` per unit of position change); ``config.OPTIMISTIC_COST_BPS`` is kept only as
+a reference column (``*_optimistic``).
+"""
 
 from __future__ import annotations
 
@@ -11,12 +16,12 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from desk import config, data, ensemble, filters, sweep, variants
-from desk.strategy import ComboRun
+from desk import config, data, ensemble, execution, filters, sweep, variants
 
 logger = logging.getLogger(__name__)
 
-STRESS_FEE_BPS = 10.0  # Binance spot taker fee without discounts
+HEAVY_MINUTES = 60  # bar sizes below 1h are memory-heavy
+HEAVY_WORKERS = 2
 
 
 @dataclass(frozen=True)
@@ -25,29 +30,14 @@ class CellResult:
 
     timeframe: str
     variant: variants.Variant
-    table: pd.DataFrame  # labelled sweep at FEE_BPS, plus sharpe/label at STRESS_FEE_BPS
+    table: pd.DataFrame  # labelled sweep at headline cost, plus *_optimistic columns
     wf: sweep.WalkForward
-    wf_stress: sweep.WalkForward
+    wf_optimistic: sweep.WalkForward
     exposure: pd.Series  # ensemble: average position over the whole grid, in [-1, 1]
 
 
 def min_positive_windows() -> int:
     return math.ceil(config.HISTORY_MIN_POSITIVE_SHARE * config.HISTORY_WINDOWS)
-
-
-def at_fee(runs: dict[tuple[float, float], ComboRun], fee_bps: float) -> dict:
-    """Re-price the same fills at another fee (fees scale linearly with the bps rate)."""
-    scale = fee_bps / config.FEE_BPS
-    out = {}
-    for key, run in runs.items():
-        fee = run.fills["fee"].reindex(run.returns.index, fill_value=0.0)
-        out[key] = ComboRun(
-            params=run.params,
-            returns=run.returns - fee * (scale - 1.0),
-            positions=run.positions,
-            fills=run.fills.assign(fee=run.fills["fee"] * scale),
-        )
-    return out
 
 
 def _label(runs: dict, index: pd.DatetimeIndex, ann: float, axes: tuple[str, str]) -> pd.DataFrame:
@@ -60,20 +50,27 @@ def run_cell(
 ) -> CellResult:
     ann = config.annualization(config.TIMEFRAMES[timeframe])
     runs = variants.run_variant(bars, variant, inputs)
-    stressed = at_fee(runs, STRESS_FEE_BPS)
-    table = _label(runs, bars.index, ann, variant.axes)
-    stress = _label(stressed, bars.index, ann, variant.axes)
-    keyed = stress.set_index(list(variant.axes))[["sharpe", "label"]]
-    keyed.columns = ["sharpe_10bps", "label_10bps"]
-    table = table.join(keyed, on=list(variant.axes))
+    exposure = ensemble.ensemble_exposure(runs, bars.index)
 
+    def priced(cost_bps: float) -> tuple[pd.DataFrame, sweep.WalkForward]:
+        repriced = execution.reprice(runs, bars, cost_bps, config.EXECUTION)
+        table = _label(repriced, bars.index, ann, variant.axes)
+        wf = sweep.walk_forward(
+            repriced, bars.index, config.HISTORY_WINDOWS, ann, config.WF_MIN_TRADES
+        )
+        return table, wf
+
+    optimistic, wf_optimistic = priced(config.OPTIMISTIC_COST_BPS)  # one repricing in memory
+    table, wf = priced(config.COST_BPS)
+    keyed = optimistic.set_index(list(variant.axes))[["sharpe", "label"]]
+    keyed.columns = ["sharpe_optimistic", "label_optimistic"]
     return CellResult(
         timeframe=timeframe,
         variant=variant,
-        table=table,
-        wf=sweep.walk_forward(runs, bars.index, config.HISTORY_WINDOWS, ann),
-        wf_stress=sweep.walk_forward(stressed, bars.index, config.HISTORY_WINDOWS, ann),
-        exposure=ensemble.ensemble_exposure(runs, bars.index),
+        table=table.join(keyed, on=list(variant.axes)),
+        wf=wf,
+        wf_optimistic=wf_optimistic,
+        exposure=exposure,
     )
 
 
@@ -105,13 +102,18 @@ def run_study(
     """Every variant x every timeframe, ``workers`` cells at a time (slowest cells first)."""
     tfs = timeframes or tuple(config.TIMEFRAMES)
     bars_by_tf = {tf: _bars_and_inputs(tf)[0] for tf in tfs}
-    jobs = [
-        (tf, v.name)
-        for tf in sorted(tfs, key=lambda t: config.TIMEFRAMES[t])
-        for v in variants.VARIANTS
-    ]
-    with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) as pool:
-        results = list(pool.map(_cell_job, *zip(*jobs, strict=True)))
+    results: list[CellResult] = []
+    for group in (
+        [t for t in tfs if config.TIMEFRAMES[t] < HEAVY_MINUTES],
+        [t for t in tfs if config.TIMEFRAMES[t] >= HEAVY_MINUTES],
+    ):
+        if not group:
+            continue
+        # Fine bars hold ~1-2 GB per worker (212 combos x 300k+ bars): use fewer processes.
+        n = min(workers, HEAVY_WORKERS) if config.TIMEFRAMES[group[0]] < HEAVY_MINUTES else workers
+        jobs = [(tf, v.name) for tf in group for v in variants.VARIANTS]
+        with ProcessPoolExecutor(n, mp_context=mp.get_context("spawn")) as pool:
+            results += list(pool.map(_cell_job, *zip(*jobs, strict=True)))
     order = {
         (tf, v.name): i for i, (tf, v) in enumerate((t, v) for t in tfs for v in variants.VARIANTS)
     }
@@ -153,13 +155,13 @@ def summary(study: Study) -> pd.DataFrame:
                 "combos": len(t),
                 "positive": int((t["sharpe"] > 0).sum()),
                 "plateaus": len(plateaus),
-                "plateaus_10bps": int((t["label_10bps"] == "plateau").sum()),
+                "plateaus_optimistic": int((t["label_optimistic"] == "plateau").sum()),
                 "best_plateau": (
                     f"{best_p[axes[0]]:g}/{best_p[axes[1]]:g}" if best_p is not None else "-"
                 ),
                 "best_plateau_sharpe": float(best_p["sharpe"]) if best_p is not None else np.nan,
-                "best_plateau_sharpe_10bps": (
-                    float(best_p["sharpe_10bps"]) if best_p is not None else np.nan
+                "best_plateau_sharpe_optimistic": (
+                    float(best_p["sharpe_optimistic"]) if best_p is not None else np.nan
                 ),
                 "median_trades_per_year": float(
                     t["trades"].median() / (len(study.bars[tf]) / (ann**2))
@@ -167,7 +169,7 @@ def summary(study: Study) -> pd.DataFrame:
                 "median_exposure": float(t["exposure"].median()),
                 "wf_oos_sharpe": sweep.sharpe(oos, ann),
                 "wf_oos_return": float((1 + oos).prod() - 1),
-                "wf_oos_sharpe_10bps": sweep.sharpe(cell.wf_stress.oos_returns, ann),
+                "wf_oos_sharpe_optimistic": sweep.sharpe(cell.wf_optimistic.oos_returns, ann),
                 "wf_steps_positive": int((cell.wf.steps["oos_return"] > 0).sum()),
                 "wf_steps": len(cell.wf.steps),
                 "wf_oos_max_drawdown": sweep.max_drawdown(oos),
@@ -214,7 +216,13 @@ def books(study: Study, timeframe: str) -> list[tuple[str, str, pd.Series]]:
     return out
 
 
-def candidates(study: Study, fee_bps: float) -> pd.DataFrame:
+def book_returns(bars: pd.DataFrame, exposure: pd.Series, cost_bps: float, mode: str) -> pd.Series:
+    return execution.net_returns(bars, exposure, cost_bps, mode)
+
+
+def candidates(
+    study: Study, cost_bps: float = config.COST_BPS, mode: str = config.EXECUTION
+) -> pd.DataFrame:
     """Grid ensembles (raw and vol-targeted) of every trend variant vs matching buy & hold.
 
     Measured on the out-of-sample span W2..W8 (same span as the walk-forward), with
@@ -225,13 +233,14 @@ def candidates(study: Study, fee_bps: float) -> pd.DataFrame:
         ann = config.annualization(config.TIMEFRAMES[tf])
         span = oos_span(bars)
         for name, sizing, exposure in books(study, tf):
-            r = ensemble.returns_from_exposure(bars["close"], exposure, fee_bps).loc[span]
+            r = book_returns(bars, exposure, cost_bps, mode).loc[span]
             rows.append(
                 {
                     "timeframe": tf,
                     "book": name,
                     "sizing": sizing,
-                    "fee_bps": fee_bps,
+                    "cost_bps": cost_bps,
+                    "execution": mode,
                     **_metrics(r, exposure.loc[span], ann, config.HISTORY_WINDOWS - 1),
                 }
             )

@@ -24,8 +24,10 @@ python -m venv .venv            # ou: uv venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python run_desk.py              # baixa dados novos e roda tudo (~20 s)
 .venv/bin/python run_desk.py --no-fetch   # reaproveita as barras já gravadas no ArcticDB
-.venv/bin/python run_history.py           # estudo de vários anos (~4 min, ver abaixo)
+.venv/bin/python run_history.py           # estudo completo + robustez + outras moedas (~10 min)
 .venv/bin/python run_history.py --no-fetch
+.venv/bin/python run_paper.py             # paper trading: um passo (ver abaixo)
+.venv/bin/python run_paper.py --loop      # paper trading 24/7
 .venv/bin/python -m pytest                # testes (dados sintéticos, sem rede)
 ```
 
@@ -81,9 +83,42 @@ Regra definida **antes** de ver os resultados: em W2–W8 a 10 bps, Sharpe maior
 máximo menor que o buy & hold equivalente. **Robusto** = passa em pelo menos dois tamanhos de
 barra vizinhos (15m → 1h → 4h → 8h → 1d).
 
-Saídas em `output/history/`: `HISTORY_REPORT.md`, `summary.csv`, `sweeps/` (uma tabela por
-variante e barra), `wf_sharpe.png`, `heatmaps_trend.png`, `heatmaps_mean_reversion.png`,
-`wf_equity.png`, `candidates.csv`, `candidates.png`.
+Saídas em `output/history/`: `HISTORY_REPORT.md`, **`ROBUSTNESS_REPORT.md`**, `summary.csv`,
+`sweeps/` (uma tabela por variante e barra), `candidates.csv`, `execution_test.csv`,
+`meta_walk_forward.csv`, `deflated_sharpe.csv`, `sensitivity.csv`, `assets.csv`,
+`portfolio.csv` e os gráficos `wf_sharpe.png`, `heatmaps_trend.png`,
+`heatmaps_mean_reversion.png`, `wf_equity.png`, `candidates.png`, `portfolio.png`.
+
+### Custos e execução (premissas principais)
+
+Toda decisão é tomada no fechamento da barra e **executada na abertura da barra seguinte**,
+pagando **15 bps** por unidade de mudança de posição (10 de taxa taker + 5 de slippage).
+2 bps (VIP/maker) aparece só como referência otimista. O BTC agora começa em ago/2017, então a
+amostra inclui o bear de 2018 e o crash de 2022.
+
+### Checagens de robustez (`ROBUSTNESS_REPORT.md`)
+
+| ressalva | o que foi feito |
+|---|---|
+| escolher a melhor linha é seleção dentro da amostra | walk-forward "meta" escolhe variante, tamanho e barra só com dados passados + Deflated Sharpe Ratio |
+| filtros com valores de livro | grade de sensibilidade (vol alvo, gap, cooldown, ADX) com o pior caso, sem escolher nada |
+| "não operar" vencendo o walk-forward | só combos com ≥ 3 trades na janela de treino podem ser escolhidos |
+| 2 bps é otimista | 15 bps + execução na abertura seguinte em todos os números principais |
+| um ativo, amostra de alta | BTC desde 2017, os mesmos livros (sem reajuste) em 9 moedas e num portfólio igual-peso |
+| execução idealizada | teste com fechamento, abertura seguinte e uma barra de atraso |
+
+### Paper trading
+
+`run_paper.py` opera no papel o livro registrado antes dos testes (`PAPER_BOOKS` em
+`desk/config.py`: BTC 4h `long_flat_gap_cd` com alvo de vol). Cada decisão é gravada num
+ledger que só aceita inclusões (ArcticDB, biblioteca `paper`) no momento em que é tomada e
+nunca é recalculada. Se o bot ficou desligado, as decisões atrasadas são marcadas `late` e só
+valem a partir de quando foram tomadas. Status em `output/paper/STATUS.md`.
+
+```bash
+nohup .venv/bin/python run_paper.py --loop >> output/paper/paper.log 2>&1 &   # 24/7
+# ou cron a cada 4h:  2 */4 * * *  cd /caminho/quant_desk && .venv/bin/python run_paper.py
+```
 
 ## Regras de execução (para não se enganar)
 
@@ -101,7 +136,7 @@ variante e barra), `wf_sharpe.png`, `heatmaps_trend.png`, `heatmaps_mean_reversi
   Olhe o walk-forward e o `REPORT.md`, que mostra quanto do resultado veio de um único dia.
 - 30 dias geram só 3 passos de walk-forward. Rode com mais histórico (`LOOKBACK_DAYS` em
   `desk/config.py`) antes de concluir qualquer coisa.
-- Faça paper trade por semanas antes de pensar em operar ao vivo.
+- Faça paper trade por semanas antes de pensar em operar ao vivo (`run_paper.py`).
 - **Licença do ArcticDB**: Business Source License 1.1. Uso em produção é permitido, exceto
   oferecer o ArcticDB como serviço de banco de dados. Cada versão vira Apache 2.0 dois anos
   após o lançamento. Confira os termos da versão que você usa antes de qualquer uso comercial.

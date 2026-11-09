@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -31,14 +32,26 @@ _KLINE_COLUMNS = (
 _NUMERIC = ("open", "high", "low", "close", "volume", "quote_volume")
 
 
-def library() -> adb.library.Library:
-    """Open (creating if needed) the local LMDB-backed ArcticDB library."""
+@functools.cache
+def _arctic(uri: str) -> adb.Arctic:
+    # LMDB must be opened once per process: a second handle on the same path sees stale data.
+    return adb.Arctic(uri)
+
+
+@functools.cache
+def _library(uri: str, name: str) -> adb.library.Library:
+    # One handle per library: each handle caches its version map, so a second handle
+    # opened earlier can miss writes made through another one.
+    return _arctic(uri).get_library(name, create_if_missing=True)
+
+
+def library(name: str = config.ARCTIC_LIBRARY) -> adb.library.Library:
+    """Open (creating if needed) a library in the local LMDB-backed ArcticDB."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    arctic = adb.Arctic(config.ARCTIC_URI)
-    return arctic.get_library(config.ARCTIC_LIBRARY, create_if_missing=True)
+    return _library(config.ARCTIC_URI, name)
 
 
-_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000}
+_INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000}
 
 
 def fetch_klines(
@@ -94,17 +107,25 @@ def fetch_1m(
     return fetch_klines(config.RAW_INTERVAL, end - timedelta(days=days), end, symbol)
 
 
-def fetch_history(start: str = config.HISTORY_START, symbol: str = config.SYMBOL) -> pd.DataFrame:
-    """15m bars from ``start`` to the last full 15m boundary, stamped at bar close."""
+def fetch_history(
+    start: str = config.HISTORY_START,
+    symbol: str = config.SYMBOL,
+    interval: str = config.HISTORY_INTERVAL,
+    end: datetime | None = None,
+) -> pd.DataFrame:
+    """Closed ``interval`` bars from ``start`` (or the listing date) to the last full bar,
+    stamped at bar close; exchange outages are forward-filled as flat bars."""
+    minutes = _INTERVAL_MS[interval] // 60_000
     begin = datetime.fromisoformat(start).replace(tzinfo=UTC)
-    raw = fetch_klines(config.HISTORY_INTERVAL, begin, _last_15m_boundary(), symbol)
+    stop = pd.Timestamp(end or datetime.now(UTC)).floor(f"{minutes}min").to_pydatetime()
+    raw = fetch_klines(interval, begin, stop, symbol)
     bars = raw.copy()
-    bars.index = bars.index + pd.Timedelta(minutes=15)
+    bars.index = bars.index + pd.Timedelta(minutes=minutes)
     bars.index.name = "bar_close"
-    full = pd.date_range(bars.index[0], bars.index[-1], freq="15min", name="bar_close")
+    full = pd.date_range(bars.index[0], bars.index[-1], freq=f"{minutes}min", name="bar_close")
     missing = len(full) - len(bars)
     if missing:
-        logger.warning("%d missing 15m bars (exchange outages) forward-filled", missing)
+        logger.warning("%s: %d missing %s bars forward-filled", symbol, missing, interval)
         bars = bars.reindex(full)
         bars["close"] = bars["close"].ffill()
         for col in ("open", "high", "low"):
