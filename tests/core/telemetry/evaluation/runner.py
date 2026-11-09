@@ -125,7 +125,8 @@ def generate(args: argparse.Namespace) -> int:
 
 
 def summarize(path: Path) -> None:
-    manifest, results = read_runs(path)
+    snapshot = read_runs(path)
+    manifest, results = snapshot.manifest, snapshot.results
     expected = len(manifest["selected_cases"]) * manifest["repeats"]
     print(
         json.dumps(
@@ -133,6 +134,7 @@ def summarize(path: Path) -> None:
                 "expected_runs": expected,
                 "recorded_runs": len(results),
                 "missing_runs": expected - len(results),
+                "incomplete_input_tail": snapshot.incomplete_tail,
                 "statuses": dict(Counter(result["status"] for result in results)),
                 "measurement_prefix_failures": sum(
                     not result["contract_checks"]["measurement_prefix_preserved"]

@@ -74,7 +74,9 @@ child revalidates the provider, but the parent model ID is not proof of the
 model actually served by a provider alias. Keep configuration fixed during a run.
 
 Results flush after each attempt. Partial synthesis fallbacks, raised errors,
-and interrupted/missing runs stay visible. Generation exits nonzero if any
+and interrupted/missing runs stay visible. Summary/scoring recover an incomplete
+final JSONL write, flag it explicitly, and still reject damaged complete rows.
+Generation exits nonzero if any
 attempt is partial or failed. Existing files are never overwritten; artifacts
 are created with owner-only file permissions where supported. Keep generated
 artifacts under ignored `work/`; do not commit real telemetry or credentials.
@@ -97,7 +99,7 @@ DEEPEVAL_TELEMETRY_OPT_OUT=1 uv run --locked \
   --project tests/core/telemetry/evaluation/judge \
   python tests/core/telemetry/evaluation/judge/score.py \
   --runs work/triage-baseline.jsonl \
-  --output work/triage-baseline-scores.json \
+  --output work/triage-baseline-scores.jsonl \
   --model gpt-4.1
 ```
 
@@ -112,9 +114,17 @@ Two custom G-Eval metrics return normalized scores and reasons:
 2. **Diagnostic usefulness:** strongest justified finding, important unknowns,
    and a targeted next check. Generic abstention loses credit on decisive cases.
 
-The scorer retains its source hash (rubric identity), DeepEval version, judge
-model selector, generation manifest, input artifact hash and per-attempt scores.
-Per-case summaries include scored `n`, mean, minimum and maximum; generation,
+The scorer reads and hashes one input snapshot before judging. Its JSONL output
+starts with its source hash (rubric identity), DeepEval version, judge model
+selector, generation manifest and input snapshot hash. Each completed or failed
+metric is flushed immediately, followed by a per-attempt result; the last line
+is a summary. Interruptions preserve completed work without requiring an
+overwrite. There is no automatic resume/merge command in this draft.
+
+Each metric has its own failure status. If one fails, the other metric's score
+and reason remain available. An unexpected judge failure also preserves metrics
+already received. Per-case summaries include scored `n`, mean, minimum and
+maximum; metric, generation,
 judge and missing-run counts are separate. Failures are never assigned perfect
 scores or hidden in an overall mean. Partial reports can receive semantic
 scores while still counting as partial execution. Nonzero exit signals incomplete
@@ -134,7 +144,8 @@ uv run python -m pytest tests/core/telemetry/test_evaluation.py
 
 Ordinary pytest checks dataset validity, family-split isolation, evaluator-label
 separation, saved-payload redaction, duplicate/tampered run rejection, failure
-accounting and repeated-score aggregation. It imports no DeepEval dependency.
+accounting, snapshot hashing/truncated-tail recovery, interruption checkpoints,
+and repeated-score aggregation. It imports no DeepEval dependency.
 The new tests join the existing default test selection; no live CI workflow is
 added. Do not put paid model calls in the default test suite.
 

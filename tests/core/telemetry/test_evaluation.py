@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -71,7 +73,7 @@ def test_generation_and_judge_failures_remain_visible() -> None:
     assert "not retained" not in json.dumps(failed)
     calls: list[str] = []
 
-    def failed_judge(result):
+    def failed_judge(result: dict[str, Any]) -> list[dict[str, Any]]:
         calls.append(result["status"])
         raise RuntimeError("judge unavailable")
 
@@ -115,14 +117,23 @@ def test_rescoring_uses_saved_evidence_and_preserves_repeat_variation(tmp_path: 
     ]
     path = tmp_path / "runs.jsonl"
     path.write_text("\n".join(json.dumps(record) for record in records))
-    manifest, retained = read_runs(path)
+    snapshot = read_runs(path)
 
-    def judge(result):
+    def judge(result: dict[str, Any]) -> list[dict[str, Any]]:
         assert result["expectations"] == case.expectations.model_dump()
         assert result["payload"] == results[0]["payload"]
-        return [{"name": "Evidence support", "score": result["repeat"] / 2, "reason": "stub"}]
+        return [
+            {
+                "name": "Evidence support",
+                "status": "completed",
+                "score": result["repeat"] / 2,
+                "reason": "stub",
+            }
+        ]
 
-    summary = aggregate(score_records(retained, judge), expected_runs=manifest["repeats"])
+    summary = aggregate(
+        score_records(snapshot.results, judge), expected_runs=snapshot.manifest["repeats"]
+    )
     assert summary["per_case_metrics"]["auth_rejection / Evidence support"] == {
         "n": 2,
         "mean": 0.75,
@@ -130,3 +141,63 @@ def test_rescoring_uses_saved_evidence_and_preserves_repeat_variation(tmp_path: 
         "max": 1,
     }
     assert summary["generation_statuses"] == {"partial": 2}
+
+
+@pytest.mark.parametrize("tail", [b'{"kind":', b'{"report":"\xf0\x9f'])
+def test_snapshot_recovers_only_incomplete_trailing_rows(tmp_path: Path, tail: bytes) -> None:
+    import hashlib
+
+    dataset, _ = load_cases(Path(__file__).with_name("evaluation") / "cases.json")
+    case = dataset.cases[0]
+    result = run_case(case, 1, _partial_investigator)
+    records = [
+        {"kind": "manifest", "schema_version": 1, "selected_cases": [case.id], "repeats": 2},
+        result,
+    ]
+    raw = ("\n".join(json.dumps(record) for record in records) + "\n").encode() + tail
+    path = tmp_path / "runs.jsonl"
+    path.write_bytes(raw)
+    snapshot = read_runs(path)
+    path.write_bytes(b"changed after snapshot")
+    assert snapshot.sha256 == hashlib.sha256(raw).hexdigest()
+    assert snapshot.incomplete_tail
+    assert snapshot.results == [result]
+    path.write_bytes(raw + b"\n")
+    with pytest.raises(ValueError, match="Damaged complete"):
+        read_runs(path)
+
+
+def test_completed_metrics_checkpoint_before_interruption() -> None:
+    dataset, _ = load_cases(Path(__file__).with_name("evaluation") / "cases.json")
+    result = run_case(dataset.cases[0], 1, _partial_investigator)
+    checkpoints: list[dict[str, Any]] = []
+
+    def interrupted_judge(_result: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        yield {"name": "Evidence support", "status": "completed", "score": 0.8, "reason": "stub"}
+        assert checkpoints[0]["score"] == 0.8
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        score_records([result], interrupted_judge, checkpoints.append)
+    assert len(checkpoints) == 1
+
+
+def test_one_failed_metric_preserves_successful_score() -> None:
+    dataset, _ = load_cases(Path(__file__).with_name("evaluation") / "cases.json")
+    result = run_case(dataset.cases[0], 1, _partial_investigator)
+
+    def judge(_result: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        yield {"name": "Evidence support", "status": "completed", "score": 0.8, "reason": "stub"}
+        yield {
+            "name": "Diagnostic usefulness",
+            "status": "error",
+            "score": None,
+            "reason": None,
+            "error_type": "TimeoutError",
+        }
+
+    scored = score_records([result], judge)
+    summary = aggregate(scored, expected_runs=1)
+    assert summary["judge_statuses"] == {"error": 1}
+    assert summary["metric_statuses"]["Diagnostic usefulness / error"] == 1
+    assert summary["per_case_metrics"]["auth_rejection / Evidence support"]["mean"] == 0.8

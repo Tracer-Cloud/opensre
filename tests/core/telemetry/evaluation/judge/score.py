@@ -7,15 +7,37 @@ import hashlib
 import json
 import os
 from collections import Counter, defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 from statistics import mean
 from typing import Any
 
 
-def read_runs(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+@dataclass(frozen=True)
+class RunSnapshot:
+    manifest: dict[str, Any]
+    results: list[dict[str, Any]]
+    sha256: str
+    incomplete_tail: bool
+
+
+def read_runs(path: Path) -> RunSnapshot:
+    """Parse and hash one snapshot; recover only an incomplete final write."""
+    raw = path.read_bytes()
+    lines = raw.splitlines(keepends=True)
+    records = []
+    incomplete_tail = False
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            if index != len(lines) - 1 or line.endswith((b"\n", b"\r")) or not records:
+                raise ValueError("Damaged complete JSONL row") from None
+            incomplete_tail = True
     if not records or records[0].get("kind") != "manifest" or records[0].get("schema_version") != 1:
         raise ValueError("Expected a version-1 generation manifest")
     manifest, *results = records
@@ -32,17 +54,19 @@ def read_runs(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         ):
             raise ValueError("Invalid or duplicate generation result")
         seen.add(identity)
-    return manifest, results
+    return RunSnapshot(manifest, results, hashlib.sha256(raw).hexdigest(), incomplete_tail)
 
 
 def score_records(
     results: list[dict[str, Any]],
-    judge: Callable[[dict[str, Any]], list[dict[str, Any]]],
+    judge: Callable[[dict[str, Any]], Iterable[dict[str, Any]]],
+    checkpoint: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Retain generation and judging failures separately from semantic scores."""
     scored = []
     for result in results:
-        record = {
+        record: dict[str, Any] = {
+            "kind": "result",
             "case_id": result["case_id"],
             "repeat": result["repeat"],
             "generation_status": result["status"],
@@ -53,16 +77,32 @@ def score_records(
         }
         if result["status"] != "error":
             try:
-                record["metrics"] = judge(result)
-                record["judge_status"] = "completed"
+                for metric in judge(result):
+                    record["metrics"].append(metric)
+                    if checkpoint is not None:
+                        checkpoint(
+                            {
+                                "kind": "metric",
+                                "case_id": result["case_id"],
+                                "repeat": result["repeat"],
+                                **metric,
+                            }
+                        )
+                record["judge_status"] = (
+                    "error"
+                    if any(metric["status"] == "error" for metric in record["metrics"])
+                    else "completed"
+                )
             except Exception as exc:
                 record["judge_status"] = "error"
                 record["judge_error_type"] = type(exc).__name__
         scored.append(record)
+        if checkpoint is not None:
+            checkpoint(record)
     return scored
 
 
-def build_judge(model: str) -> Callable[[dict[str, Any]], list[dict[str, Any]]]:
+def build_judge(model: str) -> Callable[[dict[str, Any]], Iterator[dict[str, Any]]]:
     from deepeval.metrics import GEval
     from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
@@ -99,18 +139,33 @@ def build_judge(model: str) -> Callable[[dict[str, Any]], list[dict[str, Any]]]:
         ),
     ]
 
-    def judge(result: dict[str, Any]) -> list[dict[str, Any]]:
+    def judge(result: dict[str, Any]) -> Iterator[dict[str, Any]]:
         case = LLMTestCase(
             input="Investigate the supplied telemetry incident within the available evidence.",
             actual_output=result["report"],
             expected_output=json.dumps(result["expectations"]),
             context=[result["payload"]],
         )
-        scores = []
         for metric in metrics:
-            metric.measure(case)
-            scores.append({"name": metric.name, "score": metric.score, "reason": metric.reason})
-        return scores
+            try:
+                metric.measure(case)
+                if metric.score is None or not 0 <= metric.score <= 1:
+                    raise ValueError("Judge did not return a normalized score")
+                yield {
+                    "name": metric.name,
+                    "status": "completed",
+                    "score": metric.score,
+                    "reason": metric.reason,
+                    "error_type": None,
+                }
+            except Exception as exc:
+                yield {
+                    "name": metric.name,
+                    "status": "error",
+                    "score": None,
+                    "reason": None,
+                    "error_type": type(exc).__name__,
+                }
 
     return judge
 
@@ -119,13 +174,21 @@ def aggregate(scored: list[dict[str, Any]], expected_runs: int) -> dict[str, Any
     groups: dict[str, list[float]] = defaultdict(list)
     for record in scored:
         for metric in record["metrics"]:
-            groups[f"{record['case_id']} / {metric['name']}"].append(metric["score"])
+            if metric["status"] == "completed":
+                groups[f"{record['case_id']} / {metric['name']}"].append(metric["score"])
     return {
         "expected_runs": expected_runs,
         "recorded_runs": len(scored),
         "missing_runs": expected_runs - len(scored),
         "generation_statuses": dict(Counter(record["generation_status"] for record in scored)),
         "judge_statuses": dict(Counter(record["judge_status"] for record in scored)),
+        "metric_statuses": dict(
+            Counter(
+                f"{metric['name']} / {metric['status']}"
+                for record in scored
+                for metric in record["metrics"]
+            )
+        ),
         "measurement_prefix_failures": sum(
             not record["contract_checks"]["measurement_prefix_preserved"] for record in scored
         ),
@@ -139,28 +202,37 @@ def aggregate(scored: list[dict[str, Any]], expected_runs: int) -> dict[str, Any
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True, help="New score JSON file")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="New checkpointed score JSONL file"
+    )
     parser.add_argument("--model", required=True, help="Explicit DeepEval judge model identifier")
     args = parser.parse_args()
-    manifest, results = read_runs(args.runs)
+    snapshot = read_runs(args.runs)
+    manifest = snapshot.manifest
     judge = build_judge(args.model)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as output:
-        scored = score_records(results, judge)
-        summary = aggregate(scored, len(manifest["selected_cases"]) * manifest["repeats"])
+
+        def checkpoint(record: dict[str, Any]) -> None:
+            output.write(json.dumps(record) + "\n")
+            output.flush()
+
         artifact = {
+            "kind": "score_manifest",
             "schema_version": 1,
             "generation_manifest": manifest,
-            "runs_sha256": hashlib.sha256(args.runs.read_bytes()).hexdigest(),
+            "runs_sha256": snapshot.sha256,
+            "incomplete_input_tail": snapshot.incomplete_tail,
             "judge_model": args.model,
             "deepeval_version": version("deepeval"),
             "scorer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-            "summary": summary,
-            "results": scored,
         }
-        json.dump(artifact, output, indent=2)
-        output.write("\n")
+        checkpoint(artifact)
+        scored = score_records(snapshot.results, judge, checkpoint)
+        summary = aggregate(scored, len(manifest["selected_cases"]) * manifest["repeats"])
+        summary["incomplete_input_tail"] = snapshot.incomplete_tail
+        checkpoint({"kind": "summary", **summary})
     print(json.dumps(summary, indent=2))
     return int(
         summary["missing_runs"] > 0
