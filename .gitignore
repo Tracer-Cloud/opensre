@@ -199,3 +199,6 @@ infrastructure/deployment_multi_tenant/
 
 # Dev scratch output (e.g. dev/cicd_epoch_observer.py)
 .tmp/
+
+# Local investigation evaluation runs and scratch assets
+/work/
