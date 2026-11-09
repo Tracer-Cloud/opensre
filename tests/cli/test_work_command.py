@@ -84,3 +84,53 @@ def test_work_add_rejects_blank_title_as_usage_error(
     assert result.exception is None or isinstance(result.exception, SystemExit)
     assert "title must not be blank" in result.output
     assert list_work_items(status=None) == []
+
+
+def test_work_complete_reports_not_found_selectors_before_exiting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Missing selectors must be named before the failure summary and exit."""
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+
+    result = CliRunner().invoke(work_command, ["complete", "missing-task-123"])
+
+    assert result.exit_code == 1, result.output
+    assert "Not found: missing-task-123" in result.output
+    assert "No work items were completed." in result.output
+
+
+def test_work_complete_reports_already_completed_items(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Completing an already-completed item must provide feedback instead of silent no-op."""
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+    runner = CliRunner()
+    added = runner.invoke(work_command, ["add", "Inspect database indices"])
+    assert added.exit_code == 0, added.output
+    items = list_work_items(status=None)
+    assert len(items) == 1
+    item = items[0]
+
+    first = runner.invoke(work_command, ["complete", item.display_id])
+    assert first.exit_code == 0, first.output
+    assert f"Completed {item.display_id}" in first.output
+
+    second = runner.invoke(work_command, ["complete", item.display_id])
+    assert second.exit_code == 0, second.output
+    assert f"Already completed {item.display_id}" in second.output
+
+
+def test_work_complete_partial_failure_reports_both_and_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A batch with both valid and missing selectors reports both and exits non-zero."""
+    monkeypatch.setenv(OPENSRE_WORK_ITEMS_DIR_ENV, str(tmp_path / "work_items"))
+    runner = CliRunner()
+    runner.invoke(work_command, ["add", "Valid batch item"])
+    item = list_work_items(status=None)[0]
+
+    result = runner.invoke(work_command, ["complete", item.display_id, "phantom-task-999"])
+
+    assert result.exit_code == 1, result.output
+    assert f"Completed {item.display_id}" in result.output
+    assert "Not found: phantom-task-999" in result.output

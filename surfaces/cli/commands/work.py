@@ -185,16 +185,20 @@ def work_add(
 def work_complete(selectors: tuple[str, ...]) -> None:
     """Mark one or more work items completed."""
     result = complete_work_items(selectors)
-    if not result.completed and (result.not_found or result.ambiguous):
-        _console.print("[red]No work items were completed.[/red]")
-        raise SystemExit(1)
     for item in result.completed:
         _console.print(f"[green]Completed {item.display_id}[/green] {item.title}")
+    for item in result.already_completed:
+        _console.print(f"[dim]Already completed {item.display_id}[/dim] {item.title}")
     for selector in result.not_found:
         _console.print(f"[red]Not found:[/red] {selector}")
     for selector, candidates in result.ambiguous.items():
         choices = ", ".join(f"{item.display_id}:{item.title}" for item in candidates)
         _console.print(f"[red]Ambiguous:[/red] {selector} ({choices})")
+    if not result.completed and not result.already_completed:
+        _console.print("[red]No work items were completed.[/red]")
+        raise SystemExit(1)
+    if result.not_found or result.ambiguous:
+        raise SystemExit(1)
 
 
 @work_command.command(name="next")
