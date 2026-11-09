@@ -127,8 +127,10 @@ nohup .venv/bin/python run_paper.py --loop >> output/paper/paper.log 2>&1 &   # 
 
 ## Resultado da última execução completa
 
-Tudo a 15 bps com execução na abertura seguinte, fora da amostra (W2–W8). Detalhes em
-`output/history/ROBUSTNESS_REPORT.md`.
+Tudo a 15 bps com execução na abertura seguinte, fora da amostra (W2–W8). Conferido de novo
+depois da correção da entrada do `always_in` (agora abre logo após o aquecimento): nenhum número
+abaixo mudou; só algumas linhas `always_in` das tabelas long/short do relatório (barras diárias).
+Detalhes em `output/history/ROBUSTNESS_REPORT.md`, gerado por `run_history.py`.
 
 - **Escolha sem hindsight** (meta walk-forward entre 80 livros): Sharpe 0,96 vs 0,81 do buy &
   hold, drawdown −44% vs −77% — mas retorno total **menor** (+632% vs +1080%). O ganho é risco
@@ -140,7 +142,7 @@ Tudo a 15 bps com execução na abertura seguinte, fora da amostra (W2–W8). De
   Exceção: Bitstamp 2014 (bear), onde vender rendeu mais, com Sharpe menor.
 - **Viés de sobrevivência**: universo point-in-time com 199 pares deslistados de volta. Todos os
   livros long/flat passam (8h com alvo de vol: Sharpe 1,10 vs 0,52, drawdown −30% vs −61%); o
-  buy & hold igual-peso do mesmo top 10 caiu até −94%. O viés antigo era pequeno (~0,05 de Sharpe).
+  buy & hold igual-peso do mesmo top 10 caiu até −95%. O viés antigo era pequeno (~0,05 de Sharpe).
 - **Outras corretoras**: BTC 2013–2017 na Bitstamp, que nenhuma decisão viu: 18/18 livros passam.
 
 Continua aberto: a escolha long-only pode ser testada mas não "desvista"; moedas que nunca
