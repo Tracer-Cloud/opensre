@@ -111,6 +111,8 @@ The scorecard rejects authored calibration packs. It validates that score result
 match their metric checkpoints and exact generation snapshot, then groups
 results by failure class. It exposes generation failures, partial results,
 missing attempts, unfinished judging, per-case metric variation and durations.
+Generation contract failures are counted from every saved investigator result,
+independently of whether judging ever reaches that attempt.
 An interrupted score file retains completed metric checkpoints; absent metrics
 remain missing rather than becoming zero or perfect scores. Stored summary
 statistics are ignored and recomputed. Fixture review counts refer to unique

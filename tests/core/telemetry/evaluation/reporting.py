@@ -151,15 +151,22 @@ def scorecard(runs: RunSnapshot, scores: ScoreSnapshot) -> dict[str, Any]:
         rows = [row for row in runs.results if row["category"] == category]
         identities = {(row["case_id"], row["repeat"]) for row in rows}
         judged = [row for row in scores.results if (row["case_id"], row["repeat"]) in identities]
+        judgments = aggregate(judged, len(rows))
+        # Generation facts use every recorded attempt, including those never judged.
+        judgments.pop("generation_statuses")
+        judgments.pop("measurement_prefix_failures")
         groups[category] = {
             "recorded_runs": len(rows),
             "case_ids": sorted({row["case_id"] for row in rows}),
             "generation_statuses": dict(Counter(row["status"] for row in rows)),
+            "measurement_prefix_failures": sum(
+                not row["contract_checks"]["measurement_prefix_preserved"] for row in rows
+            ),
             "duration_seconds": {
                 "mean": mean(row["duration_seconds"] for row in rows),
                 "max": max(row["duration_seconds"] for row in rows),
             },
-            "judgments": aggregate(judged, len(rows)),
+            "judgments": judgments,
         }
     expected = len(runs.manifest["selected_cases"]) * runs.manifest["repeats"]
     fixture_statuses = {row["case_id"]: row["review_status"] for row in runs.results}
@@ -181,6 +188,9 @@ def scorecard(runs: RunSnapshot, scores: ScoreSnapshot) -> dict[str, Any]:
         "scoring_finished": scores.finished,
         "fixture_review_statuses": dict(Counter(fixture_statuses.values())),
         "generation_statuses": dict(Counter(row["status"] for row in runs.results)),
+        "measurement_prefix_failures": sum(
+            not row["contract_checks"]["measurement_prefix_preserved"] for row in runs.results
+        ),
         "judge_statuses": dict(Counter(row["judge_status"] for row in scores.results)),
         "by_failure_class": groups,
         "limits": [

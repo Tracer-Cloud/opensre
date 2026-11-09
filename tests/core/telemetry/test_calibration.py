@@ -154,6 +154,7 @@ def test_scorecard_retains_interrupted_metric_and_generation_failures(tmp_path: 
     records[0].pop("purpose")
     records[0]["report_origin"] = "offline_test_fixture"
     records[1]["status"] = "partial"
+    records[2]["contract_checks"]["measurement_prefix_preserved"] = False
     generation_path.write_text("\n".join(json.dumps(row) for row in records) + "\n")
     scores_path = _fake_scores(pack)
     events = [json.loads(line) for line in scores_path.read_text().splitlines()]
@@ -167,6 +168,8 @@ def test_scorecard_retains_interrupted_metric_and_generation_failures(tmp_path: 
     assert result["scores_incomplete_tail"]
     assert not result["scoring_finished"]
     group = result["by_failure_class"][runs.results[0]["category"]]
+    assert result["measurement_prefix_failures"] == group["measurement_prefix_failures"] == 1
+    assert "measurement_prefix_failures" not in group["judgments"]
     assert group["judgments"]["per_case_metrics"]
 
 
