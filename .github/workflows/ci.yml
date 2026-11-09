@@ -499,12 +499,15 @@ jobs:
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
         env:
           # Fork PRs do not receive repository secrets; skip live_llm contracts.
+          # A fork's own runs (pushes to its main included) have no OPENAI_API_KEY
+          # either, so cli-live-agent drops its live_llm tests outside
+          # Tracer-Cloud/opensre; its offline tests and coverage still run.
           # Index a JSON string array so the
           # value is always a marker string — never a bare boolean from
           # ``a && 'x' || 'y'`` (boolean false → ``-m false`` → xdist
           # ``N workers [0 items]``, which can still exit 0). An empty
           # expression makes pytest skip mark filtering entirely (run all).
-          PYTEST_MARKER_EXPR: ${{ fromJSON('["", "not live_llm"]')[github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true] }}
+          PYTEST_MARKER_EXPR: ${{ fromJSON('["", "not live_llm"]')[(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true) || (matrix.shard == 'cli-live-agent' && github.repository != 'Tracer-Cloud/opensre')] }}
         run: |
           echo "PYTEST_MARKER_EXPR=${PYTEST_MARKER_EXPR}"
           case "${PYTEST_MARKER_EXPR}" in
@@ -547,7 +550,7 @@ jobs:
             '--cov=config --cov=core --cov=infrastructure.deployment.ec2
             --cov=integrations --cov=infrastructure --cov=surfaces --cov=tools
             --cov=gateway --cov-report=' || '' }}
-          PYTEST_MARKER_EXPR: ${{ fromJSON('["", "not live_llm"]')[github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true] }}
+          PYTEST_MARKER_EXPR: ${{ fromJSON('["", "not live_llm"]')[(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true) || (matrix.shard == 'cli-live-agent' && github.repository != 'Tracer-Cloud/opensre')] }}
         # Keep ``run: >`` (folded) so ``matrix.pytest_paths`` stays one argv list.
         # A ``run: |`` + ``\`` rewrite can drop/split those paths and yield
         # ``N workers [0 items]`` even when the marker is correct.
