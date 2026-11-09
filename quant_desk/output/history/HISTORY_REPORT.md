@@ -1,11 +1,11 @@
 # Multi-year study — does any plateau show up?
 
-BTC/USDT, Binance 15m klines 2022-01-01 → 2026-11-08 (170,204 bars),
-resampled to 1h and 4h (bars stamped at close). Every variant is swept over its whole grid on
-every bar size: 50 sweeps, 9,040 parameter sets.
-Fees 2 bps per unit of position change, stress-tested at
-10 bps (Binance standard taker). History split into
-8 equal windows.
+BTC/USDT, Binance 15m klines 2017-08-17 → 2026-11-09 (323,612 bars),
+resampled to 1h, 4h, 8h, 1d (bars stamped at close). Every variant is
+swept over its whole grid on every bar size: 50 sweeps,
+9,040 parameter sets. Every number is priced at **15 bps (10 fee + 5 slippage), next-open fills**
+per unit of position change; 2 bps (VIP/maker) is shown only as an
+optimistic reference. History split into 8 equal windows.
 
 **Plateau** = grid neighbours keep ≥ 50% of its Sharpe *and*
 profitable in ≥ 6/8 windows.
@@ -33,78 +33,78 @@ ADX 14 ≥ 25, gap 0.25 × ATR
 
 | window | dates | BTC | move |
 |---|---|---|---|
-| W1 | 2022-01-01 → 2022-08-10 | 46,333 → 24,002 | -48.2% |
-| W2 | 2022-08-10 → 2023-03-20 | 23,959 → 27,377 | +14.3% |
-| W3 | 2023-03-20 → 2023-10-27 | 27,520 → 33,776 | +22.7% |
-| W4 | 2023-10-27 → 2024-06-05 | 33,781 → 70,900 | +109.9% |
-| W5 | 2024-06-05 → 2025-01-13 | 70,972 → 94,327 | +32.9% |
-| W6 | 2025-01-13 → 2025-08-22 | 94,091 → 116,747 | +24.1% |
-| W7 | 2025-08-22 → 2026-04-01 | 116,938 → 68,692 | -41.3% |
-| W8 | 2026-04-01 → 2026-11-08 | 68,528 → 74,468 | +8.7% |
+| W1 | 2017-08-17 → 2018-10-12 | 4,261 → 6,323 | +48.4% |
+| W2 | 2018-10-12 → 2019-12-07 | 6,319 → 7,494 | +18.6% |
+| W3 | 2019-12-07 → 2021-02-01 | 7,484 → 33,890 | +352.8% |
+| W4 | 2021-02-01 → 2022-03-29 | 33,833 → 47,927 | +41.7% |
+| W5 | 2022-03-29 → 2023-05-25 | 47,753 → 26,283 | -45.0% |
+| W6 | 2023-05-25 → 2024-07-19 | 26,222 → 64,004 | +144.1% |
+| W7 | 2024-07-19 → 2025-09-13 | 63,886 → 115,572 | +80.9% |
+| W8 | 2025-09-13 → 2026-11-09 | 115,569 → 75,277 | -34.9% |
 
 ## Answer
 
-- Plateaus at 2 bps in **29/50** sweeps:
-  15m long_flat_gap_cd (19), 1h flat_adx (6), 1h flat_adx_gap_cd (13), 1h long_flat_gap_cd (2), 4h always_in (33), 4h gap_cooldown (43), 4h flat_er (16), 4h flat_adx (28), 4h flat_adx_gap_cd (38), 4h long_flat (142), 4h long_flat_gap_cd (130), 4h long_flat_adx (12), 8h always_in (44), 8h gap_cooldown (7), 8h flat_er (200), 8h flat_adx (8), 8h flat_adx_gap_cd (2), 8h long_flat (93), 8h long_flat_gap_cd (91), 8h long_flat_adx (170), 8h mr_chop (7), 1d always_in (5), 1d gap_cooldown (7), 1d flat_er (30), 1d flat_adx (157), 1d flat_adx_gap_cd (93), 1d long_flat (28), 1d long_flat_gap_cd (17), 1d long_flat_adx (2).
-- Still plateaus at 10 bps in **22** sweeps:
-  4h always_in (15), 4h gap_cooldown (12), 4h flat_adx (2), 4h flat_adx_gap_cd (1), 4h long_flat (124), 4h long_flat_gap_cd (115), 4h long_flat_adx (1), 8h always_in (13), 8h gap_cooldown (2), 8h flat_er (132), 8h long_flat (87), 8h long_flat_gap_cd (82), 8h long_flat_adx (135), 8h mr_chop (4), 1d always_in (2), 1d gap_cooldown (3), 1d flat_er (20), 1d flat_adx (140), 1d flat_adx_gap_cd (86), 1d long_flat (27), 1d long_flat_gap_cd (17), 1d long_flat_adx (1).
-- Walk-forward Sharpe above buy & hold over the same span in **4** sweeps:
-  4h long_flat_gap_cd (0.94 vs 0.81), 8h flat_er (1.02 vs 0.82), 8h long_flat_gap_cd (0.83 vs 0.82), 1d long_flat_adx (1.02 vs 0.80).
+- Plateaus at 15 bps in **23/50** sweeps:
+  1h long_flat (62), 1h long_flat_gap_cd (69), 4h always_in (71), 4h gap_cooldown (60), 4h long_flat (171), 4h long_flat_gap_cd (146), 4h long_flat_adx (8), 8h always_in (92), 8h gap_cooldown (90), 8h flat_er (1), 8h flat_adx (12), 8h flat_adx_gap_cd (12), 8h long_flat (209), 8h long_flat_gap_cd (204), 8h long_flat_adx (51), 1d always_in (88), 1d gap_cooldown (116), 1d flat_er (22), 1d flat_adx (188), 1d flat_adx_gap_cd (193), 1d long_flat (201), 1d long_flat_gap_cd (201), 1d long_flat_adx (212).
+- At an optimistic 2 bps, plateaus in **36** sweeps:
+  15m always_in (1), 15m long_flat (65), 15m long_flat_gap_cd (91), 15m long_flat_adx (79), 1h always_in (36), 1h gap_cooldown (57), 1h flat_adx (15), 1h flat_adx_gap_cd (56), 1h long_flat (204), 1h long_flat_gap_cd (203), 1h long_flat_adx (1), 4h always_in (127), 4h gap_cooldown (114), 4h flat_er (67), 4h flat_adx (27), 4h flat_adx_gap_cd (14), 4h long_flat (194), 4h long_flat_gap_cd (176), 4h long_flat_adx (156), 8h always_in (136), 8h gap_cooldown (127), 8h flat_er (211), 8h flat_adx (52), 8h flat_adx_gap_cd (51), 8h long_flat (212), 8h long_flat_gap_cd (208), 8h long_flat_adx (99), 8h mr_chop (1), 1d always_in (108), 1d gap_cooldown (132), 1d flat_er (87), 1d flat_adx (198), 1d flat_adx_gap_cd (198), 1d long_flat (201), 1d long_flat_gap_cd (202), 1d long_flat_adx (212).
+- Walk-forward Sharpe above buy & hold over the same span in **10** sweeps:
+  4h long_flat (0.82 vs 0.81), 4h long_flat_gap_cd (0.88 vs 0.81), 8h long_flat (1.17 vs 0.82), 8h long_flat_gap_cd (1.14 vs 0.82), 8h long_flat_adx (1.22 vs 0.82), 1d flat_adx (0.95 vs 0.81), 1d flat_adx_gap_cd (0.98 vs 0.81), 1d long_flat (1.12 vs 0.81), 1d long_flat_gap_cd (0.94 vs 0.81), 1d long_flat_adx (1.26 vs 0.81).
 
 ## Summary
 
-| bars | variant | combos > 0 | plateaus (2 bps) | plateaus (10 bps) | best plateau | its Sharpe 2 / 10 bps | trades/yr | time in market | WF OOS Sharpe 2 / 10 bps | WF steps > 0 | WF OOS return / max DD | B&H OOS Sharpe | B&H OOS return / max DD |
+| bars | variant | combos > 0 | plateaus (15 bps) | plateaus (2 bps) | best plateau | its Sharpe 15 / 2 bps | trades/yr | time in market | WF OOS Sharpe 15 / 2 bps | WF steps > 0 | WF OOS return / max DD | B&H OOS Sharpe | B&H OOS return / max DD |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 15m | always_in | 40/212 | **0** | 0 | - | – / – | 821 | 100% | -0.23 / -1.63 | 1/7 | -60.6% / -76% | 0.80 | +210.3% / -54% |
-| 15m | gap_cooldown | 49/212 | **0** | 0 | - | – / – | 1200 | 91% | -0.23 / -1.51 | 2/7 | -56.5% / -74% | 0.80 | +210.3% / -54% |
-| 15m | flat_er | 0/212 | **0** | 0 | - | – / – | 4169 | 25% | -2.43 / -13.64 | 0/7 | -95.8% / -96% | 0.80 | +210.3% / -54% |
-| 15m | flat_adx | 39/212 | **0** | 0 | - | – / – | 1333 | 45% | 0.17 / -3.06 | 3/7 | -1.7% / -46% | 0.80 | +210.3% / -54% |
-| 15m | flat_adx_gap_cd | 99/212 | **0** | 0 | - | – / – | 1313 | 43% | 0.23 / -2.65 | 4/7 | +7.6% / -40% | 0.80 | +210.3% / -54% |
-| 15m | long_flat | 119/212 | **0** | 0 | - | – / – | 821 | 51% | 0.41 / -0.60 | 5/7 | +41.0% / -48% | 0.80 | +210.3% / -54% |
-| 15m | long_flat_gap_cd | 134/212 | **19** | 0 | 22/88 | 0.64 / -0.32 | 630 | 48% | 0.41 / -0.68 | 4/7 | +39.6% / -50% | 0.80 | +210.3% / -54% |
-| 15m | long_flat_adx | 170/212 | **0** | 0 | - | – / – | 743 | 22% | 0.72 / -1.70 | 3/7 | +85.8% / -32% | 0.80 | +210.3% / -54% |
-| 15m | mr_always | 0/56 | **0** | 0 | - | – / – | 1470 | 47% | -0.76 / 0.00 | 1/7 | -53.7% / -62% | 0.80 | +210.3% / -54% |
-| 15m | mr_chop | 0/56 | **0** | 0 | - | – / – | 1223 | 9% | -1.28 / 0.00 | 1/7 | -33.7% / -36% | 0.80 | +210.3% / -54% |
-| 1h | always_in | 58/212 | **0** | 0 | - | – / – | 196 | 100% | -0.14 / -0.25 | 3/7 | -51.7% / -73% | 0.81 | +210.3% / -54% |
-| 1h | gap_cooldown | 132/212 | **0** | 0 | - | – / – | 283 | 91% | 0.11 / -0.11 | 3/7 | -18.1% / -69% | 0.81 | +210.3% / -54% |
-| 1h | flat_er | 0/212 | **0** | 0 | - | – / – | 1100 | 30% | -0.19 / -3.08 | 3/7 | -34.4% / -52% | 0.81 | +210.3% / -54% |
-| 1h | flat_adx | 177/212 | **6** | 0 | 22/76 | 0.69 / -0.10 | 345 | 50% | 0.14 / -0.58 | 1/7 | -5.5% / -51% | 0.81 | +210.3% / -54% |
-| 1h | flat_adx_gap_cd | 211/212 | **13** | 0 | 24/72 | 0.86 / 0.16 | 339 | 48% | 0.53 / -0.28 | 4/7 | +68.8% / -32% | 0.81 | +210.3% / -54% |
-| 1h | long_flat | 208/212 | **0** | 0 | - | – / – | 196 | 51% | 0.32 / 0.25 | 4/7 | +24.5% / -64% | 0.81 | +210.3% / -54% |
-| 1h | long_flat_gap_cd | 209/212 | **2** | 0 | 4/16 | 0.31 / -0.81 | 152 | 47% | 0.26 / 0.37 | 4/7 | +15.4% / -55% | 0.81 | +210.3% / -54% |
-| 1h | long_flat_adx | 170/212 | **0** | 0 | - | – / – | 196 | 23% | 0.38 / -0.20 | 3/7 | +30.6% / -38% | 0.81 | +210.3% / -54% |
-| 1h | mr_always | 0/56 | **0** | 0 | - | – / – | 371 | 49% | -0.79 / -1.00 | 1/7 | -75.9% / -81% | 0.81 | +210.3% / -54% |
-| 1h | mr_chop | 8/56 | **0** | 0 | - | – / – | 282 | 8% | -0.44 / -1.45 | 1/7 | -24.1% / -31% | 0.81 | +210.3% / -54% |
-| 4h | always_in | 194/212 | **33** | 15 | 12/96 | 0.76 / 0.66 | 47 | 98% | 0.30 / 0.29 | 3/7 | +14.6% / -56% | 0.81 | +210.3% / -53% |
-| 4h | gap_cooldown | 207/212 | **43** | 12 | 4/88 | 0.69 / 0.54 | 68 | 91% | 0.62 / 0.38 | 5/7 | +107.4% / -55% | 0.81 | +210.3% / -53% |
-| 4h | flat_er | 212/212 | **16** | 0 | 22/60 | 0.59 / -0.14 | 273 | 33% | 0.25 / -0.51 | 3/7 | +14.0% / -57% | 0.81 | +210.3% / -53% |
-| 4h | flat_adx | 212/212 | **28** | 2 | 10/24 | 0.45 / 0.22 | 88 | 51% | 0.36 / 0.06 | 5/7 | +31.8% / -43% | 0.81 | +210.3% / -53% |
-| 4h | flat_adx_gap_cd | 212/212 | **38** | 1 | 4/96 | 0.45 / 0.25 | 89 | 49% | 0.06 / -0.24 | 4/7 | -15.3% / -40% | 0.81 | +210.3% / -53% |
-| 4h | long_flat | 212/212 | **142** | 124 | 12/96 | 0.96 / 0.89 | 47 | 50% | 0.74 / 0.62 | 5/7 | +119.8% / -39% | 0.81 | +210.3% / -53% |
-| 4h | long_flat_gap_cd | 212/212 | **130** | 115 | 10/88 | 0.97 / 0.89 | 36 | 48% | 0.94 / 0.61 | 5/7 | +175.5% / -40% | 0.81 | +210.3% / -53% |
-| 4h | long_flat_adx | 212/212 | **12** | 1 | 8/24 | 0.49 / 0.29 | 49 | 26% | 0.81 / 0.56 | 5/7 | +101.8% / -21% | 0.81 | +210.3% / -53% |
-| 4h | mr_always | 2/56 | **0** | 0 | - | – / – | 87 | 48% | -0.43 / -0.56 | 2/7 | -47.2% / -67% | 0.81 | +210.3% / -53% |
-| 4h | mr_chop | 16/56 | **0** | 0 | - | – / – | 62 | 6% | -0.43 / -1.14 | 4/7 | -22.8% / -38% | 0.81 | +210.3% / -53% |
-| 8h | always_in | 209/212 | **44** | 13 | 8/40 | 0.70 / 0.60 | 23 | 98% | -0.05 / -0.17 | 4/7 | -40.3% / -64% | 0.82 | +210.3% / -53% |
-| 8h | gap_cooldown | 212/212 | **7** | 2 | 6/40 | 0.67 / 0.57 | 35 | 91% | 0.24 / 0.16 | 4/7 | +5.7% / -54% | 0.82 | +210.3% / -53% |
-| 8h | flat_er | 212/212 | **200** | 132 | 18/88 | 1.19 / 0.83 | 131 | 32% | 1.02 / 0.60 | 5/7 | +190.1% / -23% | 0.82 | +210.3% / -53% |
-| 8h | flat_adx | 210/212 | **8** | 0 | 6/48 | 0.44 / 0.33 | 41 | 48% | 0.05 / -0.12 | 2/7 | -16.0% / -60% | 0.82 | +210.3% / -53% |
-| 8h | flat_adx_gap_cd | 212/212 | **2** | 0 | 4/52 | 0.45 / 0.35 | 41 | 46% | 0.39 / 0.26 | 4/7 | +36.5% / -45% | 0.82 | +210.3% / -53% |
-| 8h | long_flat | 212/212 | **93** | 87 | 6/40 | 0.93 / 0.84 | 23 | 50% | 0.60 / 0.72 | 5/7 | +77.8% / -39% | 0.82 | +210.3% / -53% |
-| 8h | long_flat_gap_cd | 212/212 | **91** | 82 | 6/40 | 1.00 / 0.92 | 19 | 48% | 0.83 / 0.75 | 5/7 | +138.0% / -32% | 0.82 | +210.3% / -53% |
-| 8h | long_flat_adx | 212/212 | **170** | 135 | 4/92 | 0.90 / 0.81 | 24 | 27% | 0.77 / 0.65 | 5/7 | +94.5% / -39% | 0.82 | +210.3% / -53% |
-| 8h | mr_always | 3/56 | **0** | 0 | - | – / – | 46 | 47% | -0.52 / -0.62 | 1/7 | -52.3% / -67% | 0.82 | +210.3% / -53% |
-| 8h | mr_chop | 30/56 | **7** | 4 | 26/2.75 | 1.37 / 1.21 | 32 | 7% | -0.08 / -0.27 | 4/7 | -6.0% / -30% | 0.82 | +210.3% / -53% |
-| 1d | always_in | 212/212 | **5** | 2 | 4/56 | 0.57 / 0.53 | 7 | 95% | 0.10 / 0.06 | 1/7 | -24.3% / -53% | 0.80 | +210.9% / -53% |
-| 1d | gap_cooldown | 206/212 | **7** | 3 | 10/80 | 0.60 / 0.58 | 11 | 89% | -0.16 / -0.19 | 1/7 | -51.5% / -65% | 0.80 | +210.9% / -53% |
-| 1d | flat_er | 212/212 | **30** | 20 | 14/72 | 0.67 / 0.56 | 41 | 32% | -0.05 / -0.17 | 2/7 | -21.2% / -46% | 0.80 | +210.9% / -53% |
-| 1d | flat_adx | 212/212 | **157** | 140 | 6/92 | 0.82 / 0.78 | 14 | 48% | 0.63 / 0.58 | 6/7 | +94.9% / -28% | 0.80 | +210.9% / -53% |
-| 1d | flat_adx_gap_cd | 212/212 | **93** | 86 | 6/92 | 0.75 / 0.72 | 14 | 47% | 0.44 / 0.40 | 3/7 | +47.6% / -30% | 0.80 | +210.9% / -53% |
-| 1d | long_flat | 212/212 | **28** | 27 | 8/88 | 0.81 / 0.79 | 7 | 51% | 0.44 / 0.41 | 3/7 | +47.1% / -34% | 0.80 | +210.9% / -53% |
-| 1d | long_flat_gap_cd | 212/212 | **17** | 17 | 4/48 | 0.82 / 0.80 | 6 | 49% | 0.48 / 0.45 | 3/7 | +54.8% / -37% | 0.80 | +210.9% / -53% |
-| 1d | long_flat_adx | 212/212 | **2** | 1 | 8/24 | 0.99 / 0.96 | 8 | 26% | 1.02 / 0.98 | 5/7 | +162.4% / -31% | 0.80 | +210.9% / -53% |
-| 1d | mr_always | 5/56 | **0** | 0 | - | – / – | 14 | 50% | -0.58 / -0.53 | 2/7 | -65.9% / -78% | 0.80 | +210.9% / -53% |
-| 1d | mr_chop | 14/56 | **0** | 0 | - | – / – | 9 | 5% | -0.20 / -0.21 | 2/7 | -13.3% / -28% | 0.80 | +210.9% / -53% |
+| 15m | always_in | 0/212 | **0** | 1 | - | – / – | 815 | 100% | -1.58 / 0.26 | 0/7 | -100.0% / -100% | 0.80 | +1090.5% / -77% |
+| 15m | gap_cooldown | 0/212 | **0** | 0 | - | – / – | 1177 | 91% | -1.33 / 0.22 | 0/7 | -100.0% / -100% | 0.80 | +1090.5% / -77% |
+| 15m | flat_er | 0/212 | **0** | 0 | - | – / – | 4099 | 25% | -15.06 / -1.73 | 0/7 | -100.0% / -100% | 0.80 | +1090.5% / -77% |
+| 15m | flat_adx | 0/212 | **0** | 0 | - | – / – | 1320 | 45% | -3.45 / 0.30 | 0/7 | -100.0% / -100% | 0.80 | +1090.5% / -77% |
+| 15m | flat_adx_gap_cd | 0/212 | **0** | 0 | - | – / – | 1292 | 43% | -3.21 / 0.25 | 0/7 | -100.0% / -100% | 0.80 | +1090.5% / -77% |
+| 15m | long_flat | 0/212 | **0** | 65 | - | – / – | 814 | 52% | -0.59 / 0.80 | 1/7 | -93.7% / -96% | 0.80 | +1090.5% / -77% |
+| 15m | long_flat_gap_cd | 0/212 | **0** | 91 | - | – / – | 620 | 49% | -0.38 / 0.69 | 1/7 | -86.4% / -93% | 0.80 | +1090.5% / -77% |
+| 15m | long_flat_adx | 0/212 | **0** | 79 | - | – / – | 748 | 21% | -2.22 / 0.88 | 0/7 | -99.7% / -100% | 0.80 | +1090.5% / -77% |
+| 15m | mr_always | 0/56 | **0** | 0 | - | – / – | 1442 | 47% | -2.56 / -0.65 | 0/7 | -96.5% / -97% | 0.80 | +1090.5% / -77% |
+| 15m | mr_chop | 0/56 | **0** | 0 | - | – / – | 1174 | 9% | -2.02 / -0.48 | 0/7 | -66.3% / -66% | 0.80 | +1090.5% / -77% |
+| 1h | always_in | 110/212 | **0** | 36 | - | – / – | 182 | 100% | -0.19 / 0.38 | 2/7 | -91.8% / -98% | 0.80 | +1090.5% / -77% |
+| 1h | gap_cooldown | 143/212 | **0** | 57 | - | – / – | 268 | 92% | 0.11 / 0.45 | 3/7 | -60.7% / -91% | 0.80 | +1090.5% / -77% |
+| 1h | flat_er | 0/212 | **0** | 0 | - | – / – | 1083 | 31% | -3.19 / 0.32 | 0/7 | -100.0% / -100% | 0.80 | +1090.5% / -77% |
+| 1h | flat_adx | 0/212 | **0** | 15 | - | – / – | 345 | 51% | -0.35 / 0.68 | 1/7 | -90.6% / -96% | 0.80 | +1090.5% / -77% |
+| 1h | flat_adx_gap_cd | 0/212 | **0** | 56 | - | – / – | 341 | 48% | -0.34 / 0.66 | 2/7 | -89.2% / -95% | 0.80 | +1090.5% / -77% |
+| 1h | long_flat | 185/212 | **62** | 204 | 24/92 | 0.83 / 1.13 | 182 | 52% | 0.45 / 0.89 | 5/7 | +124.2% / -79% | 0.80 | +1090.5% / -77% |
+| 1h | long_flat_gap_cd | 198/212 | **69** | 203 | 24/84 | 0.90 / 1.17 | 143 | 50% | 0.45 / 0.82 | 5/7 | +127.3% / -73% | 0.80 | +1090.5% / -77% |
+| 1h | long_flat_adx | 32/212 | **0** | 1 | - | – / – | 205 | 24% | 0.08 / 0.89 | 3/7 | -16.4% / -70% | 0.80 | +1090.5% / -77% |
+| 1h | mr_always | 0/56 | **0** | 0 | - | – / – | 356 | 50% | -1.76 / -0.56 | 0/7 | -99.5% / -100% | 0.80 | +1090.5% / -77% |
+| 1h | mr_chop | 1/56 | **0** | 0 | - | – / – | 271 | 7% | -1.35 / -0.37 | 0/7 | -53.0% / -53% | 0.80 | +1090.5% / -77% |
+| 4h | always_in | 212/212 | **71** | 127 | 14/88 | 0.71 / 0.83 | 47 | 99% | 0.27 / 0.51 | 4/7 | -13.2% / -76% | 0.81 | +1093.1% / -77% |
+| 4h | gap_cooldown | 212/212 | **60** | 114 | 8/96 | 0.74 / 0.86 | 68 | 91% | 0.46 / 0.57 | 4/7 | +122.8% / -73% | 0.81 | +1093.1% / -77% |
+| 4h | flat_er | 0/212 | **0** | 67 | - | – / – | 274 | 35% | -0.46 / 0.57 | 1/7 | -87.0% / -96% | 0.81 | +1093.1% / -77% |
+| 4h | flat_adx | 187/212 | **0** | 27 | - | – / – | 90 | 52% | -0.05 / 0.29 | 2/7 | -66.3% / -85% | 0.81 | +1093.1% / -77% |
+| 4h | flat_adx_gap_cd | 200/212 | **0** | 14 | - | – / – | 91 | 50% | 0.03 / 0.21 | 2/7 | -53.6% / -83% | 0.81 | +1093.1% / -77% |
+| 4h | long_flat | 212/212 | **171** | 194 | 16/80 | 1.13 / 1.22 | 47 | 52% | 0.82 / 0.99 | 5/7 | +662.8% / -59% | 0.81 | +1093.1% / -77% |
+| 4h | long_flat_gap_cd | 212/212 | **146** | 176 | 12/80 | 1.18 / 1.27 | 36 | 50% | 0.88 / 1.05 | 4/7 | +772.4% / -54% | 0.81 | +1093.1% / -77% |
+| 4h | long_flat_adx | 212/212 | **8** | 156 | 10/88 | 0.70 / 0.89 | 52 | 26% | 0.55 / 0.85 | 4/7 | +163.6% / -54% | 0.81 | +1093.1% / -77% |
+| 4h | mr_always | 0/56 | **0** | 0 | - | – / – | 82 | 49% | -0.46 / -0.47 | 1/7 | -81.4% / -89% | 0.81 | +1093.1% / -77% |
+| 4h | mr_chop | 0/56 | **0** | 0 | - | – / – | 58 | 5% | -0.31 / -0.31 | 3/7 | -20.7% / -31% | 0.81 | +1093.1% / -77% |
+| 8h | always_in | 212/212 | **92** | 136 | 24/96 | 0.90 / 0.94 | 22 | 99% | 0.80 / 0.94 | 5/7 | +993.5% / -61% | 0.82 | +1088.7% / -77% |
+| 8h | gap_cooldown | 212/212 | **90** | 127 | 14/96 | 0.84 / 0.89 | 34 | 91% | 0.70 / 0.84 | 4/7 | +561.9% / -58% | 0.82 | +1088.7% / -77% |
+| 8h | flat_er | 212/212 | **1** | 211 | 24/96 | 0.62 / 1.02 | 130 | 35% | 0.77 / 1.20 | 6/7 | +538.5% / -62% | 0.82 | +1088.7% / -77% |
+| 8h | flat_adx | 212/212 | **12** | 52 | 4/44 | 0.54 / 0.68 | 43 | 53% | 0.60 / 0.73 | 3/7 | +304.3% / -67% | 0.82 | +1088.7% / -77% |
+| 8h | flat_adx_gap_cd | 212/212 | **12** | 51 | 18/68 | 0.65 / 0.75 | 44 | 50% | 0.46 / 0.60 | 4/7 | +137.2% / -69% | 0.82 | +1088.7% / -77% |
+| 8h | long_flat | 212/212 | **209** | 212 | 24/96 | 1.22 / 1.25 | 22 | 52% | 1.17 / 1.23 | 5/7 | +2275.6% / -51% | 0.82 | +1088.7% / -77% |
+| 8h | long_flat_gap_cd | 212/212 | **204** | 208 | 24/96 | 1.25 / 1.27 | 18 | 49% | 1.14 / 1.23 | 6/7 | +1903.0% / -56% | 0.82 | +1088.7% / -77% |
+| 8h | long_flat_adx | 212/212 | **51** | 99 | 24/96 | 1.12 / 1.21 | 26 | 28% | 1.22 / 1.35 | 5/7 | +1511.9% / -49% | 0.82 | +1088.7% / -77% |
+| 8h | mr_always | 0/56 | **0** | 0 | - | – / – | 43 | 49% | -0.62 / -0.53 | 1/7 | -88.7% / -90% | 0.82 | +1088.7% / -77% |
+| 8h | mr_chop | 17/56 | **0** | 1 | - | – / – | 29 | 6% | 0.10 / -0.03 | 5/7 | +3.3% / -22% | 0.82 | +1088.7% / -77% |
+| 1d | always_in | 212/212 | **88** | 108 | 10/32 | 0.88 / 0.92 | 7 | 95% | 0.77 / 0.83 | 6/7 | +931.0% / -65% | 0.81 | +1095.3% / -77% |
+| 1d | gap_cooldown | 212/212 | **116** | 132 | 4/36 | 0.83 / 0.87 | 10 | 91% | 0.45 / 0.49 | 4/7 | +116.8% / -74% | 0.81 | +1095.3% / -77% |
+| 1d | flat_er | 212/212 | **22** | 87 | 24/40 | 0.92 / 1.05 | 43 | 35% | 0.66 / 0.79 | 4/7 | +376.4% / -65% | 0.81 | +1095.3% / -77% |
+| 1d | flat_adx | 212/212 | **188** | 198 | 22/64 | 0.94 / 0.98 | 15 | 55% | 0.95 / 0.99 | 6/7 | +1618.8% / -45% | 0.81 | +1095.3% / -77% |
+| 1d | flat_adx_gap_cd | 212/212 | **193** | 198 | 6/84 | 0.92 / 0.96 | 15 | 53% | 0.98 / 1.02 | 5/7 | +1773.7% / -39% | 0.81 | +1095.3% / -77% |
+| 1d | long_flat | 212/212 | **201** | 201 | 10/32 | 1.20 / 1.23 | 7 | 52% | 1.12 / 1.16 | 5/7 | +2319.6% / -55% | 0.81 | +1095.3% / -77% |
+| 1d | long_flat_gap_cd | 212/212 | **201** | 202 | 6/36 | 1.21 / 1.24 | 6 | 50% | 0.94 / 0.97 | 5/7 | +1085.8% / -53% | 0.81 | +1095.3% / -77% |
+| 1d | long_flat_adx | 212/212 | **212** | 212 | 10/88 | 1.32 / 1.35 | 9 | 30% | 1.26 / 1.35 | 6/7 | +1976.7% / -36% | 0.81 | +1095.3% / -77% |
+| 1d | mr_always | 0/56 | **0** | 0 | - | – / – | 12 | 53% | -0.57 / -0.49 | 1/7 | -92.1% / -93% | 0.81 | +1095.3% / -77% |
+| 1d | mr_chop | 18/56 | **0** | 0 | - | – / – | 7 | 4% | -0.23 / -0.04 | 2/7 | -47.7% / -65% | 0.81 | +1095.3% / -77% |
 
 `trades/yr` and `time in market` are medians over the grid. Full per-combo tables are in
 `sweeps/` and in ArcticDB (`BTCUSDT_<bars>_<variant>_history_sweep`).
@@ -117,78 +117,85 @@ is shown at full size and **vol-targeted** (exposure × min(1, 40% /
 30-day realised vol), re-set daily, no leverage). Buy & hold gets the same
 vol-targeting, so every candidate is compared against the benchmark sized the same way.
 
-**Pass rule (fixed before looking at the results):** on W2–W8 at 10 bps,
+**Pass rule (fixed before looking at the results):** on W2–W8 at 15 bps (10 fee + 5 slippage), next-open fills,
 Sharpe above *and* max drawdown shallower than the matching buy & hold.
 **Robust** = passes on at least two *adjacent* bar sizes
 (15m → 1h → 4h → 8h → 1d), so one lucky bar size is not enough.
 
-**Passes at 10 bps (12):** 4h ensemble long_flat (full): Sharpe 0.83 vs 0.81, max DD -33% vs -53%, 4h ensemble long_flat (vol-target): Sharpe 1.00 vs 0.83, max DD -29% vs -52%, 4h ensemble long_flat_gap_cd (full): Sharpe 0.89 vs 0.81, max DD -30% vs -53%, 4h ensemble long_flat_gap_cd (vol-target): Sharpe 1.06 vs 0.83, max DD -26% vs -52%, 8h ensemble long_flat (full): Sharpe 0.92 vs 0.82, max DD -31% vs -53%, 8h ensemble long_flat (vol-target): Sharpe 1.06 vs 0.83, max DD -26% vs -52%, 8h ensemble long_flat_gap_cd (full): Sharpe 0.91 vs 0.82, max DD -31% vs -53%, 8h ensemble long_flat_gap_cd (vol-target): Sharpe 1.04 vs 0.83, max DD -26% vs -52%, 8h ensemble long_flat_adx (full): Sharpe 0.86 vs 0.82, max DD -26% vs -53%, 8h ensemble long_flat_adx (vol-target): Sharpe 0.92 vs 0.83, max DD -24% vs -52%, 1d ensemble long_flat_adx (full): Sharpe 1.04 vs 0.80, max DD -28% vs -53%, 1d ensemble long_flat_adx (vol-target): Sharpe 0.97 vs 0.79, max DD -27% vs -52%.
-At 2 bps: 17 pass.
+**Passes at 15 bps (29):** 4h ensemble long_flat (full): Sharpe 0.87 vs 0.81, max DD -63% vs -77%, 4h ensemble long_flat (vol-target): Sharpe 1.09 vs 0.80, max DD -44% vs -66%, 4h ensemble long_flat_gap_cd (full): Sharpe 0.93 vs 0.81, max DD -60% vs -77%, 4h ensemble long_flat_gap_cd (vol-target): Sharpe 1.16 vs 0.80, max DD -43% vs -66%, 4h ensemble long_flat_adx (vol-target): Sharpe 0.87 vs 0.80, max DD -42% vs -66%, 8h ensemble always_in (vol-target): Sharpe 1.03 vs 0.79, max DD -40% vs -66%, 8h ensemble gap_cooldown (vol-target): Sharpe 1.04 vs 0.79, max DD -46% vs -66%, 8h ensemble flat_er (vol-target): Sharpe 1.06 vs 0.79, max DD -36% vs -66%, 8h ensemble flat_adx (vol-target): Sharpe 0.82 vs 0.79, max DD -40% vs -66%, 8h ensemble flat_adx_gap_cd (vol-target): Sharpe 0.83 vs 0.79, max DD -41% vs -66%, 8h ensemble long_flat (full): Sharpe 1.13 vs 0.82, max DD -53% vs -77%, 8h ensemble long_flat (vol-target): Sharpe 1.31 vs 0.79, max DD -41% vs -66%, 8h ensemble long_flat_gap_cd (full): Sharpe 1.16 vs 0.82, max DD -53% vs -77%, 8h ensemble long_flat_gap_cd (vol-target): Sharpe 1.33 vs 0.79, max DD -42% vs -66%, 8h ensemble long_flat_adx (full): Sharpe 1.27 vs 0.82, max DD -50% vs -77%, 8h ensemble long_flat_adx (vol-target): Sharpe 1.32 vs 0.79, max DD -39% vs -66%, 1d ensemble always_in (vol-target): Sharpe 0.87 vs 0.78, max DD -45% vs -65%, 1d ensemble gap_cooldown (vol-target): Sharpe 0.80 vs 0.78, max DD -45% vs -65%, 1d ensemble flat_er (vol-target): Sharpe 0.93 vs 0.78, max DD -38% vs -65%, 1d ensemble flat_adx (full): Sharpe 0.96 vs 0.81, max DD -38% vs -77%, 1d ensemble flat_adx (vol-target): Sharpe 1.14 vs 0.78, max DD -28% vs -65%, 1d ensemble flat_adx_gap_cd (full): Sharpe 0.95 vs 0.81, max DD -38% vs -77%, 1d ensemble flat_adx_gap_cd (vol-target): Sharpe 1.13 vs 0.78, max DD -26% vs -65%, 1d ensemble long_flat (full): Sharpe 1.15 vs 0.81, max DD -45% vs -77%, 1d ensemble long_flat (vol-target): Sharpe 1.15 vs 0.78, max DD -38% vs -65%, 1d ensemble long_flat_gap_cd (full): Sharpe 1.14 vs 0.81, max DD -43% vs -77%, 1d ensemble long_flat_gap_cd (vol-target): Sharpe 1.13 vs 0.78, max DD -36% vs -65%, 1d ensemble long_flat_adx (full): Sharpe 1.36 vs 0.81, max DD -28% vs -77%, 1d ensemble long_flat_adx (vol-target): Sharpe 1.44 vs 0.78, max DD -27% vs -65%.
+At an optimistic 2 bps: 44 pass.
 
 | book | sizing | passes on | verdict |
 |---|---|---|---|
-| ensemble long_flat | full | 4h, 8h | **robust** |
-| ensemble long_flat | vol-target | 4h, 8h | **robust** |
+| ensemble long_flat | full | 4h, 8h, 1d | **robust** |
+| ensemble long_flat | vol-target | 4h, 8h, 1d | **robust** |
+| ensemble long_flat_adx | vol-target | 4h, 8h, 1d | **robust** |
+| ensemble long_flat_gap_cd | full | 4h, 8h, 1d | **robust** |
+| ensemble long_flat_gap_cd | vol-target | 4h, 8h, 1d | **robust** |
+| ensemble always_in | vol-target | 8h, 1d | **robust** |
+| ensemble flat_adx | vol-target | 8h, 1d | **robust** |
+| ensemble flat_adx_gap_cd | vol-target | 8h, 1d | **robust** |
+| ensemble flat_er | vol-target | 8h, 1d | **robust** |
+| ensemble gap_cooldown | vol-target | 8h, 1d | **robust** |
 | ensemble long_flat_adx | full | 8h, 1d | **robust** |
-| ensemble long_flat_adx | vol-target | 8h, 1d | **robust** |
-| ensemble long_flat_gap_cd | full | 4h, 8h | **robust** |
-| ensemble long_flat_gap_cd | vol-target | 4h, 8h | **robust** |
+| ensemble flat_adx | full | 1d | single bar size only |
+| ensemble flat_adx_gap_cd | full | 1d | single bar size only |
 
-Main books at 10 bps (all 8 variants in
+Main books at 15 bps (all 8 variants in
 `candidates.csv`):
 
 | bars | book | sizing | Sharpe | vs bench | CAGR | max DD | vs bench | windows > 0 | avg exposure | turnover/yr | passes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 15m | buy & hold | full | 0.80 | 0.80 | +30.5% | -54% | -54% | 6/7 | 100% | 0× | bench |
-| 15m | buy & hold | vol-target | 0.84 | 0.84 | +28.8% | -52% | -52% | 6/7 | 86% | 3× | bench |
-| 15m | ensemble always_in | full | -4.11 | 0.80 | -84.1% | -100% | -54% | 0/7 | 84% | 1933× | no |
-| 15m | ensemble always_in | vol-target | -4.04 | 0.84 | -77.8% | -100% | -52% | 0/7 | 73% | 1669× | no |
-| 15m | ensemble long_flat | full | -2.21 | 0.80 | -51.9% | -96% | -54% | 0/7 | 52% | 966× | no |
-| 15m | ensemble long_flat | vol-target | -2.13 | 0.84 | -44.5% | -92% | -52% | 0/7 | 44% | 835× | no |
-| 15m | ensemble long_flat_gap_cd | full | -1.60 | 0.80 | -40.5% | -89% | -54% | 0/7 | 47% | 731× | no |
-| 15m | ensemble long_flat_gap_cd | vol-target | -1.49 | 0.84 | -33.3% | -83% | -52% | 0/7 | 41% | 632× | no |
-| 15m | ensemble long_flat_adx | full | -2.12 | 0.80 | -41.2% | -90% | -54% | 1/7 | 22% | 780× | no |
-| 15m | ensemble long_flat_adx | vol-target | -2.10 | 0.84 | -35.9% | -85% | -52% | 1/7 | 19% | 674× | no |
-| 1h | buy & hold | full | 0.81 | 0.81 | +30.5% | -54% | -54% | 6/7 | 100% | 0× | bench |
-| 1h | buy & hold | vol-target | 0.85 | 0.85 | +29.0% | -52% | -52% | 6/7 | 87% | 3× | bench |
-| 1h | ensemble always_in | full | -0.93 | 0.81 | -37.9% | -90% | -54% | 2/7 | 85% | 457× | no |
-| 1h | ensemble always_in | vol-target | -0.72 | 0.85 | -27.2% | -81% | -52% | 2/7 | 74% | 398× | no |
-| 1h | ensemble long_flat | full | -0.03 | 0.81 | -5.3% | -60% | -54% | 3/7 | 52% | 229× | no |
-| 1h | ensemble long_flat | vol-target | 0.15 | 0.85 | +0.5% | -52% | -52% | 3/7 | 45% | 199× | no |
-| 1h | ensemble long_flat_gap_cd | full | 0.13 | 0.81 | -0.4% | -58% | -54% | 3/7 | 47% | 174× | no |
-| 1h | ensemble long_flat_gap_cd | vol-target | 0.33 | 0.85 | +5.4% | -49% | -52% | 3/7 | 41% | 151× | no |
-| 1h | ensemble long_flat_adx | full | -0.21 | 0.81 | -7.3% | -53% | -54% | 2/7 | 24% | 207× | no |
-| 1h | ensemble long_flat_adx | vol-target | -0.05 | 0.85 | -3.1% | -47% | -52% | 3/7 | 21% | 181× | no |
-| 4h | buy & hold | full | 0.81 | 0.81 | +30.5% | -53% | -53% | 6/7 | 100% | 0× | bench |
-| 4h | buy & hold | vol-target | 0.83 | 0.83 | +28.1% | -52% | -52% | 6/7 | 88% | 3× | bench |
-| 4h | ensemble always_in | full | 0.29 | 0.81 | +3.7% | -47% | -53% | 4/7 | 85% | 107× | no |
-| 4h | ensemble always_in | vol-target | 0.55 | 0.83 | +14.0% | -34% | -52% | 4/7 | 75% | 95× | no |
-| 4h | ensemble long_flat | full | 0.83 | 0.81 | +22.3% | -33% | -53% | 6/7 | 52% | 54× | **YES** |
-| 4h | ensemble long_flat | vol-target | 1.00 | 0.83 | +25.3% | -29% | -52% | 6/7 | 46% | 48× | **YES** |
-| 4h | ensemble long_flat_gap_cd | full | 0.89 | 0.81 | +23.5% | -30% | -53% | 6/7 | 49% | 41× | **YES** |
-| 4h | ensemble long_flat_gap_cd | vol-target | 1.06 | 0.83 | +26.1% | -26% | -52% | 6/7 | 43% | 37× | **YES** |
-| 4h | ensemble long_flat_adx | full | 0.59 | 0.81 | +11.5% | -24% | -53% | 5/7 | 26% | 51× | no |
-| 4h | ensemble long_flat_adx | vol-target | 0.73 | 0.83 | +13.4% | -21% | -52% | 5/7 | 23% | 46× | no |
-| 8h | buy & hold | full | 0.82 | 0.82 | +30.5% | -53% | -53% | 6/7 | 100% | 0× | bench |
-| 8h | buy & hold | vol-target | 0.83 | 0.83 | +28.3% | -52% | -52% | 6/7 | 88% | 4× | bench |
-| 8h | ensemble always_in | full | 0.42 | 0.82 | +9.1% | -39% | -53% | 3/7 | 85% | 53× | no |
-| 8h | ensemble always_in | vol-target | 0.64 | 0.83 | +17.8% | -32% | -52% | 5/7 | 75% | 49× | no |
-| 8h | ensemble long_flat | full | 0.92 | 0.82 | +25.2% | -31% | -53% | 6/7 | 53% | 26× | **YES** |
-| 8h | ensemble long_flat | vol-target | 1.06 | 0.83 | +27.4% | -26% | -52% | 6/7 | 48% | 24× | **YES** |
-| 8h | ensemble long_flat_gap_cd | full | 0.91 | 0.82 | +24.2% | -31% | -53% | 6/7 | 50% | 21× | **YES** |
-| 8h | ensemble long_flat_gap_cd | vol-target | 1.04 | 0.83 | +25.9% | -26% | -52% | 6/7 | 45% | 20× | **YES** |
-| 8h | ensemble long_flat_adx | full | 0.86 | 0.82 | +18.4% | -26% | -53% | 6/7 | 28% | 26× | **YES** |
-| 8h | ensemble long_flat_adx | vol-target | 0.92 | 0.83 | +18.1% | -24% | -52% | 6/7 | 26% | 24× | **YES** |
-| 1d | buy & hold | full | 0.80 | 0.80 | +30.6% | -53% | -53% | 6/7 | 100% | 0× | bench |
-| 1d | buy & hold | vol-target | 0.79 | 0.79 | +26.4% | -52% | -52% | 6/7 | 87% | 5× | bench |
-| 1d | ensemble always_in | full | 0.31 | 0.80 | +4.3% | -50% | -53% | 2/7 | 84% | 17× | no |
-| 1d | ensemble always_in | vol-target | 0.31 | 0.79 | +5.0% | -43% | -52% | 3/7 | 72% | 18× | no |
-| 1d | ensemble long_flat | full | 0.79 | 0.80 | +22.3% | -34% | -53% | 6/7 | 56% | 9× | no |
-| 1d | ensemble long_flat | vol-target | 0.77 | 0.79 | +19.1% | -27% | -52% | 6/7 | 50% | 10× | no |
-| 1d | ensemble long_flat_gap_cd | full | 0.74 | 0.80 | +19.9% | -35% | -53% | 6/7 | 54% | 7× | no |
-| 1d | ensemble long_flat_gap_cd | vol-target | 0.71 | 0.79 | +16.8% | -29% | -52% | 6/7 | 47% | 8× | no |
-| 1d | ensemble long_flat_adx | full | 1.04 | 0.80 | +25.7% | -28% | -53% | 5/7 | 30% | 9× | **YES** |
-| 1d | ensemble long_flat_adx | vol-target | 0.97 | 0.79 | +20.1% | -27% | -52% | 5/7 | 26% | 10× | **YES** |
+| 15m | buy & hold | full | 0.80 | 0.80 | +35.9% | -77% | -77% | 5/7 | 100% | 0× | bench |
+| 15m | buy & hold | vol-target | 0.80 | 0.80 | +28.0% | -66% | -66% | 5/7 | 74% | 4× | bench |
+| 15m | ensemble always_in | full | -4.61 | 0.80 | -94.2% | -100% | -77% | 0/7 | 84% | 1941× | no |
+| 15m | ensemble always_in | vol-target | -5.03 | 0.80 | -86.1% | -100% | -66% | 0/7 | 63% | 1449× | no |
+| 15m | ensemble long_flat | full | -2.69 | 0.80 | -68.8% | -100% | -77% | 0/7 | 52% | 971× | no |
+| 15m | ensemble long_flat | vol-target | -2.90 | 0.80 | -55.8% | -100% | -66% | 0/7 | 39% | 725× | no |
+| 15m | ensemble long_flat_gap_cd | full | -1.89 | 0.80 | -55.2% | -100% | -77% | 0/7 | 47% | 721× | no |
+| 15m | ensemble long_flat_gap_cd | vol-target | -1.98 | 0.80 | -42.0% | -99% | -66% | 0/7 | 35% | 539× | no |
+| 15m | ensemble long_flat_adx | full | -2.79 | 0.80 | -58.3% | -100% | -77% | 0/7 | 21% | 784× | no |
+| 15m | ensemble long_flat_adx | vol-target | -2.99 | 0.80 | -47.0% | -99% | -66% | 0/7 | 16% | 587× | no |
+| 1h | buy & hold | full | 0.80 | 0.80 | +35.9% | -77% | -77% | 5/7 | 100% | 0× | bench |
+| 1h | buy & hold | vol-target | 0.80 | 0.80 | +28.0% | -67% | -67% | 5/7 | 75% | 4× | bench |
+| 1h | ensemble always_in | full | -0.52 | 0.80 | -36.5% | -99% | -77% | 2/7 | 85% | 441× | no |
+| 1h | ensemble always_in | vol-target | -0.41 | 0.80 | -20.4% | -94% | -67% | 2/7 | 64% | 336× | no |
+| 1h | ensemble long_flat | full | 0.26 | 0.80 | +2.4% | -81% | -77% | 4/7 | 52% | 221× | no |
+| 1h | ensemble long_flat | vol-target | 0.33 | 0.80 | +5.4% | -64% | -67% | 5/7 | 39% | 168× | no |
+| 1h | ensemble long_flat_gap_cd | full | 0.44 | 0.80 | +10.0% | -72% | -77% | 4/7 | 48% | 166× | no |
+| 1h | ensemble long_flat_gap_cd | vol-target | 0.53 | 0.80 | +11.2% | -55% | -67% | 5/7 | 36% | 127× | no |
+| 1h | ensemble long_flat_adx | full | -0.16 | 0.80 | -8.8% | -80% | -77% | 3/7 | 24% | 215× | no |
+| 1h | ensemble long_flat_adx | vol-target | -0.14 | 0.80 | -5.1% | -63% | -67% | 3/7 | 18% | 163× | no |
+| 4h | buy & hold | full | 0.81 | 0.81 | +35.9% | -77% | -77% | 5/7 | 100% | 0× | bench |
+| 4h | buy & hold | vol-target | 0.80 | 0.80 | +27.6% | -66% | -66% | 5/7 | 76% | 4× | bench |
+| 4h | ensemble always_in | full | 0.34 | 0.81 | +4.0% | -73% | -77% | 3/7 | 85% | 108× | no |
+| 4h | ensemble always_in | vol-target | 0.69 | 0.80 | +21.0% | -43% | -66% | 4/7 | 65% | 84× | no |
+| 4h | ensemble long_flat | full | 0.87 | 0.81 | +30.0% | -63% | -77% | 5/7 | 53% | 54× | **YES** |
+| 4h | ensemble long_flat | vol-target | 1.09 | 0.80 | +29.7% | -44% | -66% | 5/7 | 41% | 42× | **YES** |
+| 4h | ensemble long_flat_gap_cd | full | 0.93 | 0.81 | +31.8% | -60% | -77% | 5/7 | 49% | 42× | **YES** |
+| 4h | ensemble long_flat_gap_cd | vol-target | 1.16 | 0.80 | +30.9% | -43% | -66% | 5/7 | 38% | 33× | **YES** |
+| 4h | ensemble long_flat_adx | full | 0.70 | 0.81 | +17.6% | -55% | -77% | 3/7 | 27% | 54× | no |
+| 4h | ensemble long_flat_adx | vol-target | 0.87 | 0.80 | +17.6% | -42% | -66% | 4/7 | 21% | 42× | **YES** |
+| 8h | buy & hold | full | 0.82 | 0.82 | +35.8% | -77% | -77% | 5/7 | 100% | 0× | bench |
+| 8h | buy & hold | vol-target | 0.79 | 0.79 | +27.1% | -66% | -66% | 5/7 | 77% | 4× | bench |
+| 8h | ensemble always_in | full | 0.72 | 0.82 | +27.4% | -54% | -77% | 5/7 | 85% | 52× | no |
+| 8h | ensemble always_in | vol-target | 1.03 | 0.79 | +37.8% | -40% | -66% | 6/7 | 66% | 43× | **YES** |
+| 8h | ensemble long_flat | full | 1.13 | 0.82 | +43.3% | -53% | -77% | 5/7 | 53% | 26× | **YES** |
+| 8h | ensemble long_flat | vol-target | 1.31 | 0.79 | +38.2% | -41% | -66% | 5/7 | 42% | 21× | **YES** |
+| 8h | ensemble long_flat_gap_cd | full | 1.16 | 0.82 | +43.5% | -53% | -77% | 5/7 | 50% | 20× | **YES** |
+| 8h | ensemble long_flat_gap_cd | vol-target | 1.33 | 0.79 | +38.0% | -42% | -66% | 5/7 | 39% | 17× | **YES** |
+| 8h | ensemble long_flat_adx | full | 1.27 | 0.82 | +41.0% | -50% | -77% | 5/7 | 29% | 26× | **YES** |
+| 8h | ensemble long_flat_adx | vol-target | 1.32 | 0.79 | +30.9% | -39% | -66% | 5/7 | 23% | 22× | **YES** |
+| 1d | buy & hold | full | 0.81 | 0.81 | +35.9% | -77% | -77% | 5/7 | 100% | 0× | bench |
+| 1d | buy & hold | vol-target | 0.78 | 0.78 | +27.4% | -65% | -65% | 5/7 | 75% | 5× | bench |
+| 1d | ensemble always_in | full | 0.81 | 0.81 | +34.8% | -52% | -77% | 6/7 | 84% | 16× | no |
+| 1d | ensemble always_in | vol-target | 0.87 | 0.78 | +29.8% | -45% | -65% | 6/7 | 63% | 16× | **YES** |
+| 1d | ensemble long_flat | full | 1.15 | 0.81 | +48.0% | -45% | -77% | 5/7 | 55% | 8× | **YES** |
+| 1d | ensemble long_flat | vol-target | 1.15 | 0.78 | +34.2% | -38% | -65% | 5/7 | 42% | 8× | **YES** |
+| 1d | ensemble long_flat_gap_cd | full | 1.14 | 0.81 | +46.2% | -43% | -77% | 5/7 | 52% | 6× | **YES** |
+| 1d | ensemble long_flat_gap_cd | vol-target | 1.13 | 0.78 | +32.7% | -36% | -65% | 5/7 | 40% | 7× | **YES** |
+| 1d | ensemble long_flat_adx | full | 1.36 | 0.81 | +49.4% | -28% | -77% | 6/7 | 31% | 9× | **YES** |
+| 1d | ensemble long_flat_adx | vol-target | 1.44 | 0.78 | +35.6% | -27% | -65% | 6/7 | 23% | 8× | **YES** |
 
 The choice of *which* variant to trade is still made after seeing this table; with
 8 variants × 2 sizings × 5 bar sizes, expect
@@ -198,286 +205,231 @@ BTC lost money, which is hindsight. The only fully clean test left is new data: 
 
 ## Plateaus
 
-### 15m · long_flat_gap_cd — 19 plateaus (top 5)
+### 1h · long_flat — 62 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 22/88 | 0.64 | -0.32 | +114.9% | -38% | 6/8 | 0.48 | 49% |
-| 20/92 | 0.57 | -0.41 | +94.1% | -38% | 6/8 | 0.47 | 49% |
-| 24/84 | 0.54 | -0.41 | +82.2% | -41% | 6/8 | 0.47 | 48% |
-| 22/92 | 0.54 | -0.42 | +82.3% | -43% | 6/8 | 0.47 | 49% |
-| 18/88 | 0.49 | -0.57 | +69.1% | -44% | 6/8 | 0.44 | 49% |
+| 24/92 | 0.83 | 1.13 | +1194.4% | -66% | 6/8 | 0.77 | 52% |
+| 24/96 | 0.83 | 1.12 | +1182.0% | -67% | 6/8 | 0.77 | 52% |
+| 12/92 | 0.83 | 1.23 | +1165.0% | -67% | 6/8 | 0.73 | 52% |
+| 24/84 | 0.81 | 1.13 | +1077.8% | -67% | 6/8 | 0.78 | 52% |
+| 16/80 | 0.81 | 1.18 | +1074.9% | -68% | 6/8 | 0.76 | 52% |
 
-### 1h · flat_adx — 6 plateaus (top 5)
+### 1h · long_flat_gap_cd — 69 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 22/76 | 0.69 | -0.10 | +155.0% | -43% | 6/8 | 0.59 | 50% |
-| 24/72 | 0.68 | -0.11 | +149.7% | -41% | 6/8 | 0.64 | 50% |
-| 20/84 | 0.63 | -0.18 | +125.9% | -40% | 6/8 | 0.59 | 50% |
-| 22/80 | 0.61 | -0.19 | +117.6% | -40% | 6/8 | 0.59 | 50% |
-| 24/80 | 0.60 | -0.20 | +113.8% | -36% | 6/8 | 0.61 | 50% |
+| 24/84 | 0.90 | 1.17 | +1554.5% | -62% | 6/8 | 0.84 | 50% |
+| 24/92 | 0.89 | 1.14 | +1467.6% | -64% | 6/8 | 0.87 | 50% |
+| 22/92 | 0.88 | 1.14 | +1398.5% | -64% | 6/8 | 0.85 | 50% |
+| 12/80 | 0.87 | 1.23 | +1387.6% | -62% | 6/8 | 0.81 | 50% |
+| 24/88 | 0.87 | 1.13 | +1362.6% | -63% | 6/8 | 0.88 | 50% |
 
-### 1h · flat_adx_gap_cd — 13 plateaus (top 5)
+### 4h · always_in — 71 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 24/72 | 0.86 | 0.16 | +245.7% | -35% | 6/8 | 0.79 | 47% |
-| 24/84 | 0.85 | 0.13 | +235.1% | -33% | 6/8 | 0.81 | 47% |
-| 22/92 | 0.84 | 0.12 | +231.4% | -32% | 6/8 | 0.80 | 47% |
-| 24/92 | 0.83 | 0.11 | +227.7% | -34% | 6/8 | 0.81 | 47% |
-| 22/76 | 0.83 | 0.11 | +223.5% | -37% | 6/8 | 0.79 | 47% |
+| 14/88 | 0.71 | 0.83 | +930.9% | -67% | 7/8 | 0.68 | 99% |
+| 16/80 | 0.71 | 0.83 | +930.1% | -67% | 7/8 | 0.66 | 99% |
+| 10/92 | 0.71 | 0.84 | +907.2% | -70% | 6/8 | 0.67 | 99% |
+| 14/84 | 0.71 | 0.83 | +895.3% | -69% | 7/8 | 0.68 | 99% |
+| 10/88 | 0.71 | 0.85 | +879.0% | -71% | 6/8 | 0.65 | 99% |
 
-### 1h · long_flat_gap_cd — 2 plateaus (top 5)
+### 4h · gap_cooldown — 60 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 4/16 | 0.31 | -0.81 | +26.9% | -43% | 6/8 | 0.22 | 44% |
-| 6/24 | 0.27 | -0.54 | +18.4% | -46% | 6/8 | 0.24 | 45% |
+| 8/96 | 0.74 | 0.86 | +1078.5% | -54% | 6/8 | 0.62 | 94% |
+| 14/84 | 0.68 | 0.78 | +715.2% | -64% | 6/8 | 0.63 | 94% |
+| 8/92 | 0.67 | 0.80 | +706.5% | -59% | 7/8 | 0.62 | 94% |
+| 14/88 | 0.67 | 0.77 | +686.5% | -59% | 6/8 | 0.63 | 94% |
+| 14/80 | 0.66 | 0.77 | +655.6% | -69% | 6/8 | 0.63 | 94% |
 
-### 4h · always_in — 33 plateaus (top 5)
+### 4h · long_flat — 171 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 12/96 | 0.76 | 0.66 | +235.5% | -42% | 7/8 | 0.66 | 98% |
-| 10/92 | 0.72 | 0.60 | +202.8% | -47% | 6/8 | 0.65 | 98% |
-| 14/88 | 0.71 | 0.62 | +200.1% | -43% | 7/8 | 0.66 | 98% |
-| 16/84 | 0.70 | 0.61 | +194.3% | -42% | 6/8 | 0.57 | 98% |
-| 14/84 | 0.70 | 0.60 | +192.3% | -42% | 7/8 | 0.65 | 98% |
+| 16/80 | 1.13 | 1.22 | +4033.5% | -56% | 6/8 | 1.10 | 52% |
+| 14/88 | 1.13 | 1.22 | +3918.3% | -55% | 6/8 | 1.10 | 52% |
+| 14/84 | 1.13 | 1.22 | +3910.7% | -58% | 7/8 | 1.11 | 52% |
+| 16/84 | 1.12 | 1.21 | +3867.9% | -59% | 6/8 | 1.09 | 52% |
+| 10/88 | 1.12 | 1.23 | +3862.6% | -60% | 6/8 | 1.08 | 52% |
 
-### 4h · gap_cooldown — 43 plateaus (top 5)
+### 4h · long_flat_gap_cd — 146 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 4/88 | 0.69 | 0.54 | +179.5% | -41% | 6/8 | 0.51 | 93% |
-| 4/96 | 0.64 | 0.50 | +153.3% | -42% | 6/8 | 0.43 | 94% |
-| 14/88 | 0.62 | 0.53 | +141.2% | -47% | 6/8 | 0.53 | 94% |
-| 14/76 | 0.62 | 0.52 | +140.6% | -47% | 7/8 | 0.49 | 93% |
-| 4/92 | 0.61 | 0.47 | +136.7% | -42% | 6/8 | 0.51 | 94% |
+| 12/80 | 1.18 | 1.27 | +4625.9% | -58% | 7/8 | 1.12 | 51% |
+| 6/96 | 1.17 | 1.28 | +4597.2% | -54% | 6/8 | 1.10 | 51% |
+| 8/96 | 1.16 | 1.26 | +4446.4% | -53% | 6/8 | 1.11 | 51% |
+| 10/88 | 1.16 | 1.25 | +4264.6% | -57% | 6/8 | 1.10 | 51% |
+| 12/76 | 1.15 | 1.25 | +4134.5% | -56% | 7/8 | 1.14 | 50% |
 
-### 4h · flat_er — 16 plateaus (top 5)
+### 4h · long_flat_adx — 8 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 22/60 | 0.59 | -0.14 | +93.7% | -33% | 6/8 | 0.49 | 33% |
-| 24/56 | 0.57 | -0.16 | +87.2% | -37% | 6/8 | 0.53 | 33% |
-| 24/52 | 0.53 | -0.21 | +75.9% | -35% | 6/8 | 0.53 | 33% |
-| 22/56 | 0.53 | -0.21 | +75.7% | -36% | 6/8 | 0.50 | 33% |
-| 12/96 | 0.52 | -0.21 | +73.1% | -34% | 6/8 | 0.43 | 33% |
+| 10/88 | 0.70 | 0.89 | +439.6% | -52% | 6/8 | 0.66 | 27% |
+| 8/92 | 0.69 | 0.88 | +417.2% | -53% | 6/8 | 0.66 | 27% |
+| 16/72 | 0.64 | 0.83 | +336.9% | -54% | 6/8 | 0.62 | 27% |
+| 22/48 | 0.63 | 0.83 | +329.4% | -52% | 6/8 | 0.61 | 26% |
+| 18/64 | 0.63 | 0.82 | +325.2% | -54% | 6/8 | 0.62 | 26% |
 
-### 4h · flat_adx — 28 plateaus (top 5)
+### 8h · always_in — 92 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 10/24 | 0.45 | 0.22 | +63.0% | -44% | 6/8 | 0.40 | 52% |
-| 8/24 | 0.45 | 0.20 | +62.8% | -40% | 6/8 | 0.39 | 52% |
-| 10/92 | 0.44 | 0.25 | +59.8% | -41% | 6/8 | 0.36 | 51% |
-| 10/88 | 0.43 | 0.23 | +56.1% | -41% | 7/8 | 0.36 | 51% |
-| 10/96 | 0.42 | 0.21 | +51.7% | -41% | 6/8 | 0.36 | 51% |
+| 24/96 | 0.90 | 0.94 | +2972.7% | -79% | 7/8 | 0.82 | 99% |
+| 24/92 | 0.87 | 0.91 | +2437.1% | -77% | 7/8 | 0.82 | 99% |
+| 24/76 | 0.83 | 0.88 | +1917.3% | -74% | 7/8 | 0.74 | 99% |
+| 22/96 | 0.82 | 0.87 | +1880.1% | -81% | 7/8 | 0.80 | 99% |
+| 24/88 | 0.82 | 0.86 | +1790.4% | -78% | 7/8 | 0.78 | 99% |
 
-### 4h · flat_adx_gap_cd — 38 plateaus (top 5)
+### 8h · gap_cooldown — 90 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 4/96 | 0.45 | 0.25 | +61.3% | -42% | 7/8 | 0.29 | 50% |
-| 8/96 | 0.44 | 0.25 | +58.5% | -43% | 6/8 | 0.33 | 50% |
-| 8/92 | 0.43 | 0.24 | +55.3% | -42% | 6/8 | 0.33 | 50% |
-| 10/80 | 0.42 | 0.23 | +53.2% | -41% | 6/8 | 0.34 | 50% |
-| 6/32 | 0.42 | 0.20 | +51.5% | -43% | 6/8 | 0.36 | 49% |
+| 14/96 | 0.84 | 0.89 | +2001.8% | -76% | 7/8 | 0.80 | 94% |
+| 14/92 | 0.83 | 0.89 | +1962.3% | -73% | 7/8 | 0.79 | 93% |
+| 18/88 | 0.82 | 0.87 | +1815.4% | -73% | 7/8 | 0.81 | 94% |
+| 6/96 | 0.82 | 0.89 | +1813.1% | -78% | 7/8 | 0.72 | 94% |
+| 10/96 | 0.82 | 0.88 | +1770.9% | -77% | 7/8 | 0.78 | 94% |
 
-### 4h · long_flat — 142 plateaus (top 5)
+### 8h · flat_er — 1 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 12/96 | 0.96 | 0.89 | +239.1% | -43% | 6/8 | 0.89 | 50% |
-| 10/92 | 0.93 | 0.84 | +225.1% | -49% | 6/8 | 0.88 | 50% |
-| 14/88 | 0.93 | 0.85 | +220.7% | -42% | 6/8 | 0.89 | 50% |
-| 16/84 | 0.92 | 0.85 | +218.1% | -42% | 6/8 | 0.82 | 50% |
-| 14/84 | 0.92 | 0.84 | +216.3% | -44% | 6/8 | 0.89 | 50% |
+| 24/96 | 0.62 | 1.02 | +411.5% | -68% | 6/8 | 0.50 | 35% |
 
-### 4h · long_flat_gap_cd — 130 plateaus (top 5)
+### 8h · flat_adx — 12 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 10/88 | 0.97 | 0.89 | +233.5% | -40% | 6/8 | 0.81 | 49% |
-| 8/96 | 0.95 | 0.87 | +230.3% | -43% | 6/8 | 0.88 | 49% |
-| 12/80 | 0.93 | 0.86 | +216.6% | -41% | 6/8 | 0.83 | 49% |
-| 6/96 | 0.92 | 0.82 | +215.9% | -43% | 6/8 | 0.84 | 49% |
-| 16/84 | 0.89 | 0.83 | +199.2% | -42% | 6/8 | 0.78 | 49% |
+| 4/44 | 0.54 | 0.68 | +284.2% | -58% | 6/8 | 0.44 | 53% |
+| 4/48 | 0.53 | 0.66 | +266.1% | -62% | 6/8 | 0.50 | 53% |
+| 4/88 | 0.51 | 0.63 | +227.8% | -78% | 6/8 | 0.43 | 52% |
+| 4/80 | 0.50 | 0.62 | +207.1% | -71% | 6/8 | 0.47 | 52% |
+| 4/96 | 0.48 | 0.61 | +185.1% | -79% | 6/8 | 0.43 | 52% |
 
-### 4h · long_flat_adx — 12 plateaus (top 5)
+### 8h · flat_adx_gap_cd — 12 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 8/24 | 0.49 | 0.29 | +54.7% | -44% | 6/8 | 0.44 | 25% |
-| 12/96 | 0.46 | 0.30 | +47.5% | -47% | 6/8 | 0.43 | 25% |
-| 6/96 | 0.43 | 0.28 | +44.6% | -50% | 6/8 | 0.39 | 25% |
-| 12/92 | 0.42 | 0.27 | +42.3% | -48% | 6/8 | 0.44 | 26% |
-| 12/88 | 0.42 | 0.26 | +41.4% | -50% | 6/8 | 0.43 | 26% |
+| 18/68 | 0.65 | 0.75 | +541.6% | -62% | 6/8 | 0.58 | 50% |
+| 4/44 | 0.54 | 0.66 | +278.7% | -53% | 6/8 | 0.46 | 50% |
+| 4/96 | 0.50 | 0.62 | +213.6% | -75% | 6/8 | 0.51 | 50% |
+| 4/48 | 0.49 | 0.61 | +206.3% | -62% | 6/8 | 0.48 | 51% |
+| 12/24 | 0.47 | 0.58 | +174.1% | -59% | 6/8 | 0.42 | 49% |
 
-### 8h · always_in — 44 plateaus (top 5)
+### 8h · long_flat — 209 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 8/40 | 0.70 | 0.60 | +188.4% | -41% | 6/8 | 0.56 | 98% |
-| 6/40 | 0.69 | 0.57 | +183.8% | -45% | 6/8 | 0.58 | 98% |
-| 6/44 | 0.69 | 0.57 | +182.5% | -46% | 7/8 | 0.66 | 98% |
-| 4/48 | 0.69 | 0.56 | +181.6% | -44% | 6/8 | 0.67 | 98% |
-| 6/52 | 0.69 | 0.59 | +181.6% | -43% | 7/8 | 0.65 | 98% |
+| 24/96 | 1.22 | 1.25 | +6126.3% | -63% | 6/8 | 1.17 | 52% |
+| 24/92 | 1.20 | 1.23 | +5589.5% | -63% | 6/8 | 1.16 | 52% |
+| 24/76 | 1.18 | 1.22 | +5069.5% | -66% | 6/8 | 1.12 | 52% |
+| 22/96 | 1.17 | 1.20 | +4937.4% | -65% | 6/8 | 1.15 | 52% |
+| 20/72 | 1.16 | 1.21 | +4739.7% | -72% | 7/8 | 1.13 | 52% |
 
-### 8h · gap_cooldown — 7 plateaus (top 5)
+### 8h · long_flat_gap_cd — 204 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 6/40 | 0.67 | 0.57 | +166.0% | -47% | 7/8 | 0.49 | 89% |
-| 6/52 | 0.58 | 0.49 | +117.7% | -49% | 6/8 | 0.45 | 91% |
-| 4/60 | 0.53 | 0.44 | +97.5% | -49% | 7/8 | 0.35 | 91% |
-| 6/48 | 0.50 | 0.41 | +82.5% | -49% | 6/8 | 0.48 | 90% |
-| 8/28 | 0.49 | 0.39 | +79.2% | -45% | 6/8 | 0.43 | 86% |
+| 24/96 | 1.25 | 1.27 | +6674.2% | -60% | 6/8 | 1.18 | 50% |
+| 24/92 | 1.22 | 1.25 | +6003.9% | -58% | 6/8 | 1.15 | 50% |
+| 6/96 | 1.21 | 1.26 | +5507.1% | -70% | 7/8 | 1.14 | 51% |
+| 6/36 | 1.21 | 1.30 | +4646.8% | -58% | 6/8 | 1.11 | 49% |
+| 18/68 | 1.20 | 1.24 | +5027.3% | -74% | 7/8 | 1.09 | 49% |
 
-### 8h · flat_er — 200 plateaus (top 5)
+### 8h · long_flat_adx — 51 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 18/88 | 1.19 | 0.83 | +367.6% | -48% | 8/8 | 1.05 | 32% |
-| 14/96 | 1.11 | 0.75 | +314.3% | -43% | 8/8 | 1.05 | 32% |
-| 18/84 | 1.10 | 0.75 | +311.9% | -48% | 7/8 | 1.05 | 32% |
-| 24/76 | 1.08 | 0.72 | +296.3% | -47% | 8/8 | 1.03 | 32% |
-| 20/60 | 1.08 | 0.72 | +302.2% | -39% | 7/8 | 0.98 | 32% |
+| 24/96 | 1.12 | 1.21 | +2378.3% | -57% | 6/8 | 1.05 | 30% |
+| 6/52 | 1.10 | 1.20 | +1896.9% | -57% | 6/8 | 1.06 | 28% |
+| 6/68 | 1.10 | 1.20 | +1917.9% | -60% | 6/8 | 1.08 | 28% |
+| 4/48 | 1.10 | 1.21 | +1809.2% | -52% | 6/8 | 1.06 | 28% |
+| 6/60 | 1.10 | 1.19 | +1866.4% | -60% | 6/8 | 1.07 | 28% |
 
-### 8h · flat_adx — 8 plateaus (top 5)
+### 1d · always_in — 88 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 6/48 | 0.44 | 0.33 | +56.8% | -37% | 6/8 | 0.44 | 48% |
-| 6/40 | 0.41 | 0.30 | +49.5% | -40% | 6/8 | 0.39 | 49% |
-| 6/44 | 0.40 | 0.29 | +46.4% | -37% | 6/8 | 0.42 | 48% |
-| 4/36 | 0.37 | 0.25 | +40.1% | -48% | 6/8 | 0.36 | 49% |
-| 4/32 | 0.35 | 0.22 | +35.5% | -51% | 6/8 | 0.35 | 49% |
+| 10/32 | 0.88 | 0.92 | +2857.2% | -73% | 6/8 | 0.79 | 99% |
+| 24/40 | 0.87 | 0.90 | +2671.1% | -70% | 6/8 | 0.78 | 99% |
+| 8/32 | 0.86 | 0.91 | +2461.2% | -70% | 6/8 | 0.79 | 99% |
+| 8/36 | 0.84 | 0.88 | +2154.4% | -72% | 7/8 | 0.78 | 99% |
+| 6/40 | 0.84 | 0.88 | +2099.3% | -76% | 6/8 | 0.75 | 99% |
 
-### 8h · flat_adx_gap_cd — 2 plateaus (top 5)
+### 1d · gap_cooldown — 116 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 4/52 | 0.45 | 0.35 | +60.0% | -36% | 6/8 | 0.41 | 47% |
-| 4/48 | 0.43 | 0.33 | +55.7% | -36% | 6/8 | 0.41 | 47% |
+| 4/36 | 0.83 | 0.87 | +1866.0% | -72% | 7/8 | 0.68 | 87% |
+| 4/32 | 0.82 | 0.86 | +1775.5% | -69% | 6/8 | 0.69 | 87% |
+| 4/40 | 0.79 | 0.83 | +1478.0% | -73% | 7/8 | 0.68 | 88% |
+| 4/64 | 0.78 | 0.81 | +1423.0% | -68% | 7/8 | 0.73 | 91% |
+| 4/60 | 0.78 | 0.81 | +1418.0% | -68% | 8/8 | 0.70 | 91% |
 
-### 8h · long_flat — 93 plateaus (top 5)
+### 1d · flat_er — 22 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 6/40 | 0.93 | 0.84 | +221.3% | -41% | 6/8 | 0.85 | 51% |
-| 8/40 | 0.92 | 0.84 | +212.7% | -41% | 6/8 | 0.82 | 50% |
-| 6/52 | 0.91 | 0.83 | +208.8% | -44% | 6/8 | 0.88 | 50% |
-| 6/44 | 0.91 | 0.82 | +208.7% | -47% | 6/8 | 0.89 | 50% |
-| 4/84 | 0.91 | 0.84 | +208.8% | -38% | 6/8 | 0.83 | 50% |
+| 24/40 | 0.92 | 1.05 | +1719.8% | -46% | 6/8 | 0.76 | 35% |
+| 18/68 | 0.86 | 0.99 | +1312.9% | -50% | 6/8 | 0.78 | 35% |
+| 16/72 | 0.85 | 0.98 | +1268.4% | -52% | 6/8 | 0.78 | 35% |
+| 22/44 | 0.82 | 0.95 | +1095.5% | -49% | 6/8 | 0.76 | 35% |
+| 14/76 | 0.80 | 0.93 | +977.1% | -54% | 6/8 | 0.70 | 35% |
 
-### 8h · long_flat_gap_cd — 91 plateaus (top 5)
+### 1d · flat_adx — 188 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 6/40 | 1.00 | 0.92 | +243.0% | -42% | 6/8 | 0.86 | 48% |
-| 4/48 | 0.96 | 0.88 | +225.1% | -41% | 6/8 | 0.90 | 48% |
-| 6/44 | 0.95 | 0.88 | +224.5% | -45% | 6/8 | 0.88 | 48% |
-| 6/48 | 0.92 | 0.85 | +206.1% | -42% | 6/8 | 0.86 | 48% |
-| 8/36 | 0.91 | 0.84 | +199.5% | -39% | 6/8 | 0.77 | 48% |
+| 22/64 | 0.94 | 0.98 | +2897.6% | -71% | 7/8 | 0.89 | 55% |
+| 8/92 | 0.94 | 0.98 | +2801.9% | -67% | 7/8 | 0.90 | 55% |
+| 8/84 | 0.94 | 0.98 | +2808.6% | -60% | 8/8 | 0.90 | 55% |
+| 10/88 | 0.93 | 0.97 | +2698.2% | -68% | 8/8 | 0.90 | 55% |
+| 6/92 | 0.93 | 0.97 | +2669.1% | -60% | 8/8 | 0.90 | 55% |
 
-### 8h · long_flat_adx — 170 plateaus (top 5)
+### 1d · flat_adx_gap_cd — 193 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 4/92 | 0.90 | 0.81 | +139.4% | -36% | 6/8 | 0.76 | 26% |
-| 4/88 | 0.89 | 0.81 | +138.9% | -36% | 6/8 | 0.80 | 26% |
-| 4/84 | 0.89 | 0.80 | +136.7% | -36% | 6/8 | 0.80 | 26% |
-| 4/96 | 0.85 | 0.76 | +127.5% | -36% | 6/8 | 0.73 | 26% |
-| 4/80 | 0.82 | 0.74 | +119.8% | -38% | 6/8 | 0.78 | 26% |
+| 6/84 | 0.92 | 0.96 | +2458.2% | -62% | 8/8 | 0.86 | 53% |
+| 12/88 | 0.92 | 0.96 | +2441.5% | -68% | 8/8 | 0.86 | 53% |
+| 6/92 | 0.91 | 0.95 | +2379.7% | -62% | 7/8 | 0.87 | 53% |
+| 6/88 | 0.90 | 0.94 | +2233.1% | -65% | 8/8 | 0.87 | 53% |
+| 8/88 | 0.89 | 0.93 | +2164.0% | -67% | 7/8 | 0.89 | 53% |
 
-### 8h · mr_chop — 7 plateaus (top 5)
+### 1d · long_flat — 201 plateaus (top 5)
 
-| window/width | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 26/2.75 | 1.37 | 1.21 | +65.7% | -5% | 6/8 | 0.83 | 3% |
-| 26/3 | 1.09 | 1.00 | +40.0% | -4% | 6/8 | 0.86 | 2% |
-| 20/3 | 1.06 | 0.94 | +45.5% | -4% | 7/8 | 0.82 | 3% |
-| 50/1.75 | 0.74 | 0.50 | +59.8% | -19% | 6/8 | 0.57 | 11% |
-| 32/2.75 | 0.72 | 0.60 | +28.3% | -7% | 6/8 | 0.70 | 2% |
+| 10/32 | 1.20 | 1.23 | +6078.4% | -59% | 6/8 | 1.13 | 51% |
+| 8/32 | 1.18 | 1.21 | +5622.3% | -62% | 6/8 | 1.13 | 52% |
+| 8/36 | 1.17 | 1.20 | +5312.6% | -58% | 6/8 | 1.13 | 51% |
+| 24/40 | 1.17 | 1.18 | +5632.5% | -63% | 6/8 | 1.11 | 52% |
+| 6/40 | 1.16 | 1.19 | +5211.3% | -61% | 6/8 | 1.11 | 51% |
 
-### 1d · always_in — 5 plateaus (top 5)
+### 1d · long_flat_gap_cd — 201 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 4/56 | 0.57 | 0.53 | +117.5% | -47% | 6/8 | 0.40 | 97% |
-| 4/64 | 0.54 | 0.50 | +100.3% | -46% | 6/8 | 0.47 | 96% |
-| 4/68 | 0.48 | 0.44 | +75.4% | -49% | 6/8 | 0.43 | 96% |
-| 4/72 | 0.43 | 0.40 | +57.1% | -54% | 6/8 | 0.29 | 96% |
-| 4/20 | 0.28 | 0.20 | +7.6% | -62% | 6/8 | 0.30 | 98% |
+| 6/36 | 1.21 | 1.24 | +5973.3% | -54% | 6/8 | 1.13 | 48% |
+| 4/48 | 1.21 | 1.23 | +6023.8% | -61% | 6/8 | 1.14 | 49% |
+| 10/28 | 1.20 | 1.23 | +5582.2% | -60% | 6/8 | 1.12 | 47% |
+| 10/32 | 1.19 | 1.21 | +5340.0% | -60% | 6/8 | 1.11 | 48% |
+| 6/40 | 1.18 | 1.21 | +5351.2% | -56% | 6/8 | 1.16 | 49% |
 
-### 1d · gap_cooldown — 7 plateaus (top 5)
+### 1d · long_flat_adx — 212 plateaus (top 5)
 
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
+| fast/slow | Sharpe 15 bps | Sharpe 2 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
 |---|---|---|---|---|---|---|---|
-| 10/80 | 0.60 | 0.58 | +128.5% | -48% | 6/8 | 0.47 | 91% |
-| 4/80 | 0.49 | 0.46 | +77.9% | -55% | 6/8 | 0.36 | 90% |
-| 4/84 | 0.49 | 0.46 | +77.3% | -52% | 6/8 | 0.39 | 91% |
-| 12/68 | 0.46 | 0.44 | +67.6% | -46% | 6/8 | 0.38 | 90% |
-| 12/72 | 0.45 | 0.43 | +64.0% | -44% | 6/8 | 0.41 | 90% |
-
-### 1d · flat_er — 30 plateaus (top 5)
-
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
-|---|---|---|---|---|---|---|---|
-| 14/72 | 0.67 | 0.56 | +114.9% | -33% | 6/8 | 0.64 | 32% |
-| 8/96 | 0.66 | 0.54 | +108.8% | -42% | 6/8 | 0.51 | 31% |
-| 16/64 | 0.65 | 0.54 | +108.2% | -33% | 6/8 | 0.59 | 32% |
-| 16/72 | 0.65 | 0.53 | +106.6% | -42% | 6/8 | 0.61 | 32% |
-| 14/68 | 0.64 | 0.53 | +105.1% | -33% | 6/8 | 0.62 | 32% |
-
-### 1d · flat_adx — 157 plateaus (top 5)
-
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
-|---|---|---|---|---|---|---|---|
-| 6/92 | 0.82 | 0.78 | +203.2% | -34% | 8/8 | 0.77 | 48% |
-| 6/96 | 0.82 | 0.78 | +203.2% | -34% | 8/8 | 0.77 | 48% |
-| 6/48 | 0.79 | 0.76 | +190.3% | -34% | 8/8 | 0.71 | 48% |
-| 6/52 | 0.79 | 0.76 | +190.3% | -34% | 8/8 | 0.72 | 48% |
-| 4/92 | 0.79 | 0.75 | +187.4% | -34% | 8/8 | 0.75 | 48% |
-
-### 1d · flat_adx_gap_cd — 93 plateaus (top 5)
-
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
-|---|---|---|---|---|---|---|---|
-| 6/92 | 0.75 | 0.72 | +171.1% | -34% | 7/8 | 0.72 | 48% |
-| 6/96 | 0.75 | 0.72 | +171.1% | -34% | 7/8 | 0.74 | 48% |
-| 8/92 | 0.74 | 0.71 | +164.8% | -34% | 6/8 | 0.71 | 47% |
-| 8/96 | 0.74 | 0.71 | +164.8% | -34% | 6/8 | 0.74 | 47% |
-| 10/80 | 0.73 | 0.70 | +158.7% | -34% | 7/8 | 0.69 | 47% |
-
-### 1d · long_flat — 28 plateaus (top 5)
-
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
-|---|---|---|---|---|---|---|---|
-| 8/88 | 0.81 | 0.79 | +176.1% | -28% | 6/8 | 0.75 | 52% |
-| 4/56 | 0.80 | 0.77 | +167.2% | -32% | 6/8 | 0.67 | 50% |
-| 10/88 | 0.79 | 0.78 | +171.5% | -32% | 6/8 | 0.78 | 52% |
-| 8/92 | 0.79 | 0.78 | +168.4% | -31% | 6/8 | 0.79 | 52% |
-| 4/64 | 0.78 | 0.75 | +159.7% | -29% | 6/8 | 0.71 | 50% |
-
-### 1d · long_flat_gap_cd — 17 plateaus (top 5)
-
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
-|---|---|---|---|---|---|---|---|
-| 4/48 | 0.82 | 0.80 | +174.5% | -31% | 6/8 | 0.59 | 47% |
-| 4/64 | 0.78 | 0.75 | +156.7% | -30% | 6/8 | 0.71 | 49% |
-| 4/56 | 0.77 | 0.74 | +152.4% | -31% | 6/8 | 0.65 | 48% |
-| 4/68 | 0.77 | 0.74 | +152.8% | -33% | 6/8 | 0.72 | 49% |
-| 4/52 | 0.76 | 0.73 | +149.7% | -32% | 6/8 | 0.65 | 47% |
-
-### 1d · long_flat_adx — 2 plateaus (top 5)
-
-| fast/slow | Sharpe 2 bps | Sharpe 10 bps | return | max DD | windows > 0 | neighbours' median Sharpe | time in market |
-|---|---|---|---|---|---|---|---|
-| 8/24 | 0.99 | 0.96 | +176.6% | -22% | 6/8 | 0.93 | 26% |
-| 8/20 | 0.94 | 0.90 | +157.9% | -24% | 6/8 | 0.87 | 26% |
+| 10/88 | 1.32 | 1.35 | +5064.8% | -46% | 7/8 | 1.28 | 30% |
+| 8/88 | 1.31 | 1.34 | +4966.5% | -48% | 7/8 | 1.29 | 30% |
+| 8/92 | 1.30 | 1.33 | +4728.0% | -44% | 7/8 | 1.28 | 30% |
+| 8/84 | 1.30 | 1.32 | +4912.0% | -43% | 7/8 | 1.27 | 30% |
+| 22/68 | 1.29 | 1.32 | +4885.8% | -50% | 7/8 | 1.25 | 30% |
 
 ## Walk-forward detail (top 3 by OOS Sharpe)
 
@@ -485,54 +437,55 @@ BTC lost money, which is hindsight. The only fully clean test left is new data: 
 
 | train → test | picked | in-sample Sharpe | OOS Sharpe | OOS return |
 |---|---|---|---|---|
-| W1 → W2 | 4/48 | 0.00 | 1.51 | +25.9% |
-| W2 → W3 | 6/12 | 1.62 | 0.77 | +10.2% |
-| W3 → W4 | 22/64 | 1.46 | 2.45 | +73.1% |
-| W4 → W5 | 24/52 | 2.51 | 1.73 | +29.2% |
-| W5 → W6 | 4/12 | 2.21 | 0.66 | +5.6% |
-| W6 → W7 | 16/48 | 1.47 | -2.38 | -19.1% |
-| W7 → W8 | 10/20 | -0.90 | 0.02 | -0.9% |
+| W1 → W2 | 4/12 | 1.38 | 1.04 | +52.9% |
+| W2 → W3 | 14/80 | 1.51 | 2.68 | +286.0% |
+| W3 → W4 | 12/80 | 2.75 | 1.38 | +70.8% |
+| W4 → W5 | 22/64 | 1.57 | 0.77 | +19.6% |
+| W5 → W6 | 4/88 | 0.94 | 1.89 | +89.9% |
+| W6 → W7 | 22/64 | 2.16 | 1.15 | +31.6% |
+| W7 → W8 | 4/16 | 1.54 | -1.70 | -31.0% |
 
-#### 8h · flat_er
-
-| train → test | picked | in-sample Sharpe | OOS Sharpe | OOS return |
-|---|---|---|---|---|
-| W1 → W2 | 4/84 | 1.35 | 0.94 | +18.2% |
-| W2 → W3 | 8/96 | 1.30 | 0.57 | +6.7% |
-| W3 → W4 | 24/60 | 1.49 | 2.59 | +58.6% |
-| W4 → W5 | 22/76 | 2.79 | -0.10 | -4.8% |
-| W5 → W6 | 4/56 | 0.60 | -0.15 | -4.0% |
-| W6 → W7 | 24/96 | 0.60 | 0.79 | +12.0% |
-| W7 → W8 | 24/60 | 1.88 | 2.83 | +41.5% |
-
-#### 4h · long_flat_gap_cd
+#### 8h · long_flat_adx
 
 | train → test | picked | in-sample Sharpe | OOS Sharpe | OOS return |
 |---|---|---|---|---|
-| W1 → W2 | 6/12 | -0.74 | 2.74 | +66.0% |
-| W2 → W3 | 6/12 | 2.74 | 0.30 | +2.7% |
-| W3 → W4 | 8/80 | 1.26 | 2.04 | +55.9% |
-| W4 → W5 | 10/28 | 2.57 | 0.89 | +15.2% |
-| W5 → W6 | 4/24 | 2.33 | -0.48 | -11.1% |
-| W6 → W7 | 22/48 | 1.69 | -1.43 | -17.1% |
-| W7 → W8 | 12/76 | -0.68 | 1.39 | +22.2% |
+| W1 → W2 | 8/24 | 0.81 | 1.16 | +57.7% |
+| W2 → W3 | 24/96 | 2.07 | 2.50 | +235.1% |
+| W3 → W4 | 24/44 | 2.62 | 1.29 | +60.5% |
+| W4 → W5 | 6/32 | 2.19 | -0.25 | -10.3% |
+| W5 → W6 | 4/84 | 0.32 | 2.72 | +122.1% |
+| W6 → W7 | 20/60 | 2.89 | 0.20 | +2.3% |
+| W7 → W8 | 20/88 | 0.51 | -0.26 | -6.8% |
 
-## Read before trusting
+#### 8h · long_flat
 
-- Picking the best row of the summary table is itself in-sample selection across
-  50 sweeps. The walk-forward numbers are the honest ones, and only per variant.
-- The regime filters and thresholds are textbook values, not tuned. Tuning them would add yet
-  another layer of overfitting.
-- A walk-forward Sharpe of exactly 0.00 means every window picked a setting that never
-  traded in the next window — at high fees "do nothing" was the best in-sample choice.
-- 2 bps assumes VIP or maker fees. If a result needs 2 bps to work, it does not work for
-  most accounts.
-- One asset, one exchange, one mostly-bullish 5-year history. Check other assets and paper
-  trade before risking money.
+| train → test | picked | in-sample Sharpe | OOS Sharpe | OOS return |
+|---|---|---|---|---|
+| W1 → W2 | 4/12 | 2.05 | 1.28 | +75.8% |
+| W2 → W3 | 24/96 | 1.68 | 2.56 | +346.3% |
+| W3 → W4 | 22/64 | 2.83 | 1.15 | +67.0% |
+| W4 → W5 | 14/76 | 1.45 | -0.59 | -24.1% |
+| W5 → W6 | 4/32 | 0.10 | 1.81 | +87.2% |
+| W6 → W7 | 18/60 | 2.39 | 0.95 | +33.5% |
+| W7 → W8 | 8/48 | 1.69 | -0.04 | -4.5% |
+
+## Caveats — each one is now tested, see `ROBUSTNESS_REPORT.md`
+
+- Picking the best row across 50 sweeps is in-sample selection → a meta
+  walk-forward also picks the variant *and* bar size from past data only, and a Deflated
+  Sharpe Ratio discounts every book for the number of books tried.
+- Textbook filter settings → a sensitivity grid moves every threshold and the vol target
+  around its default and reports the worst case, without picking anything.
+- "Do nothing" winning a walk-forward step → only combos with ≥ 3 trades in
+  the training window can be picked.
+- Optimistic fees → every headline number is at 15 bps (10 fee + 5 slippage), next-open fills.
+- One asset / bullish sample → BTC history now starts 2017-08-17 (includes the 2018 bear),
+  the same untuned books run on 9 coins and as a portfolio, and a paper trader
+  records live decisions.
 
 ## Charts
 
-- `wf_sharpe.png` — out-of-sample walk-forward Sharpe per variant and bar size, 2 vs 10 bps
+- `wf_sharpe.png` — out-of-sample walk-forward Sharpe per variant and bar size, headline vs optimistic cost
 - `heatmaps_trend.png` / `heatmaps_mean_reversion.png` — Sharpe over every grid, plateaus dotted
 - `wf_equity.png` — out-of-sample equity per variant vs buy & hold (log scale)
-- `candidates.png` — whole-grid ensembles (full size and vol-targeted) vs buy & hold, 10 bps
+- `candidates.png` — whole-grid ensembles (full size and vol-targeted) vs buy & hold, headline cost
