@@ -13,6 +13,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
+from tests.core.telemetry.evaluation.cases import load_cases
 from tests.core.telemetry.evaluation.judge.score import RunSnapshot, aggregate, read_runs
 
 
@@ -139,16 +140,40 @@ def validate_metric(metric: dict[str, Any]) -> None:
         raise ValueError("Invalid failed metric")
 
 
-def scorecard(runs: RunSnapshot, scores: ScoreSnapshot) -> dict[str, Any]:
+def scorecard(
+    runs: RunSnapshot, scores: ScoreSnapshot, cases_path: Path | None = None
+) -> dict[str, Any]:
     """Show operational completion alongside advisory semantic scores."""
     if (
         runs.manifest.get("purpose") == "judge_calibration"
         or runs.manifest.get("report_origin") == "authored_examples_not_investigator_outputs"
     ):
         raise ValueError("Authored calibration reports are not investigator baseline results")
+    catalog: dict[str, str] = {}
+    for row in runs.results:
+        if catalog.setdefault(row["case_id"], row["category"]) != row["category"]:
+            raise ValueError("A case has inconsistent failure classes")
+    dataset, digest = load_cases(cases_path or Path(__file__).with_name("cases.json"))
+    verified = digest == runs.manifest.get("dataset_sha256")
+    if cases_path is not None and not verified:
+        raise ValueError("Supplied case dataset does not match generation")
+    if verified:
+        dataset_catalog = {case.id: case.category for case in dataset.cases}
+        if any(dataset_catalog.get(case_id) != category for case_id, category in catalog.items()):
+            raise ValueError("Recorded failure classes do not match the case dataset")
+        catalog.update(dataset_catalog)
+    selected = runs.manifest["selected_cases"]
+    unknown = sorted(case_id for case_id in selected if case_id not in catalog)
+    categories = {catalog[case_id] for case_id in selected if case_id in catalog}
+    if unknown:
+        categories.add("unclassified")
     groups: dict[str, dict[str, Any]] = {}
-    for category in sorted({row["category"] for row in runs.results}):
-        rows = [row for row in runs.results if row["category"] == category]
+    for category in sorted(categories):
+        case_ids = [
+            case_id for case_id in selected if catalog.get(case_id, "unclassified") == category
+        ]
+        rows = [row for row in runs.results if row["case_id"] in case_ids]
+        expected_for_class = len(case_ids) * runs.manifest["repeats"]
         identities = {(row["case_id"], row["repeat"]) for row in rows}
         judged = [row for row in scores.results if (row["case_id"], row["repeat"]) in identities]
         judgments = aggregate(judged, len(rows))
@@ -156,15 +181,18 @@ def scorecard(runs: RunSnapshot, scores: ScoreSnapshot) -> dict[str, Any]:
         judgments.pop("generation_statuses")
         judgments.pop("measurement_prefix_failures")
         groups[category] = {
+            "expected_runs": expected_for_class,
             "recorded_runs": len(rows),
-            "case_ids": sorted({row["case_id"] for row in rows}),
+            "missing_generation_runs": expected_for_class - len(rows),
+            "case_ids": sorted(case_ids),
+            "recorded_case_ids": sorted({row["case_id"] for row in rows}),
             "generation_statuses": dict(Counter(row["status"] for row in rows)),
             "measurement_prefix_failures": sum(
                 not row["contract_checks"]["measurement_prefix_preserved"] for row in rows
             ),
             "duration_seconds": {
-                "mean": mean(row["duration_seconds"] for row in rows),
-                "max": max(row["duration_seconds"] for row in rows),
+                "mean": mean(row["duration_seconds"] for row in rows) if rows else None,
+                "max": max(row["duration_seconds"] for row in rows) if rows else None,
             },
             "judgments": judgments,
         }
@@ -175,6 +203,9 @@ def scorecard(runs: RunSnapshot, scores: ScoreSnapshot) -> dict[str, Any]:
         "runs_sha256": runs.sha256,
         "scores_sha256": scores.sha256,
         "generation_manifest": runs.manifest,
+        "case_catalog_source": "verified_dataset" if verified else "recorded_attempts",
+        "case_catalog_sha256": digest if verified else None,
+        "unclassified_selected_cases": unknown,
         "judge_model": scores.manifest["judge_model"],
         "scorer_sha256": scores.manifest["scorer_sha256"],
         "expected_runs": expected,
@@ -212,10 +243,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=Path, required=True)
     parser.add_argument("--scores", type=Path, required=True)
+    parser.add_argument(
+        "--cases", type=Path, help="Optional original case dataset; hash must match generation"
+    )
     parser.add_argument("--output", type=Path, required=True, help="New JSON scorecard file")
     args = parser.parse_args()
     runs = read_runs(args.runs)
-    write_json(args.output, scorecard(runs, read_scores(args.scores, runs)))
+    write_json(args.output, scorecard(runs, read_scores(args.scores, runs), args.cases))
 
 
 if __name__ == "__main__":

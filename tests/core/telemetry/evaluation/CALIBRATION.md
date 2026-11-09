@@ -109,7 +109,16 @@ uv run python -m tests.core.telemetry.evaluation.reporting \
 
 The scorecard rejects authored calibration packs. It validates that score results
 match their metric checkpoints and exact generation snapshot, then groups
-results by failure class. It exposes generation failures, partial results,
+results by failure class. When its hash matches the generation manifest, the
+included case dataset identifies selected classes even if they have zero
+recorded attempts. Use optional `--cases` to supply an original custom dataset;
+an explicitly supplied dataset must match the recorded hash. If the default
+dataset has changed, recorded attempts still identify known classes and all
+remaining selected case IDs appear in an `unclassified` coverage bucket.
+
+Every class includes expected, recorded and missing generation counts. No
+recorded attempt means no duration or semantic score, rather than a zero-cost
+success. The scorecard exposes generation failures, partial results,
 missing attempts, unfinished judging, per-case metric variation and durations.
 Generation contract failures are counted from every saved investigator result,
 independently of whether judging ever reaches that attempt.

@@ -173,6 +173,38 @@ def test_scorecard_retains_interrupted_metric_and_generation_failures(tmp_path: 
     assert group["judgments"]["per_case_metrics"]
 
 
+@pytest.mark.parametrize("matching_catalog", [True, False])
+def test_scorecard_shows_unstarted_classes_and_missing_repeats(
+    tmp_path: Path, matching_catalog: bool
+) -> None:
+    pack = _pack(tmp_path)
+    path = pack / "runs.jsonl"
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    records[0].pop("purpose")
+    records[0]["report_origin"] = "offline_test_fixture"
+    if not matching_catalog:
+        records[0]["dataset_sha256"] = "unavailable-original-dataset"
+    path.write_text("\n".join(json.dumps(row) for row in records[:3]) + "\n")
+    runs = read_runs(path)
+    result = scorecard(runs, read_scores(_fake_scores(pack), runs))
+    assert result["missing_generation_runs"] == 7
+    groups = result["by_failure_class"]
+    if matching_catalog:
+        assert groups["clear"]["expected_runs"] == 6
+        assert groups["clear"]["missing_generation_runs"] == 4
+        assert groups["insufficient"]["recorded_runs"] == 0
+        assert groups["insufficient"]["missing_generation_runs"] == 3
+        assert result["unclassified_selected_cases"] == []
+    else:
+        assert result["unclassified_selected_cases"] == ["auth_rejection", "no_evidence"]
+        assert (
+            groups["unclassified"]["expected_runs"]
+            == groups["unclassified"]["missing_generation_runs"]
+            == 6
+        )
+        assert groups["unclassified"]["duration_seconds"]["mean"] is None
+
+
 @pytest.mark.parametrize("tampering", ["hash", "duplicate_metric", "result_metrics", "nan"])
 def test_score_reader_rejects_mismatched_or_fabricated_scores(
     tmp_path: Path, tampering: str
