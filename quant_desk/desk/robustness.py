@@ -104,37 +104,51 @@ def deflated_sharpe(returns: np.ndarray, n_trials: int, sr_variance: float) -> f
     return float(stats.norm.cdf((sr - expected_max) * np.sqrt(len(returns) - 1) / denom))
 
 
+def vol_matched_excess(book: pd.Series, bench: pd.Series) -> pd.Series:
+    """``book - (sd_book / sd_bench) x bench``: its mean is sd_book x (Sharpe_book - Sharpe_bench),
+    so it is positive exactly when the book's Sharpe beats the benchmark's (per period)."""
+    return book - (book.std(ddof=1) / bench.std(ddof=1)) * bench
+
+
 def deflated_sharpe_table(
     daily: pd.DataFrame, span: pd.DatetimeIndex, n_parameter_sets: int
 ) -> pd.DataFrame:
-    """DSR of every strategy book on ``span``: absolute, and of its excess over the matching
-    buy & hold. ``n_trials`` = books tried; the strict column uses every parameter set."""
+    """DSR of every strategy book on ``span``, absolute and vs the vol-matched buy & hold.
+
+    The expected best-of-N Sharpe under "no skill" uses the null dispersion of Sharpe
+    estimates, 1 / (T - 1). The raw cross-section is not used: it is dominated by books that
+    lose deterministically to costs (15m, Sharpe down to -12), which would push the bar so high
+    that no book could ever pass. ``n_trials`` = books tried; ``*_all_trials`` = every
+    parameter set of the study (strictest).
+    """
     d = daily.loc[daily.index.isin(span)]
     cols = _strategy_columns(d)
-    excess = {c: d[c] - d[(c[0], "buy & hold", c[2])] for c in cols}
-    sr_abs = [d[c].mean() / d[c].std(ddof=1) for c in cols]
-    sr_exc = [e.mean() / e.std(ddof=1) for e in excess.values()]
-    var_abs, var_exc = float(np.var(sr_abs, ddof=1)), float(np.var(sr_exc, ddof=1))
+    null_var = 1.0 / (len(d) - 1)
     n = len(cols)
     rows = []
     for c in cols:
-        r, e = d[c].to_numpy(), excess[c].to_numpy()
+        r = d[c].to_numpy()
+        e = vol_matched_excess(d[c], d[(c[0], "buy & hold", c[2])]).to_numpy()
         rows.append(
             {
                 "timeframe": c[0],
                 "book": c[1],
                 "sizing": c[2],
                 "sharpe": sweep.sharpe_np(r, DAILY_ANN),
-                "excess_sharpe": sweep.sharpe_np(e, DAILY_ANN),
-                "dsr": deflated_sharpe(r, n, var_abs),
-                "dsr_excess": deflated_sharpe(e, n, var_exc),
-                "dsr_excess_all_trials": deflated_sharpe(e, n_parameter_sets, var_exc),
+                "bench_sharpe": sweep.sharpe(d[(c[0], "buy & hold", c[2])], DAILY_ANN),
+                "dsr": deflated_sharpe(r, n, null_var),
+                "dsr_all_trials": deflated_sharpe(r, n_parameter_sets, null_var),
+                "dsr_vs_hold": deflated_sharpe(e, n, null_var),
+                "dsr_vs_hold_all_trials": deflated_sharpe(e, n_parameter_sets, null_var),
             }
         )
     table = pd.DataFrame(rows)
     table["significant"] = table["dsr"] >= config.DSR_SIGNIFICANCE
-    table["beats_hold_significantly"] = table["dsr_excess"] >= config.DSR_SIGNIFICANCE
-    return table.sort_values("dsr_excess", ascending=False).reset_index(drop=True)
+    table["beats_hold_significantly"] = table["dsr_vs_hold"] >= config.DSR_SIGNIFICANCE
+    per_period = table["sharpe"] / DAILY_ANN
+    table.attrs["cross_sectional_sd"] = float(per_period.std(ddof=1))
+    table.attrs["null_sd"] = float(null_var**0.5)
+    return table.sort_values("dsr_vs_hold", ascending=False).reset_index(drop=True)
 
 
 def _sens_job(timeframe: str, variant_name: str, gap: float, cooldown: int, adx: float) -> tuple:

@@ -147,33 +147,52 @@ would have earned by "picking the best row" without hindsight.
 
 def _dsr_section(dsr: pd.DataFrame, n_sets: int) -> str:
     show = dsr[dsr["book"].isin(KEY_BOOKS) & dsr["timeframe"].isin(SLOW_BARS)].copy()
-    show = show.sort_values("dsr_excess", ascending=False).head(12)
+    show = show.sort_values("dsr_vs_hold", ascending=False).head(12)
     rows = [
         [
             r.timeframe,
             r.book.replace("ensemble ", ""),
             _size(r.sizing),
             f"{r.sharpe:.2f}",
+            f"{r.bench_sharpe:.2f}",
             f"{r.dsr:.2f}",
-            f"{r.excess_sharpe:+.2f}",
-            f"**{r.dsr_excess:.2f}**",
-            f"{r.dsr_excess_all_trials:.2f}",
+            f"{r.dsr_all_trials:.2f}",
+            f"**{r.dsr_vs_hold:.2f}**",
+            f"{r.dsr_vs_hold_all_trials:.2f}",
         ]
         for r in show.itertuples()
     ]
     sig = dsr[dsr["significant"]]
     beat = dsr[dsr["beats_hold_significantly"]]
+    cross, null = dsr.attrs.get("cross_sectional_sd", float("nan")), dsr.attrs.get("null_sd", 1)
+    cols = [
+        "bars",
+        "book",
+        "sizing",
+        "Sharpe",
+        "B&H Sharpe",
+        f"DSR ({len(dsr)} books)",
+        f"DSR ({n_sets:,} sets)",
+        "DSR vs B&H",
+        f"DSR vs B&H ({n_sets:,} sets)",
+    ]
     return f"""## 3. Deflated Sharpe Ratio — how much of it could be luck?
 
-DSR (Bailey & López de Prado, 2014) is the probability that a book's true Sharpe is above zero
-after accounting for having tried **{len(dsr)}** books (and, strictest column, all
-**{n_sets:,}** parameter sets). "vs B&H" applies it to the book's daily return *minus* the
-matching buy & hold. ≥ {config.DSR_SIGNIFICANCE:.2f} = significant. Daily returns, W2–W8.
+DSR (Bailey & López de Prado, 2014) is the probability that a Sharpe ratio is real after
+accounting for how many strategies were tried: **{len(dsr)}** books, or (strictest) all
+**{n_sets:,}** parameter sets of the study. "vs B&H" tests the claim actually made — a *higher
+Sharpe* than buy & hold — on the book's daily return minus buy & hold scaled to the same
+volatility. ≥ {config.DSR_SIGNIFICANCE:.2f} = significant. Daily returns, W2–W8.
 
-{_md(pd.DataFrame(rows, columns=["bars", "book", "sizing", "Sharpe", "DSR", "excess Sharpe vs B&H", "DSR vs B&H", "DSR vs B&H, all trials"]))}
+How lucky the best of N could look is measured with the no-skill dispersion of Sharpe
+estimates (√(1/T) = {null:.3f} per day). The raw spread across books ({cross:.3f} per day) is
+not used: it comes from 15m books losing to costs deterministically, and with it no book could
+pass at all (an earlier version of this report did that and showed 0.00 everywhere).
 
-- Significantly positive on their own: **{len(sig)}/{len(dsr)}** books.
-- Significantly better than buy & hold: **{len(beat)}/{len(dsr)}** books.
+{_md(pd.DataFrame(rows, columns=cols))}
+
+- Significantly positive on their own ({len(dsr)} books tried): **{len(sig)}/{len(dsr)}**.
+- Sharpe significantly above buy & hold: **{len(beat)}/{len(dsr)}**.
 """
 
 

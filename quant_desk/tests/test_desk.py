@@ -342,3 +342,10 @@ def test_portfolio_only_averages_coins_that_are_already_trading() -> None:
     after = daily.loc[daily.index > b_starts + pd.Timedelta(days=2)]
     np.testing.assert_allclose(before.iloc[-1], 1.001**6 - 1, rtol=1e-9)  # A alone
     np.testing.assert_allclose(after.iloc[0], (1.001**6 - 1) / 2, rtol=1e-9)  # A and flat B
+
+
+def test_vol_matched_excess_is_zero_mean_when_sharpes_are_equal() -> None:
+    """Half of buy & hold has the same Sharpe: its vol-matched excess must be exactly zero."""
+    bench = pd.Series(np.random.default_rng(2).normal(0.001, 0.02, 1000))
+    excess = robustness.vol_matched_excess(0.5 * bench, bench)
+    np.testing.assert_allclose(excess, 0.0, atol=1e-15)
