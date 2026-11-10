@@ -422,7 +422,9 @@ def _run_ask_user(
             if selected < len(labels):
                 option_focus = selected
         elif (
-            not on_custom and (picked := _letter_index(action)) is not None and 0 <= picked < len(labels)
+            not on_custom
+            and (picked := _letter_index(action)) is not None
+            and 0 <= picked < len(labels)
         ):
             selected = picked
 
