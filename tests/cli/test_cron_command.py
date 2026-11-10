@@ -574,6 +574,44 @@ def test_cron_logs_rejects_non_positive_limit() -> None:
     assert "not in the range" in result.output
 
 
+@pytest.mark.parametrize("global_json", [False, True])
+def test_cron_logs_reports_runs_in_json(monkeypatch: pytest.MonkeyPatch, global_json: bool) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=global_json))
+    run = TaskRun(
+        task_id="task-123",
+        fire_time="2026-11-10T00:00:00+00:00",
+        status=TaskStatus.SUCCESS,
+        run_id=1,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_runs",
+        lambda *_args, **_kwargs: [run],
+    )
+
+    args = ["logs", "task-123"] if global_json else ["logs", "task-123", "--json"]
+    result = CliRunner().invoke(cron_module.cron_command, args)
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == [run.model_dump(mode="json")]
+
+
+@pytest.mark.parametrize("global_json", [False, True])
+def test_cron_logs_reports_empty_history_in_json(
+    monkeypatch: pytest.MonkeyPatch, global_json: bool
+) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=global_json))
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_runs",
+        lambda *_args, **_kwargs: [],
+    )
+
+    args = ["logs", "task-123"] if global_json else ["logs", "task-123", "--json"]
+    result = CliRunner().invoke(cron_module.cron_command, args)
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == []
+
+
 def test_cron_log_status_identifies_reclaimed_attempts() -> None:
     from surfaces.cli.commands.cron_results import _run_status_label
 

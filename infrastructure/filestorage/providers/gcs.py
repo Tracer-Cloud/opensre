@@ -65,9 +65,15 @@ class GCSObjectStore:
     def __init__(self, config: RemoteSyncConfig, *, session: Any | None = None) -> None:
         self._config = config
         self._session = session if session is not None else _build_session()
+        self._owns_session = session is None
 
     def describe(self) -> str:
         return f"gs://{self._config.bucket}/{self._config.prefix}"
+
+    def close(self) -> None:
+        """Close the authorized session this store built; an injected session stays open."""
+        if self._owns_session:
+            self._session.close()
 
     def list_objects(self, prefix: str) -> list[RemoteObject]:
         # Trailing slash so prefix "opensre" cannot also match "opensre-backup/".

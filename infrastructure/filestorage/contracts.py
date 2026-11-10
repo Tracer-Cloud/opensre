@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True)
@@ -56,4 +56,16 @@ class ObjectStore(Protocol):
         """Short human-readable destination, for logs and CLI output."""
 
 
-__all__ = ["ObjectStore", "RemoteObject"]
+@runtime_checkable
+class SupportsClose(Protocol):
+    """A store that owns network clients and releases them when the sync ends.
+
+    Optional on purpose: a backend with nothing to release, such as an in-memory
+    fake or a store that only borrows a caller's client, need not implement it.
+    """
+
+    def close(self) -> None:
+        """Release the network clients this store built; safe to call more than once."""
+
+
+__all__ = ["ObjectStore", "RemoteObject", "SupportsClose"]
