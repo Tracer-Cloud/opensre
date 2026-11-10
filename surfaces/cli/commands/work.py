@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 import click
 from rich.console import Console
+from rich.markup import escape
 
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import (
@@ -26,6 +27,7 @@ from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from infrastructure.terminal.theme import DIM, ERROR, HIGHLIGHT
 from surfaces.shared.terminal.tables.work_items import next_work_table, work_items_table
 
 _console = Console(highlight=False)
@@ -185,16 +187,24 @@ def work_add(
 def work_complete(selectors: tuple[str, ...]) -> None:
     """Mark one or more work items completed."""
     result = complete_work_items(selectors)
-    if not result.completed and (result.not_found or result.ambiguous):
-        _console.print("[red]No work items were completed.[/red]")
-        raise SystemExit(1)
     for item in result.completed:
-        _console.print(f"[green]Completed {item.display_id}[/green] {item.title}")
+        _console.print(
+            f"[{HIGHLIGHT}]Completed {item.display_id}[/] [bold]{escape(item.title)}[/bold]"
+        )
+    for item in result.already_completed:
+        _console.print(
+            f"[{DIM}]Already completed {item.display_id}[/] [bold]{escape(item.title)}[/bold]"
+        )
     for selector in result.not_found:
-        _console.print(f"[red]Not found:[/red] {selector}")
+        _console.print(f"[{ERROR}]Not found:[/] {escape(selector)}")
     for selector, candidates in result.ambiguous.items():
-        choices = ", ".join(f"{item.display_id}:{item.title}" for item in candidates)
-        _console.print(f"[red]Ambiguous:[/red] {selector} ({choices})")
+        choices = ", ".join(f"{item.display_id}:{escape(item.title)}" for item in candidates)
+        _console.print(f"[{ERROR}]Ambiguous:[/] {escape(selector)} ({choices})")
+    if not result.completed and not result.already_completed:
+        _console.print(f"[{ERROR}]No work items were completed.[/]")
+        raise SystemExit(1)
+    if result.not_found or result.ambiguous:
+        raise SystemExit(1)
 
 
 @work_command.command(name="next")
