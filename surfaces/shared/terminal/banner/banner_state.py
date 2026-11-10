@@ -13,8 +13,7 @@ from pathlib import Path
 
 from config.account import load_account_record
 from config.constants.skills import SKILLS_DIR_ENV
-from integrations.git import GitCommandError
-from integrations.git.checkout import origin_url
+from integrations.git import GitCommandError, origin_url
 from integrations.github import count_ci_fixes
 
 
