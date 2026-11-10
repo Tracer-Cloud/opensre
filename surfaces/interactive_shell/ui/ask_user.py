@@ -421,9 +421,12 @@ def _run_ask_user(
             selected = option_focus if opt_idx == submit_row else opt_idx
             if selected < len(labels):
                 option_focus = selected
-        elif not on_custom and (picked := _letter_index(action)) is not None:
-            if 0 <= picked < len(labels):
-                selected = picked
+        elif (
+            not on_custom
+            and (picked := _letter_index(action)) is not None
+            and 0 <= picked < len(labels)
+        ):
+            selected = picked
 
         if selected is not None:
             chosen = labels[selected]
