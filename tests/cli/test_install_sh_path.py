@@ -387,6 +387,33 @@ def test_install_sh_concise_output_sequence() -> None:
     ]
 
 
+def test_install_sh_says_what_happens_next_when_setup_opens_itself() -> None:
+    """An install that opens setup must not also tell the user to run opensre."""
+    result = _run_logging_snippet(
+        """
+        INSTALL_DIR="/tmp/bin"
+        BIN_NAME="opensre"
+        PATH="${INSTALL_DIR}:${PATH}"
+        will_launch_setup() { return 0; }
+
+        print_get_started
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "Next: sign in from your browser, then OpenSRE opens here in this terminal.",
+    ]
+
+
+def test_install_sh_setup_launch_shares_the_auto_launch_condition() -> None:
+    source = INSTALL_SH.read_text()
+
+    assert "will_launch_setup()" in source
+    assert "auto_setup_enabled && [ -t 0 ] && [ -t 1 ]" in source
+    assert "Launching ${BIN_NAME} setup" not in source
+
+
 def test_zsh_writes_export_to_zshrc(tmp_path: Path) -> None:
     result = _run(tmp_path, shell="/bin/zsh")
     assert result.returncode == 0, result.stderr

@@ -1201,3 +1201,54 @@ def test_the_analysis_demo_reads_while_its_menus_are_answered(
     assert scans == ["workspace-scan-prefetch"]
     assert reads == [f"{_REPOSITORY} on github-ci-analysis-prefetch"]
     assert llm.invocations == 6
+
+
+def test_startup_demo_opens_once_per_machine_then_points_at_slash_demo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    monkeypatch.setattr(demo_picker, "onboarding_demo_seen", lambda: False)
+
+    assert demo_picker.should_offer_demo() is True
+    assert demo_picker.returning_demo_hint() is None
+
+    monkeypatch.setattr(demo_picker, "onboarding_demo_seen", lambda: True)
+
+    assert demo_picker.should_offer_demo() is False
+    assert demo_picker.returning_demo_hint() == demo_picker.RETURNING_DEMO_HINT
+    assert demo_picker.offer_demo(Session(), force=True)
+
+
+def test_returning_hint_is_silent_where_the_menu_would_not_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    monkeypatch.setattr(demo_picker, "onboarding_demo_seen", lambda: True)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: False)
+
+    assert demo_picker.returning_demo_hint() is None
+
+
+def test_only_the_master_menu_outcome_marks_the_demo_seen(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marked: list[bool] = []
+    monkeypatch.setattr(demo_picker, "mark_onboarding_demo_seen", lambda: marked.append(True))
+
+    demo_picker.remember_demo_outcome(ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME)
+    demo_picker.remember_demo_outcome(None)
+    assert marked == []
+
+    demo_picker.remember_demo_outcome(ONBOARDING_SKILL_NAME)
+    assert marked == [True]
+
+
+def test_a_store_that_cannot_be_written_never_blocks_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fail() -> None:
+        raise OSError("read-only home")
+
+    monkeypatch.setattr(demo_picker, "mark_onboarding_demo_seen", _fail)
+
+    demo_picker.remember_demo_outcome(ONBOARDING_SKILL_NAME)

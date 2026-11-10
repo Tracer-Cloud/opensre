@@ -13,7 +13,7 @@ from config.account import AccountRecord
 from surfaces.cli.account_auth import AccountAuthError, AccountLoginResult
 from surfaces.cli.commands import onboard as onboard_module
 from surfaces.cli.commands.setup import setup_command
-from surfaces.cli.wizard import factory_setup, summaries
+from surfaces.cli.wizard import components, factory_setup, summaries
 from surfaces.shared.account_session import AccountSessionState, AccountStatus
 from surfaces.shared.terminal.banner import banner as banner_module
 from surfaces.shared.terminal.banner.banner_state import LaunchStatus
@@ -79,6 +79,7 @@ def test_setup_dev_uses_local_webapp(monkeypatch) -> None:
         _argv: list[str] | None = None,
         *,
         app_url: str | None = None,
+        launches_shell: bool = True,
     ) -> int:
         app_urls.append(app_url)
         return 0
@@ -98,6 +99,52 @@ def test_setup_dev_uses_local_webapp(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert app_urls == ["http://localhost:3000"]
+
+
+def test_run_factory_setup_closes_with_the_shell_step(monkeypatch) -> None:
+    """The header promises two steps; the second is printed, worded for who opens the shell."""
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=False, highlight=False, width=100)
+    monkeypatch.setattr(factory_setup, "console", console)
+    monkeypatch.setattr(components, "console", console)
+    monkeypatch.setattr(factory_setup, "render_factory_setup_header", lambda: None)
+    monkeypatch.setattr(factory_setup, "_run_account_signup_step", lambda **_kwargs: True)
+
+    assert factory_setup.run_factory_setup(launches_shell=True) == 0
+    assert "Start the shell" in output.getvalue()
+    assert "Opening the shell with your hosted model" in output.getvalue()
+
+    output.truncate(0)
+    output.seek(0)
+    assert factory_setup.run_factory_setup(launches_shell=False) == 0
+    assert "Run opensre to open the shell" in output.getvalue()
+
+
+def test_setup_command_tells_setup_whether_the_shell_follows(monkeypatch) -> None:
+    seen: list[bool] = []
+
+    def _factory_setup(
+        _argv: list[str] | None = None,
+        *,
+        app_url: str | None = None,
+        launches_shell: bool = True,
+    ) -> int:
+        seen.append(launches_shell)
+        return 0
+
+    def _run_onboarding(
+        run_command: Callable[[], int],
+        *,
+        ctx: click.Context | None = None,
+    ) -> None:
+        assert run_command() == 0
+
+    monkeypatch.setattr(factory_setup, "run_factory_setup", _factory_setup)
+    monkeypatch.setattr(onboard_module, "_run_onboarding_command", _run_onboarding)
+    monkeypatch.setattr(onboard_module, "_should_launch_shell_after_onboarding", lambda _ctx: False)
+
+    assert CliRunner().invoke(setup_command, []).exit_code == 0
+    assert seen == [False]
 
 
 def test_run_factory_setup_stops_when_user_stays_signed_out(monkeypatch) -> None:

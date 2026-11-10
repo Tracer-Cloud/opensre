@@ -11,16 +11,25 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from config.account import load_account_record
 from config.constants.skills import SKILLS_DIR_ENV
+from integrations.git import GitCommandError
+from integrations.git.checkout import origin_url
 from integrations.github import count_ci_fixes
 
 
 @dataclass(frozen=True)
 class LaunchStatus:
-    """Counts displayed beside the OpenSRE mark."""
+    """Counts displayed beside the OpenSRE mark, and who is signed in where."""
 
     skill_count: int
     ci_fix_count: int
+    #: The signed-in member (email, else user id); ``None`` before sign-in.
+    account: str | None = None
+    #: The hosted model the account runs on.
+    model: str | None = None
+    #: ``owner/name`` of the repository the shell was opened in, from its origin remote.
+    repository: str | None = None
 
 
 # ``surfaces/shared/terminal/banner/banner_state.py`` → package root (opensre/).
@@ -81,12 +90,52 @@ def _count_loaded_skills() -> int:
         return 0
 
 
+def _signed_in_account() -> tuple[str | None, str | None]:
+    """The saved login's identity and model (local file only, never the webapp)."""
+    try:
+        record = load_account_record()
+    except OSError:
+        return None, None
+    if record is None:
+        return None, None
+    return record.email or record.user_id, record.llm_model
+
+
+def repository_slug(remote_url: str) -> str | None:
+    """``owner/name`` from an origin URL in any git spelling; ``None`` when it has none."""
+    path = remote_url.strip()
+    # A local path remote has a directory, not an owner.
+    if not path or path.startswith("file:"):
+        return None
+    if "://" in path:
+        path = path.split("://", 1)[1].split("/", 1)[1] if "/" in path.split("://", 1)[1] else ""
+    elif ":" in path and not path.startswith("/"):
+        path = path.split(":", 1)[1]
+    parts = [part for part in path.strip("/").split("/") if part]
+    if len(parts) < 2:
+        return None
+    name = parts[-1].removesuffix(".git")
+    return f"{parts[-2]}/{name}" if name else None
+
+
+def _current_repository() -> str | None:
+    """The repository of the working directory, or ``None`` outside a git checkout."""
+    try:
+        return repository_slug(origin_url(os.getcwd()))
+    except (GitCommandError, OSError):
+        return None
+
+
 def load_launch_status() -> LaunchStatus:
     """Load the startup-safe status summary without network calls."""
+    account, model = _signed_in_account()
     return LaunchStatus(
         skill_count=_count_loaded_skills(),
         ci_fix_count=count_ci_fixes(),
+        account=account,
+        model=model,
+        repository=_current_repository(),
     )
 
 
-__all__ = ["LaunchStatus", "load_launch_status"]
+__all__ = ["LaunchStatus", "load_launch_status", "repository_slug"]

@@ -12,6 +12,7 @@ import os
 from typing import TYPE_CHECKING
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.setup_store import mark_onboarding_demo_seen, onboarding_demo_seen
 from core.agent_harness.spi.grounding import getting_started_skills
 from core.agent_harness.spi.session_state import clear_setup_resume
 from core.agent_harness.tools import ActionToolScope
@@ -42,8 +43,12 @@ class _StartupTtyProbe:
         return repl_tty_interactive()
 
 
-def should_offer_demo() -> bool:
-    """Offer onboarding on interactive launches outside the test harness, except mid-merge.
+#: Printed in place of the menu on a launch that already ran it once.
+RETURNING_DEMO_HINT = "Type /demo to open the guided workflows again."
+
+
+def _launch_offers_onboarding() -> bool:
+    """Interactive launches outside the test harness, except mid-merge.
 
     A checkout with a merge in progress was opened to finish that merge; the
     demo menu would only stand in the way.
@@ -54,6 +59,39 @@ def should_offer_demo() -> bool:
         and repl_tty_interactive()
         and not _merge_in_progress_here()
     )
+
+
+def _demo_seen() -> bool:
+    try:
+        return onboarding_demo_seen()
+    except OSError:
+        return False
+
+
+def should_offer_demo() -> bool:
+    """Offer onboarding on a launch that qualifies, the first time on this machine.
+
+    The menu is a full model turn. A member who answered or dismissed it once
+    gets the composer on later launches; ``/demo`` reopens it at any time.
+    """
+    return _launch_offers_onboarding() and not _demo_seen()
+
+
+def returning_demo_hint() -> str | None:
+    """The pointer to ``/demo`` for a launch that skipped the menu as already seen."""
+    if _launch_offers_onboarding() and _demo_seen():
+        return RETURNING_DEMO_HINT
+    return None
+
+
+def remember_demo_outcome(skill_name: str | None) -> None:
+    """Once the master menu was answered or dismissed, keep it off later launches."""
+    if skill_name != ONBOARDING_SKILL_NAME:
+        return
+    try:
+        mark_onboarding_demo_seen()
+    except OSError:
+        logger.debug("Could not record the onboarding demo as seen.", exc_info=True)
 
 
 def _merge_in_progress_here() -> bool:

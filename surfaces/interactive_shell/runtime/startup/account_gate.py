@@ -35,8 +35,12 @@ def account_is_signed_in() -> bool:
 def account_login(*, console: Console | None = None) -> bool:
     """Run the canonical webapp login command and verify its resulting session."""
     from infrastructure.terminal.theme import ERROR
+    from surfaces.interactive_shell.runtime.startup.first_turn_warmup import warm_sdk_imports
     from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
 
+    # The login waits on the browser; this process, which runs the first turn,
+    # loads that turn's imports in the meantime.
+    warm_sdk_imports()
     command = build_opensre_cli_argv(["account", "login"])
     try:
         result = subprocess.run(

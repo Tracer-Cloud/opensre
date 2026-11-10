@@ -1254,9 +1254,21 @@ link_into_shell_path() {
   shell_path_link_dir="$link_dir"
 }
 
+will_launch_setup() {
+  # Mirrors launch_setup_after_install: setup opens right after this install
+  # on an interactive terminal unless OPENSRE_AUTO_LAUNCH turned it off.
+  auto_setup_enabled && [ -t 0 ] && [ -t 1 ]
+}
+
 print_get_started() {
   local rc_display
 
+  if will_launch_setup; then
+    # Telling the user to run opensre while this script is about to open it
+    # reads as two instructions; say what happens next instead.
+    log "${COLOR_YELLOW:-}Next: sign in from your browser, then OpenSRE opens here in this terminal.${COLOR_RESET:-}"
+    return
+  fi
   if path_has_dir "$INSTALL_DIR" || [ -n "${shell_path_link_dir:-}" ]; then
     log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
     return
@@ -1600,7 +1612,6 @@ launch_setup_after_install() {
   if ! auto_setup_enabled || [ ! -t 0 ] || [ ! -t 1 ]; then
     return 0
   fi
-  log "Launching ${BIN_NAME} setup..."
   if ! "$binary_path" setup; then
     warn "Setup exited before completion. Run '${BIN_NAME} setup' to retry."
   fi

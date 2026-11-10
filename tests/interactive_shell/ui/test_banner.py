@@ -309,6 +309,9 @@ def test_banner_reads_ledger_and_unavailable_probes_are_zero(
     ledger = tmp_path / "ci_fixes.json"
     ledger.write_text(json.dumps({"version": 1, "fixes": ["a" * 64, "b" * 64]}))
     monkeypatch.setenv(CI_FIX_LEDGER_PATH_ENV, str(ledger))
+    # Signed out, outside a checkout: the session fields stay unset.
+    monkeypatch.setattr(banner_state_module, "load_account_record", lambda: None)
+    monkeypatch.setattr(banner_state_module, "origin_url", lambda _cwd: "")
     assert banner_state_module.load_launch_status().ci_fix_count == 2
 
     broken = tmp_path / "broken.json"
@@ -357,3 +360,97 @@ def test_refresh_welcome_poster_uses_repl_safe_render(monkeypatch: object) -> No
     poster_module.refresh_welcome_poster(console, session="sess", theme_notice="pink")
 
     assert render_calls == [{"session": "sess", "theme_notice": "pink"}]
+
+
+def test_launch_banner_names_the_member_model_and_repository(monkeypatch: object) -> None:
+    monkeypatch.setattr(
+        banner_module,
+        "load_launch_status",
+        lambda: LaunchStatus(
+            skill_count=1,
+            ci_fix_count=0,
+            account="octocat@example.com",
+            model="gpt-5.4-mini",
+            repository="acme/one",
+        ),
+    )
+    console_file = io.StringIO()
+    console = Console(file=console_file, force_terminal=False, highlight=False, width=120)
+
+    banner_module.render_launch_banner(console)
+
+    output = console_file.getvalue()
+    assert "Signed in as octocat@example.com" in output
+    assert "Model gpt-5.4-mini" in output
+    assert "Repository acme/one" in output
+
+
+def test_launch_banner_has_no_session_line_before_sign_in(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    console_file = io.StringIO()
+    console = Console(file=console_file, force_terminal=False, highlight=False, width=120)
+
+    banner_module.render_launch_banner(console)
+
+    assert "Signed in as" not in console_file.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("remote", "slug"),
+    [
+        ("git@github.com:acme/one.git", "acme/one"),
+        ("https://github.com/acme/one.git", "acme/one"),
+        ("https://github.com/acme/one", "acme/one"),
+        ("ssh://git@github.com/acme/one.git", "acme/one"),
+        ("https://gitlab.example.com/group/sub/one.git", "sub/one"),
+        ("", None),
+        ("https://github.com/", None),
+        ("file:///tmp/one", None),
+    ],
+)
+def test_repository_slug_reads_owner_and_name_from_any_remote_spelling(
+    remote: str, slug: str | None
+) -> None:
+    assert banner_state_module.repository_slug(remote) == slug
+
+
+def test_launch_status_reads_the_login_and_the_origin_remote(monkeypatch: object) -> None:
+    from config.account import AccountRecord
+
+    record = AccountRecord(
+        user_id="user_123",
+        organization_id="org_123",
+        email="octocat@example.com",
+        app_url="https://app.opensre.com",
+        signed_in_at="2026-09-01T10:00:00+00:00",
+        token_expires_at="2026-12-01T10:00:00+00:00",
+        llm_model="gpt-5.4-mini",
+    )
+    monkeypatch.setattr(banner_state_module, "load_account_record", lambda: record)
+    monkeypatch.setattr(
+        banner_state_module, "origin_url", lambda _cwd: "git@github.com:acme/one.git"
+    )
+
+    status = banner_state_module.load_launch_status()
+
+    assert (status.account, status.model, status.repository) == (
+        "octocat@example.com",
+        "gpt-5.4-mini",
+        "acme/one",
+    )
+
+
+def test_launch_status_stays_quiet_outside_a_checkout_and_before_sign_in(
+    monkeypatch: object,
+) -> None:
+    from integrations.git import GitCommandError
+
+    def _no_git(_cwd: str) -> str:
+        raise GitCommandError("GIT_UNAVAILABLE", "git is not installed or not on PATH.")
+
+    monkeypatch.setattr(banner_state_module, "load_account_record", lambda: None)
+    monkeypatch.setattr(banner_state_module, "origin_url", _no_git)
+
+    status = banner_state_module.load_launch_status()
+
+    assert (status.account, status.model, status.repository) == (None, None, None)
