@@ -198,7 +198,7 @@ def _prepare_shell_start(
         # The menu ran on an earlier launch: the composer opens, with the way back.
         hint = returning_demo_hint()
         if hint:
-            out.print(Text(hint, style=DIM))
+            out.print(Text(hint, style=str(DIM)))
     # The first model turn is the menu answer or the first typed request; either
     # pays for the client build unless it is warmed while the user reads.
     startup_work.defer("first-turn warm-up", warm_first_turn)

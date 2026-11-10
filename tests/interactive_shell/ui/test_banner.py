@@ -427,6 +427,7 @@ def test_launch_status_reads_the_login_and_the_origin_remote(monkeypatch: object
         llm_model="gpt-5.4-mini",
     )
     monkeypatch.setattr(banner_state_module, "load_account_record", lambda: record)
+    monkeypatch.setattr(banner_state_module, "active_model", lambda: ("opensre", "gpt-5.4-mini"))
     monkeypatch.setattr(
         banner_state_module, "origin_url", lambda _cwd: "git@github.com:acme/one.git"
     )
@@ -440,6 +441,32 @@ def test_launch_status_reads_the_login_and_the_origin_remote(monkeypatch: object
     )
 
 
+def test_launch_status_names_the_model_that_will_answer_not_the_saved_hosted_one(
+    monkeypatch: object,
+) -> None:
+    """A local provider selected after sign-in keeps the identity but changes the route."""
+    from config.account import AccountRecord
+
+    record = AccountRecord(
+        user_id="user_123",
+        organization_id="org_123",
+        email="octocat@example.com",
+        app_url="https://app.opensre.com",
+        signed_in_at="2026-09-01T10:00:00+00:00",
+        token_expires_at="2026-12-01T10:00:00+00:00",
+        llm_model="gpt-5.4-mini",
+    )
+    monkeypatch.setattr(banner_state_module, "load_account_record", lambda: record)
+    monkeypatch.setattr(
+        banner_state_module, "active_model", lambda: ("anthropic", "claude-sonnet-5-5")
+    )
+    monkeypatch.setattr(banner_state_module, "origin_url", lambda _cwd: "")
+
+    status = banner_state_module.load_launch_status()
+
+    assert (status.account, status.model) == ("octocat@example.com", "claude-sonnet-5-5")
+
+
 def test_launch_status_stays_quiet_outside_a_checkout_and_before_sign_in(
     monkeypatch: object,
 ) -> None:
@@ -449,8 +476,10 @@ def test_launch_status_stays_quiet_outside_a_checkout_and_before_sign_in(
         raise GitCommandError("GIT_UNAVAILABLE", "git is not installed or not on PATH.")
 
     monkeypatch.setattr(banner_state_module, "load_account_record", lambda: None)
+    monkeypatch.setattr(banner_state_module, "active_model", lambda: ("anthropic", "claude"))
     monkeypatch.setattr(banner_state_module, "origin_url", _no_git)
 
     status = banner_state_module.load_launch_status()
 
+    # Signed out: no model line either, whatever a local provider is set to.
     assert (status.account, status.model, status.repository) == (None, None, None)

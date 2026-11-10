@@ -406,6 +406,27 @@ def test_install_sh_says_what_happens_next_when_setup_opens_itself() -> None:
     ]
 
 
+def test_install_sh_keeps_the_path_note_when_setup_opens_itself() -> None:
+    """Setup runs from the binary's full path, so a missing PATH entry still needs saying."""
+    result = _run_logging_snippet(
+        """
+        INSTALL_DIR="/tmp/opensre-bin-not-on-path"
+        BIN_NAME="opensre"
+        HOME="/home/me"
+        path_rc_file="/home/me/.zshrc"
+        will_launch_setup() { return 0; }
+
+        print_get_started
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "Next: sign in from your browser, then OpenSRE opens here in this terminal.",
+        "After that, Run 'source ~/.zshrc' (or open a new terminal) so 'opensre' is found next time.",
+    ]
+
+
 def test_install_sh_setup_launch_shares_the_auto_launch_condition() -> None:
     source = INSTALL_SH.read_text()
 

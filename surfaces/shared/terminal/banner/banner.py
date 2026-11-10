@@ -349,13 +349,13 @@ def _build_session_line(status: LaunchStatus, *, max_width: int) -> Text | None:
     if not status.account:
         return None
     line = Text(no_wrap=True)
-    line.append("Signed in as ", style=SECONDARY)
+    line.append("Signed in as ", style=str(SECONDARY))
     line.append(status.account, style=f"bold {TEXT}")
     for label, value in (("Model ", status.model), ("Repository ", status.repository)):
         if not value:
             continue
-        line.append(_STATUS_ITEM_GAP, style=DIM)
-        line.append(label, style=SECONDARY)
+        line.append(_STATUS_ITEM_GAP, style=str(DIM))
+        line.append(label, style=str(SECONDARY))
         line.append(value, style=f"bold {TEXT}")
     plain = line.plain
     if cell_len(plain) > max_width:
