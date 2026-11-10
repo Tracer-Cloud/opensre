@@ -375,6 +375,7 @@ def cron_logs(task_id: str, limit: int, run_id: int | None, as_json: bool) -> No
     from infrastructure.scheduling.scheduler.storage import get_group_run, get_runs
     from surfaces.cli.commands.cron_results import print_run_history, print_run_result
 
+    as_json = as_json or is_json_output()
     selected = get_group_run((task_id,), run_id) if run_id is not None else None
     runs = (
         ([selected] if selected is not None else [])

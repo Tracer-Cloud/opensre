@@ -20,7 +20,7 @@ from infrastructure.filestorage.exposure import PublicAccessStatus
 from infrastructure.filestorage.operations import SyncRootStatus, SyncStatus
 from infrastructure.process.runtime_flags import reset_runtime_flags
 from infrastructure.scheduling.scheduler.loops import LoopSummary
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +91,40 @@ def test_global_json_serializes_cron_list(monkeypatch: pytest.MonkeyPatch) -> No
             "mode": "report",
         }
     ]
+
+
+def test_global_json_serializes_cron_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+    from surfaces.cli.app import cli
+
+    run = TaskRun(
+        task_id="task-123",
+        fire_time="2026-11-10T00:00:00+00:00",
+        status=TaskStatus.SUCCESS,
+        run_id=1,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_runs",
+        lambda *_args, **_kwargs: [run],
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "cron", "logs", "task-123"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == [run.model_dump(mode="json")]
+
+
+def test_global_json_serializes_cron_logs_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from surfaces.cli.app import cli
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_runs",
+        lambda *_args, **_kwargs: [],
+    )
+
+    result = CliRunner().invoke(cli, ["--json", "cron", "logs", "task-123"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == []
 
 
 def test_global_json_serializes_gateway_status(monkeypatch: pytest.MonkeyPatch) -> None:
