@@ -40,7 +40,4 @@ It retries on PR and CI events and periodically for external checks. GitHub
 branch protection and review requirements still apply. The label is the
 maintainer's decision that the PR is ready; it does not itself review code.
 
-As before, PRs touching `core/`, `platform/`, `gateway/`,
-`.github/workflows/`, or `.github/scripts/` require a human merge. Both old
-and new names of renamed files are checked. A missing or incomplete file list
-blocks auto-merge. Create the repository label `automerge` if it is absent.
+Create the repository label `automerge` if it is absent.
