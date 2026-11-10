@@ -1,0 +1,75 @@
+name: Auto-merge
+
+# Maintainer opt-in. This workflow runs trusted code from the base branch only;
+# it never checks out or runs the pull request's code.
+on:
+  pull_request_target:
+    types: [labeled, synchronize, reopened, ready_for_review]
+    branches: [main]
+  workflow_run:
+    workflows: [CI, CI Labels (Windows)]
+    types: [completed]
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: automerge-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Merge when CI is green
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request') ||
+      (github.event_name == 'pull_request_target' &&
+       (github.event.action != 'labeled' || github.event.label.name == 'automerge')) ||
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
+      # An installation token causes the merge push to start the normal main
+      # CI, CodeQL and downstream release workflows. GITHUB_TOKEN suppresses them.
+      - name: Create auto-merge app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.AUTOMERGE_APP_ID }}
+          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: read
+          permission-checks: read
+          permission-statuses: read
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Find and evaluate labeled pull requests
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = pull_request_target ]; then
+            numbers="$PR_NUMBER"
+          elif [ "$EVENT_NAME" = workflow_run ]; then
+            # SHA lookup avoids confusing identically named branches in forks.
+            numbers="$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" --paginate --jq '.[] | select(.state == "open" and .base.ref == "main") | .number')"
+          else
+            # Retry when a non-Actions check completed after the last CI run.
+            numbers="$(gh pr list --repo "$GITHUB_REPOSITORY" --base main --state open --label automerge --limit 1000 --json number --jq '.[].number')"
+          fi
+          failed=0
+          for number in $numbers; do
+            PR_NUMBER="$number" python3 .github/scripts/automerge_pr.py || failed=1
+          done
+          exit "$failed"

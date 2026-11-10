@@ -6,6 +6,7 @@ Internal notes for repository automation under `.github/workflows/`. Not publish
 
 | Workflow | Purpose |
 | -------- | ------- |
+| [`automerge.yml`](automerge.yml) | Maintainer opt-in squash merge after CI and other checks pass, excluding Greptile |
 | [`ci.yml`](ci.yml) | PR/push quality gates and sharded pytest |
 | [`ci-labels-windows.yml`](ci-labels-windows.yml) | Focused Windows CI for native shell/process changes; `ci:windows` also opts into the advisory full suite |
 | [`codeql.yml`](codeql.yml) | Full post-merge CodeQL and manual PR-profile benchmarks |
@@ -29,3 +30,20 @@ select a larger runner by passing its label through `runner_label`.
 Keep repository-level GitHub Code Quality disabled after this workflow lands.
 Otherwise GitHub starts a second dynamic Python/JavaScript analysis on every PR
 and push, restoring the four-minute critical path and duplicating scan cost.
+
+## Auto-merge
+
+Maintainers can add `automerge` to an open, ready PR targeting `main` to
+request a squash merge. The workflow requires a successful CI Gate and all
+other reported checks to pass, except Greptile and the auto-merge job itself.
+It retries on PR and CI events and periodically for external checks. GitHub
+branch protection and review requirements still apply. The label is the
+maintainer's decision that the PR is ready; it does not itself review code.
+
+Create the repository label `automerge` if it is absent. Install a GitHub App
+on this repository with Actions, Checks and Commit statuses read access, and
+Contents and Pull requests write access. Set its ID in the repository variable
+`AUTOMERGE_APP_ID` and its private key in the repository secret
+`AUTOMERGE_APP_PRIVATE_KEY`. The workflow fails before merging if the app is
+not configured. Using the app token also lets the merge push trigger the normal
+main CI, CodeQL, and downstream release workflows.
