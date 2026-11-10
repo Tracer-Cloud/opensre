@@ -18,11 +18,13 @@ User-facing wording lives in :mod:`infrastructure.filestorage.messages`.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 from config.scope_context import current_scope
 from infrastructure.filestorage.config import RemoteSyncConfig, load_remote_sync_config
+from infrastructure.filestorage.contracts import ObjectStore, SupportsClose
 from infrastructure.filestorage.engine import (
     ProgressCallback,
     SyncReport,
@@ -41,6 +43,8 @@ from infrastructure.filestorage.providers import (
     max_parallel_uploads_for_provider,
 )
 from infrastructure.filestorage.syncable import SyncRoot, syncable_roots
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -144,6 +148,23 @@ def get_sync_status() -> SyncStatus:
     return SyncStatus(config=config, roots=roots, exposure=exposure)
 
 
+def _close_store(store: ObjectStore) -> None:
+    """Release a store's network clients without letting cleanup change the sync outcome.
+
+    A store that does not implement :class:`SupportsClose` has nothing to release.
+    A failing close is logged and swallowed: it must neither fail a sync that
+    finished nor replace the error of one that did not.
+    """
+    if not isinstance(store, SupportsClose):
+        return
+    try:
+        store.close()
+    except Exception:
+        # Name the type, not store.describe(): a store whose close() failed may no
+        # longer be able to describe itself, and that error must not escape either.
+        logger.warning("could not close remote-sync store %s", type(store).__name__, exc_info=True)
+
+
 def run_remote_sync(
     *,
     pull_only: bool = False,
@@ -154,7 +175,8 @@ def run_remote_sync(
 ) -> SyncReport | None:
     """Pull/push for the current scope. ``None`` when sync is disabled.
 
-    Builds a new ObjectStore per call. Returns a caller-owned report snapshot.
+    Builds a new ObjectStore per call and closes it afterwards. Returns a
+    caller-owned report snapshot.
     Prefer ``direction=`` when the caller already has a :class:`SyncDirection`;
     the boolean flags remain for CLI/slash adapters. ``dry_run`` previews the
     plan without uploading, downloading, or writing anything locally.
@@ -173,18 +195,23 @@ def run_remote_sync(
         return None
     roots = syncable_roots()
     store = build_object_store(config)
-    return _owned_report(
-        run_sync(
-            store,
-            direction=resolved,
-            roots=roots,
-            exclusions=config.exclude,
-            dry_run=dry_run,
-            on_progress=on_progress,
-            # The backend, not the engine, knows how hard it can be pushed.
-            max_parallel_uploads=max_parallel_uploads_for_provider(config.provider),
+    try:
+        return _owned_report(
+            run_sync(
+                store,
+                direction=resolved,
+                roots=roots,
+                exclusions=config.exclude,
+                dry_run=dry_run,
+                on_progress=on_progress,
+                # The backend, not the engine, knows how hard it can be pushed.
+                max_parallel_uploads=max_parallel_uploads_for_provider(config.provider),
+            )
         )
-    )
+    finally:
+        # run_sync joins every upload worker before returning, so nothing is
+        # still using the store's client here.
+        _close_store(store)
 
 
 __all__ = [

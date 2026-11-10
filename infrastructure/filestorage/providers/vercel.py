@@ -79,6 +79,11 @@ class VercelBlobObjectStore:
     def describe(self) -> str:
         return f"vercel-blob://{self._config.bucket}/{self._config.prefix}"
 
+    def close(self) -> None:
+        """Close the HTTP client this store built; an injected client stays open."""
+        if self._owns_client:
+            self._client.close()
+
     def list_objects(self, prefix: str) -> list[RemoteObject]:
         # Trailing slash so prefix "opensre" cannot also match "opensre-backup/".
         full_prefix = (
