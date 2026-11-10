@@ -191,6 +191,32 @@ model is unavailable, OpenSRE saves a partial report with the cause marked
 unknown. A report is an evidence-based explanation, not a guaranteed root cause.
 The span sample is not a collection of complete distributed traces.
 
+## Live evidence query acceptance test
+
+The opt-in test sends synthetic standard OTLP payloads through a running pinned
+Collector to ClickHouse, then exercises the reader against its real tables.
+It covers token rejection, dependency timeout and DNS errors, parent links,
+scope/time isolation, truncation, redaction and database-enforced read-only
+access. It does not run an application workload or judge a model diagnosis.
+
+Expose the test Collector's OTLP HTTP listener on a loopback port in your local
+test stack, keep the reader credential in the environment, then run:
+
+```bash
+uv run python -m pytest tests/e2e/telemetry_evidence/test_local.py \
+  --evidence-clickhouse-port=18123 \
+  --evidence-otlp-endpoint=http://127.0.0.1:14318
+```
+
+Both selectors and the reader credential are required; absent configuration is
+reported as a skip. The suite is excluded from default pytest collection. Use a
+disposable local stack: the test writes synthetic telemetry under a unique
+service name, with the stack's normal TTL. It never starts/stops infrastructure
+or deletes data. Historical delta metric fixtures use timestamps in the pinned
+windows; Collector-generated span metrics use later flush times and remain
+outside those windows. The test supplies explicit population counters alongside
+representative spans; it does not claim span sampling establishes request rates.
+
 ## Connect your own application
 
 Use standard OpenTelemetry instrumentation and OTLP. Supply `service.name`

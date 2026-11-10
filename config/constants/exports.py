@@ -7,6 +7,9 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "TELEMETRY_INVESTIGATION_MAX_WINDOW_SECONDS": "telemetry",
+    "TELEMETRY_INVESTIGATION_MAX_LOOKBACK_SECONDS": "telemetry",
+    "TELEMETRY_INVESTIGATION_MAX_ITEMS": "telemetry",
     "CI_FIX_STATUS_LABEL": "ci_fixes",
     "REASONING_EFFORT_MODEL_PREFIXES": "llm",
     "HOSTED_MODEL_PROVIDER": "llm",
