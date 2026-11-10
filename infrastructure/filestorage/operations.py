@@ -160,7 +160,9 @@ def _close_store(store: ObjectStore) -> None:
     try:
         store.close()
     except Exception:
-        logger.warning("could not close remote-sync store %s", store.describe(), exc_info=True)
+        # Name the type, not store.describe(): a store whose close() failed may no
+        # longer be able to describe itself, and that error must not escape either.
+        logger.warning("could not close remote-sync store %s", type(store).__name__, exc_info=True)
 
 
 def run_remote_sync(

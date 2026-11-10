@@ -173,6 +173,13 @@ class _RecordingStore:
 
 
 class _FailingCloseStore(_RecordingStore):
+    """Fails to close and, like a store that tore its state down, can no longer describe itself."""
+
+    def describe(self) -> str:
+        if self.closed:
+            raise RuntimeError("store state already released")
+        return super().describe()
+
     def close(self) -> None:
         super().close()
         raise OSError("socket already gone")
