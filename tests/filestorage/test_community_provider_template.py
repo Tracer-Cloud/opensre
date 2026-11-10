@@ -6,7 +6,9 @@ self-hosted blob store, etc.) to remote sync. The whole contract is:
 
 1. Implement the four :class:`~infrastructure.filestorage.contracts.ObjectStore`
    protocol methods: ``list_objects``, ``get_object``, ``put_object``,
-   ``describe``.
+   ``describe``. If the backend builds its own network client, also implement
+   ``close()`` (:class:`~infrastructure.filestorage.contracts.SupportsClose`):
+   the sync calls it once the run ends. A backend without it is left alone.
 2. Scope every key through ``config.key_for()`` on write/read, and strip the
    configured prefix back off on list. Every built-in provider does this
    (see ``infrastructure/filestorage/providers/_s3_shared.py``'s ``_strip_prefix``,

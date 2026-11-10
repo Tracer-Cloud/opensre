@@ -51,9 +51,15 @@ class AzureBlobObjectStore:
             )
         self._token = token if token is not None else _get_azure_access_token()
         self._client = client if client is not None else httpx.Client(timeout=30.0)
+        self._owns_client = client is None
 
     def describe(self) -> str:
         return f"azure-blob://{self._account_name}/{self._config.bucket}/{self._config.prefix}"
+
+    def close(self) -> None:
+        """Close the HTTP client this store built; an injected client stays open."""
+        if self._owns_client:
+            self._client.close()
 
     def list_objects(self, prefix: str) -> list[RemoteObject]:
         full_prefix = (

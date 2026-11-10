@@ -33,9 +33,15 @@ class S3ObjectStore(S3ListingMixin):
     def __init__(self, config: RemoteSyncConfig, *, client: Any | None = None) -> None:
         self._config = config
         self._client = client if client is not None else _build_client(config)
+        self._owns_client = client is None
 
     def describe(self) -> str:
         return f"s3://{self._config.bucket}/{self._config.prefix}"
+
+    def close(self) -> None:
+        """Close the boto3 client this store built; an injected client stays open."""
+        if self._owns_client:
+            self._client.close()
 
     def put_object(self, key: str, data: bytes) -> None:
         try:
