@@ -9,6 +9,7 @@ from collections.abc import Callable
 from functools import partial
 
 from rich.console import Console
+from rich.text import Text
 
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
@@ -17,7 +18,7 @@ from infrastructure.analytics.github_identity import identify_saved_github_usern
 from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
 from infrastructure.terminal.prompt_support import begin_ctrl_c_exit
-from infrastructure.terminal.theme import set_active_theme
+from infrastructure.terminal.theme import DIM, set_active_theme
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
 from surfaces.interactive_shell.runtime.session_shutdown import close_repl_session
@@ -25,7 +26,10 @@ from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
 from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredStartupWork
-from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
+from surfaces.interactive_shell.runtime.startup.demo_picker import (
+    offer_demo,
+    returning_demo_hint,
+)
 from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
     join_first_turn_warmup,
     warm_first_turn,
@@ -190,9 +194,14 @@ def _prepare_shell_start(
                 slash_command=slash_command,
             )
         )
-    if offer_demo(session, out):
-        # Entering the master skill queues its menu; the first model turn is the answer.
-        startup_work.defer("first-turn warm-up", warm_first_turn)
+    if not offer_demo(session, out):
+        # The menu ran on an earlier launch: the composer opens, with the way back.
+        hint = returning_demo_hint()
+        if hint:
+            out.print(Text(hint, style=str(DIM)))
+    # The first model turn is the menu answer or the first typed request; either
+    # pays for the client build unless it is warmed while the user reads.
+    startup_work.defer("first-turn warm-up", warm_first_turn)
     return True
 
 

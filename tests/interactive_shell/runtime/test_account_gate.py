@@ -14,6 +14,7 @@ from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
 import surfaces.interactive_shell.runtime.startup.account_gate as account_gate
+import surfaces.interactive_shell.runtime.startup.first_turn_warmup as first_turn_warmup
 from config.account import AccountRecord
 from config.repl_config import ReplConfig
 from infrastructure.analytics import capture
@@ -128,6 +129,27 @@ def test_account_login_runs_webapp_command_then_validates_session(monkeypatch: A
     assert account_gate.account_login(console=_console()) is True
     assert calls[0][0] == ["opensre", "account", "login"]
     assert calls[0][1]["OPENSRE_PARENT_INTERACTIVE_SHELL"] == "1"
+
+
+def test_account_login_warms_the_first_turns_imports_before_the_browser_wait(
+    monkeypatch: Any,
+) -> None:
+    order: list[str] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.subprocess_runner.build_opensre_cli_argv",
+        lambda args: ["opensre", *args],
+    )
+    monkeypatch.setattr(first_turn_warmup, "warm_sdk_imports", lambda: order.append("warm"))
+
+    def _run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        order.append("login")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(account_gate.subprocess, "run", _run)
+    monkeypatch.setattr(account_gate, "account_is_signed_in", lambda: True)
+
+    assert account_gate.account_login(console=_console()) is True
+    assert order == ["warm", "login"]
 
 
 def test_account_login_rejects_failed_or_incomplete_login(monkeypatch: Any) -> None:

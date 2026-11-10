@@ -8,6 +8,8 @@ from config.setup_store import (
     load_named_remotes,
     load_remote_ops_config,
     load_remote_url,
+    mark_onboarding_demo_seen,
+    onboarding_demo_seen,
     save_local_config,
     save_named_remote,
     save_remote_ops_config,
@@ -212,3 +214,20 @@ def test_remote_ops_config_clears_project_and_service(tmp_path) -> None:
 
     loaded = load_remote_ops_config(store_path)
     assert loaded == {"provider": "railway", "project": None, "service": None}
+
+
+def test_onboarding_demo_is_unseen_until_marked_and_keeps_other_sections(tmp_path) -> None:
+    store_path = tmp_path / "opensre.json"
+    save_named_remote("prod", "https://ops.example.com", path=store_path)
+
+    assert onboarding_demo_seen(store_path) is False
+
+    assert mark_onboarding_demo_seen(store_path) == store_path
+    assert onboarding_demo_seen(store_path) is True
+    payload = json.loads(store_path.read_text(encoding="utf-8"))
+    assert payload["onboarding"]["demo_seen_at"]
+    assert load_named_remotes(store_path) == {"prod": "https://ops.example.com"}
+
+
+def test_onboarding_demo_is_unseen_when_the_store_is_missing(tmp_path) -> None:
+    assert onboarding_demo_seen(tmp_path / "missing.json") is False

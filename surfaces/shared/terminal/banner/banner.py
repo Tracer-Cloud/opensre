@@ -340,6 +340,29 @@ def _build_capabilities(status: LaunchStatus, *, max_width: int) -> Text:
     return capabilities
 
 
+def _build_session_line(status: LaunchStatus, *, max_width: int) -> Text | None:
+    """Who is signed in, on which model, in which repository; ``None`` before sign-in.
+
+    The shell clears the screen when it opens, so this is where the sign-in's
+    outcome stays readable after setup.
+    """
+    if not status.account:
+        return None
+    line = Text(no_wrap=True)
+    line.append("Signed in as ", style=str(SECONDARY))
+    line.append(status.account, style=f"bold {TEXT}")
+    for label, value in (("Model ", status.model), ("Repository ", status.repository)):
+        if not value:
+            continue
+        line.append(_STATUS_ITEM_GAP, style=str(DIM))
+        line.append(label, style=str(SECONDARY))
+        line.append(value, style=f"bold {TEXT}")
+    plain = line.plain
+    if cell_len(plain) > max_width:
+        return Text(clip_prompt_text(plain, max_width), style=str(TEXT), no_wrap=True)
+    return line
+
+
 def build_launch_banner(
     console: Console | None = None,
     *,
@@ -370,6 +393,9 @@ def build_launch_banner(
         None,
         _build_capabilities(status, max_width=line_width),
     ]
+    session_line = _build_session_line(status, max_width=line_width)
+    if session_line is not None:
+        rows.append(session_line)
     body: RenderableType = Group(*(Text() if row is None else _center(row) for row in rows))
     return Padding(body, (_BANNER_VERTICAL_PADDING, 0))
 

@@ -115,6 +115,29 @@ def save_local_config(
     return store_path
 
 
+_ONBOARDING_KEY = "onboarding"
+_DEMO_SEEN_KEY = "demo_seen_at"
+
+
+def onboarding_demo_seen(path: Path | None = None) -> bool:
+    """Whether the startup demo menu was answered or dismissed on this machine."""
+    section = _load_raw(path).get(_ONBOARDING_KEY)
+    return isinstance(section, dict) and bool(section.get(_DEMO_SEEN_KEY))
+
+
+def mark_onboarding_demo_seen(path: Path | None = None) -> Path:
+    """Record that the startup demo menu ran once; later launches open the composer."""
+    store_path = path or get_store_path()
+    with _locked_config(store_path) as data:
+        section = data.get(_ONBOARDING_KEY)
+        if not isinstance(section, dict):
+            section = {}
+            data[_ONBOARDING_KEY] = section
+        section[_DEMO_SEEN_KEY] = datetime.now(UTC).isoformat()
+        _save_raw(store_path, data)
+    return store_path
+
+
 def update_local_llm_selection(
     *,
     provider: str,

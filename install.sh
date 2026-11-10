@@ -1254,22 +1254,51 @@ link_into_shell_path() {
   shell_path_link_dir="$link_dir"
 }
 
-print_get_started() {
+will_launch_setup() {
+  # Mirrors launch_setup_after_install: setup opens right after this install
+  # on an interactive terminal unless OPENSRE_AUTO_LAUNCH turned it off.
+  auto_setup_enabled && [ -t 0 ] && [ -t 1 ]
+}
+
+path_fix_note() {
+  # What this shell still needs before a bare ``opensre`` resolves; empty when
+  # the install directory is already on its PATH.
   local rc_display
 
   if path_has_dir "$INSTALL_DIR" || [ -n "${shell_path_link_dir:-}" ]; then
-    log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
-    return
+    return 0
   fi
   if [ -n "${path_rc_file:-}" ]; then
     case "$path_rc_file" in
       "$HOME"/*) rc_display="~/${path_rc_file#"$HOME"/}" ;;
       *) rc_display="$path_rc_file" ;;
     esac
-    log "${COLOR_YELLOW:-}Run 'source ${rc_display}' (or open a new terminal), then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+    printf '%s\n' "Run 'source ${rc_display}' (or open a new terminal)"
+    return 0
+  fi
+  printf '%s\n' "Add ${INSTALL_DIR} to PATH"
+}
+
+print_get_started() {
+  local path_note
+  path_note="$(path_fix_note)"
+
+  if will_launch_setup; then
+    # Telling the user to run opensre while this script is about to open it
+    # reads as two instructions; say what happens next instead. Setup opens
+    # through the binary's full path, so the PATH note still has to reach the
+    # user for the next time they type opensre in this shell.
+    log "${COLOR_YELLOW:-}Next: sign in from your browser, then OpenSRE opens here in this terminal.${COLOR_RESET:-}"
+    if [ -n "$path_note" ]; then
+      log "${COLOR_YELLOW:-}After that, ${path_note} so '${BIN_NAME}' is found next time.${COLOR_RESET:-}"
+    fi
     return
   fi
-  log "${COLOR_YELLOW:-}Add ${INSTALL_DIR} to PATH, then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+  if [ -z "$path_note" ]; then
+    log "${COLOR_YELLOW:-}Run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
+    return
+  fi
+  log "${COLOR_YELLOW:-}${path_note}, then run '${BIN_NAME}' to get started!${COLOR_RESET:-}"
 }
 
 cleanup() {
@@ -1600,7 +1629,6 @@ launch_setup_after_install() {
   if ! auto_setup_enabled || [ ! -t 0 ] || [ ! -t 1 ]; then
     return 0
   fi
-  log "Launching ${BIN_NAME} setup..."
   if ! "$binary_path" setup; then
     warn "Setup exited before completion. Run '${BIN_NAME} setup' to retry."
   fi

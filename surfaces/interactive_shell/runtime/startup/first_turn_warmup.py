@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import threading
 import time
@@ -9,6 +10,15 @@ import time
 logger = logging.getLogger(__name__)
 
 _THREAD_NAME = "opensre-first-turn-warmup"
+_SDK_THREAD_NAME = "opensre-sdk-import-warmup"
+#: What the first turn imports before it can build a client: the SDK, the
+#: endpoint resources it loads lazily, and the harness runtime that builds it.
+_SDK_MODULES = (
+    "openai",
+    "openai.resources.chat",
+    "openai.resources.responses",
+    "core.agent_harness.runtime",
+)
 _SHUTDOWN_JOIN_SECONDS = 2.0
 _threads: list[threading.Thread] = []
 
@@ -25,6 +35,27 @@ def warm_first_turn() -> threading.Thread:
     _threads.append(thread)
     thread.start()
     return thread
+
+
+def warm_sdk_imports() -> threading.Thread:
+    """Import what the first turn needs while the user is away signing in.
+
+    A fresh login has no client to build yet, but the SDK and runtime imports
+    behind it need no credentials, and the browser round-trip is idle time to
+    pay for them in. A missing module is left for the first turn to report.
+    """
+    thread = threading.Thread(target=_import_sdk, name=_SDK_THREAD_NAME, daemon=True)
+    _threads.append(thread)
+    thread.start()
+    return thread
+
+
+def _import_sdk() -> None:
+    for name in _SDK_MODULES:
+        try:
+            importlib.import_module(name)
+        except Exception:
+            logger.debug("SDK warm-up import %s failed", name, exc_info=True)
 
 
 def join_first_turn_warmup(timeout: float = _SHUTDOWN_JOIN_SECONDS) -> None:
@@ -57,4 +88,4 @@ def _warm() -> None:
             logger.debug("First-turn warm-up step %s failed", step.__name__, exc_info=True)
 
 
-__all__ = ["join_first_turn_warmup", "warm_first_turn"]
+__all__ = ["join_first_turn_warmup", "warm_first_turn", "warm_sdk_imports"]

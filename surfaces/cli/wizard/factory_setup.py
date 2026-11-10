@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from rich.markup import escape
 
-from infrastructure.terminal.theme import ERROR, GLYPH_ERROR, GLYPH_SUCCESS
+from infrastructure.terminal.theme import ERROR, GLYPH_ERROR, GLYPH_SUCCESS, SECONDARY
 from surfaces.cli.account_auth import AccountAuthError, login_account
 from surfaces.cli.account_ui import AccountLoginPresenter
 from surfaces.cli.wizard.components import Choice, choose, console, step_header
@@ -57,12 +57,33 @@ def _run_account_signup_step(
         return True
 
 
+def _announce_shell_start(*, step: int, total_steps: int, launches_shell: bool) -> None:
+    """Close the setup with its second step, so the header's count is honest.
+
+    The caller opens the shell when ``launches_shell`` is set; otherwise the
+    user does, and the command is named here instead of assumed.
+    """
+    step_header(step, total_steps, "Start the shell")
+    if launches_shell:
+        console.print(f"  [{SECONDARY}]Opening the shell with your hosted model…[/]")
+        return
+    console.print(
+        f"  [{SECONDARY}]Run[/] [bold]opensre[/bold] "
+        f"[{SECONDARY}]to open the shell with your hosted model.[/]"
+    )
+
+
 def run_factory_setup(
     _argv: list[str] | None = None,
     *,
     app_url: str | None = None,
+    launches_shell: bool = True,
 ) -> int:
-    """Sign in to the account; callers launch the shell only on success."""
+    """Sign in to the account; callers launch the shell only on success.
+
+    ``launches_shell`` says whether the caller opens the shell on success, which
+    decides how the closing step reads.
+    """
     render_factory_setup_header()
     if not _run_account_signup_step(
         step=1,
@@ -70,4 +91,9 @@ def run_factory_setup(
         app_url=app_url,
     ):
         return 1
+    _announce_shell_start(
+        step=FACTORY_SETUP_TOTAL_STEPS,
+        total_steps=FACTORY_SETUP_TOTAL_STEPS,
+        launches_shell=launches_shell,
+    )
     return 0

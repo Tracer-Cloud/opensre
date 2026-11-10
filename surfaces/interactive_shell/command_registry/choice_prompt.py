@@ -64,6 +64,7 @@ from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.startup.analysis_prefetch import (
     prefetch_after_menu_answer,
 )
+from surfaces.interactive_shell.runtime.startup.demo_picker import remember_demo_outcome
 from surfaces.interactive_shell.runtime.startup.onboarding_telemetry import (
     capture_onboarding_choice,
 )
@@ -393,6 +394,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             custom_answers=custom_answers,
         )
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
+    remember_demo_outcome(session.active_skill)
     if picked_one is None:
         _close_unanswered(
             session, console, pending, skill_name=skill_name, dismiss_keys=dismiss_keys
