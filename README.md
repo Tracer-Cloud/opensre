@@ -28,10 +28,6 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
-</p>
-
-<p align="center">
   <strong>
     <a href="https://www.opensre.com/docs/getting-started/quickstart">Quickstart</a> ·
     <a href="https://www.opensre.com/docs">Docs</a> ·
