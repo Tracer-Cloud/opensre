@@ -101,11 +101,19 @@ def test_onboarding_labels_are_regular_answers_in_other_skills(
     plan = TaskPlan(steps=(PlanStep("Continue", PlanStepStatus.IN_PROGRESS),))
     session.task_plan = plan
     console, buf = _console()
+    shown: list[dict[str, object]] = []
+
+    def choose(**kwargs: object) -> str:
+        shown.append(kwargs)
+        return answer
+
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", choose)
 
     assert _handler(session, console) is True
 
+    # Onboarding's header and row descriptions stay out of other skills' menus.
+    assert [(call["header"], call["descriptions"]) for call in shown] == [("Ask User", None)]
     assert session.active_skill == "unrelated-workflow"
     assert session.task_plan is plan
     assert session.terminal.pending_prompt_default == format_ask_user_answers(
@@ -114,7 +122,7 @@ def test_onboarding_labels_are_regular_answers_in_other_skills(
     assert session.terminal.awaiting_handoff_answer is True
     assert session.questions_already_answered == {title.casefold()}
     assert title in buf.getvalue()
-    assert "Opened the shell" not in buf.getvalue()
+    assert choice_prompt._DEMO_SKIPPED not in buf.getvalue()
 
 
 def test_direct_onboarding_leaf_keeps_the_question_that_offered_it(

@@ -42,7 +42,9 @@ from config.constants.skills import (
     DEMO_REPO_DECLINE_OPTION,
     DEMO_REPO_PERMISSION_TITLE,
     LOCAL_REPAIR_OPTION,
+    ONBOARDING_MENU_HEADER,
     ONBOARDING_MENU_TITLE,
+    ONBOARDING_OPTION_DESCRIPTIONS,
     ONBOARDING_SKILL_NAME,
     OUTCOME_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
@@ -268,9 +270,10 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         "choices": [(option, option) for option in OUTCOME_MENU_OPTIONS],
         "custom_label": None,
         "multi_select": False,
-        "header": "Ask User",
+        "header": ONBOARDING_MENU_HEADER,
         "letter_keys": True,
         "note": _NOTE,
+        "descriptions": ONBOARDING_OPTION_DESCRIPTIONS,
     }
     # The pick entered the chosen skill: its answer turn carries that skill's
     # body, not the onboarding router's, and needs no skill_view round trip.
@@ -647,6 +650,10 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
         (create, create),
         (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
     ]
+    # One flow under one header; the outcome and automation rows each explain themselves.
+    assert {call["header"] for call in calls} == {ONBOARDING_MENU_HEADER}
+    for call, options in ((calls[0], OUTCOME_MENU_OPTIONS), (calls[1], AUTOMATION_MENU_OPTIONS)):
+        assert all(call["descriptions"].get(option) for option in options)
     permission = AskUserQuestion(
         label="Demo repository", title=DEMO_REPO_PERMISSION_TITLE, options=(create,)
     )

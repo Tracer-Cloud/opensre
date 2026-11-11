@@ -31,6 +31,8 @@ from config.constants.skills import (
     DEMO_REPO_DECLINE_OPTION,
     DEMO_REPO_PERMISSION_TITLE,
     ONBOARDING_LEAF_CHOICES,
+    ONBOARDING_MENU_HEADER,
+    ONBOARDING_OPTION_DESCRIPTIONS,
     ONBOARDING_SKILL_NAME,
     OUTCOME_MENU_OPTIONS,
     REPAIR_MENU_OPTIONS,
@@ -88,9 +90,10 @@ from tools.interactive_shell.actions.skill_prerequisite_gate import (
 _CANCELLED = "Selection cancelled — type a reply instead."
 _CLOSED = "Selection closed — /choose reopens it, or type a reply instead."
 _CHOOSE_COMMAND = "/choose"
+_ASK_USER_HEADER = "Ask User"
 # Onboarding leaf label -> the demo skill it starts.
 _DEMO_BY_LEAF = MappingProxyType({label: name for name, label in ONBOARDING_LEAF_CHOICES})
-_DEMO_SKIPPED = "Opened the shell — type a request, or /demo to come back to the menu."
+_DEMO_SKIPPED = "Skipped — type a request, or /demo to bring the menu back."
 _DEMO_UNAVAILABLE = "Guided demo selection is unavailable here — request a task directly."
 
 
@@ -290,6 +293,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     skill_name = session.active_skill
     is_onboarding = skill_name == ONBOARDING_SKILL_NAME
     is_outcome_menu = is_onboarding and items[0].options == OUTCOME_MENU_OPTIONS
+    # Onboarding pickers explain each row; the model's own questions do not.
+    header = ONBOARDING_MENU_HEADER if is_onboarding else _ASK_USER_HEADER
+    descriptions = ONBOARDING_OPTION_DESCRIPTIONS if is_onboarding else None
     selected_indices: list[tuple[int, ...]] = [() for _ in items]
     custom_answers: list[str | None] = [None for _ in items]
     dismiss_keys: list[str] = []
@@ -341,9 +347,10 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         choices=option_choices,
         custom_label=custom_label,
         multi_select=items[0].multi_select,
-        header="Ask User",
+        header=header,
         letter_keys=True,
         note=pending.note,
+        descriptions=descriptions,
         on_custom_answer=mark_custom_answer,
         on_answer=remember_single_answer,
         on_dismiss=dismiss_keys.append,
@@ -360,9 +367,10 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             choices=[(option, option) for option in AUTOMATION_MENU_OPTIONS],
             custom_label=None,
             multi_select=False,
-            header="Ask User",
+            header=header,
             letter_keys=True,
             note="",
+            descriptions=descriptions,
             on_dismiss=dismiss_keys.append,
         )
         # A demo still missing its setup (GitHub) asks for that first, before
@@ -378,7 +386,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             ],
             custom_label=None,
             multi_select=False,
-            header="Ask User",
+            header=header,
             letter_keys=True,
             note="",
         )

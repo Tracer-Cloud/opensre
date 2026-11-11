@@ -49,22 +49,32 @@ Over SSH or on a server, OpenSRE prints a link to open in any browser and asks y
 
 ## Step 3: Pick what to do
 
-The first shell prompt asks what you want to do:
+The first shell prompt asks what OpenSRE should do first. Each option says
+what picking it does:
 
 ```text
-What would you like to do?
+Get started
+What should OpenSRE do first?
+
   (A) Keep my CI/CD healthy automatically (recommended)
-  (B) Analyze & improve a repo
-  (C) Open the shell
+      Fixes failing GitHub Actions checks on your pull requests
+  (B) Analyze a repo's CI performance
+      30-day report: failure rates and hours spent waiting on CI
+  (C) Skip for now
+      Type your own request. /demo brings this menu back
 ```
 
 Choosing **A** asks how that should run:
 
 ```text
 Keep my CI/CD healthy automatically
+
   (A) Run continuously on this machine (recommended)
+      Keeps watching your PRs and pushes fixes when checks fail
   (B) Run one repair in OpenSRE Cloud
+      Fixes one failing PR from the cloud, then stops
   (C) Connect Slack
+      Hand off CI and DevOps chores by mentioning OpenSRE in Slack
 ```
 
 Choose **B** to see what OpenSRE does with a repository on your machine: it

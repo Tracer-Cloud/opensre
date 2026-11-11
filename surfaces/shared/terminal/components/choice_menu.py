@@ -14,7 +14,7 @@ import os
 import shutil
 import sys
 import textwrap
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from typing import Literal
 
 from rich.console import Console
@@ -229,6 +229,32 @@ def _wrap_note(note: str, width: int) -> tuple[str, ...]:
     return tuple(textwrap.wrap(text, width=inner))
 
 
+def _description_lines(
+    description: str,
+    index: int,
+    *,
+    width: int,
+    letter_keys: bool,
+    numbered: bool,
+    multi_select: bool,
+) -> tuple[str, ...]:
+    """Physical rows for an option's description, aligned under its label text.
+
+    Every row fits ``width`` so the erase height counted from these rows matches
+    what the terminal shows.
+    """
+    text = " ".join(strip_terminal_controls(description).split())
+    if not text:
+        return ()
+    token = _option_token(index, letter_keys=letter_keys, numbered=numbered)
+    marker = _CHECKED if multi_select else "❯"
+    indent = " " * (len(_BLOCK_INDENT) + len(marker) + 1 + (len(token) + 1 if token else 0))
+    inner = max(1, width - len(indent))
+    return tuple(
+        _clip_to_row(f"{indent}{line}", width) for line in textwrap.wrap(text, width=inner)
+    )
+
+
 def _menu_height(
     crumb: str,
     labels: list[str],
@@ -236,13 +262,31 @@ def _menu_height(
     multi_select: bool = False,
     header: str = "",
     note: str = "",
+    descriptions: Sequence[str] = (),
+    letter_keys: bool = False,
+    numbered: bool = True,
 ) -> int:
-    # [gap], [header], title, [note…], [crumb], blank, choices, [Submit], blank, hint
+    # [gap], [header], title, [note…], [crumb], blank, choices + their
+    # descriptions, [Submit], blank, hint
     submit = 1 if multi_select else 0
     gap = _HEADER_SECTION_GAP if header else 0
     lead = _MENU_LEADING_LINES + gap + (1 if header else 0)
-    notes = len(_wrap_note(note, _menu_paint_width()))
-    return lead + 1 + notes + (1 if crumb else 0) + 1 + len(labels) + submit + 1 + 1
+    width = _menu_paint_width()
+    notes = len(_wrap_note(note, width))
+    details = sum(
+        len(
+            _description_lines(
+                text,
+                index,
+                width=width,
+                letter_keys=letter_keys,
+                numbered=numbered,
+                multi_select=multi_select,
+            )
+        )
+        for index, text in enumerate(descriptions[: len(labels)])
+    )
+    return lead + 1 + notes + (1 if crumb else 0) + 1 + len(labels) + details + submit + 1 + 1
 
 
 def write_menu_line(text: str = "") -> None:
@@ -402,6 +446,7 @@ def _draw_menu(
     letter_keys: bool = False,
     numbered: bool = True,
     note: str = "",
+    descriptions: Sequence[str] = (),
 ) -> None:
     out = sys.stdout
     w = _menu_paint_width()
@@ -447,6 +492,17 @@ def _draw_menu(
         else:
             sym = "❯" if here else " "
             _write_option_row(prefix=sym, label=row_label, width=w, selected=here)
+        # Readable on the focused row; recedes with the row's label otherwise.
+        style = ui_theme.SECONDARY_ANSI if here else ui_theme.DIM_COUNTER_ANSI
+        for line in _description_lines(
+            descriptions[i] if i < len(descriptions) else "",
+            i,
+            width=w,
+            letter_keys=letter_keys,
+            numbered=numbered,
+            multi_select=multi_select,
+        ):
+            write_menu_line(f"{style}{line}{ui_theme.ANSI_RESET}")
     if multi_select:
         submit_selected = index == len(labels)
         _write_option_row(
@@ -506,6 +562,7 @@ def _pick(
     letter_keys: bool = False,
     numbered: bool = True,
     note: str = "",
+    descriptions: Sequence[str] = (),
     on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
     on_dismiss: OnDismiss | None = None,
 ) -> int | str | None:
@@ -530,7 +587,20 @@ def _pick(
     if len(selected_values) != len(labels):
         selected_values = list(labels)
     idx = initial_index % len(labels)
-    height = _menu_height(crumb, labels, multi_select=multi_select, header=header, note=note)
+
+    def measure(rows: list[str]) -> int:
+        return _menu_height(
+            crumb,
+            rows,
+            multi_select=multi_select,
+            header=header,
+            note=note,
+            descriptions=descriptions,
+            letter_keys=letter_keys,
+            numbered=numbered,
+        )
+
+    height = measure(labels)
     draft = ""
     first = True
     checked: set[int] = set()
@@ -553,9 +623,10 @@ def _pick(
             letter_keys=letter_keys,
             numbered=numbered,
             note=note,
+            descriptions=descriptions,
         )
         first = False
-        height = _menu_height(crumb, display, multi_select=multi_select, header=header, note=note)
+        height = measure(display)
         if on_custom:
             action = read_menu_or_char(allow_chars=True, on_dismiss=on_dismiss)
         elif multi_select:
@@ -679,6 +750,7 @@ def repl_choose_one(
     letter_keys: bool = False,
     numbered: bool = True,
     note: str = "",
+    descriptions: Mapping[str, str] | None = None,
     on_custom_answer: Callable[[], None] | None = None,
     on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
     on_dismiss: OnDismiss | None = None,
@@ -693,6 +765,9 @@ def repl_choose_one(
 
     ``note`` is dim intro copy inside the menu block so leaving (Esc, a pick)
     erases it with the options instead of leaving it in the transcript.
+
+    ``descriptions`` maps a choice value to a short explanation drawn under its
+    label; it wraps to the terminal and is never part of the returned value.
 
     When ``custom_label`` is set and that row is focused, the user types on that
     row in place (same option array) instead of opening a separate prompt.
@@ -729,6 +804,7 @@ def repl_choose_one(
             letter_keys=letter_keys,
             numbered=numbered,
             note=note,
+            descriptions=[descriptions.get(value, "") for value in values] if descriptions else (),
             on_answer=on_answer,
             on_dismiss=on_dismiss,
         )
