@@ -32,7 +32,14 @@ def guardrails_test(text: str) -> None:
 
 
 @guardrails.command()
-@click.option("--limit", "-n", default=50, help="Number of recent entries to show.")
+@click.option(
+    "--limit",
+    "-n",
+    type=click.IntRange(min=1),
+    default=50,
+    show_default=True,
+    help="Number of recent entries to show.",
+)
 def audit(limit: int) -> None:
     """Show recent guardrail audit log entries."""
     from infrastructure.safety.guardrails.cli import cmd_audit

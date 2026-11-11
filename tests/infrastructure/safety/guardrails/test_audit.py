@@ -58,6 +58,15 @@ class TestAuditLogger:
         assert entries[0]["rule_name"] == "r7"
         assert entries[2]["rule_name"] == "r9"
 
+    def test_read_entries_zero_or_negative_limit(self, tmp_path: Path) -> None:
+        log_path = tmp_path / "audit.jsonl"
+        logger = AuditLogger(path=log_path)
+        logger.log(rule_name="r1", action="audit", matched_text_preview="m1")
+
+        assert logger.read_entries(limit=0) == []
+        assert logger.read_entries(limit=-1) == []
+        assert logger.read_entries(limit=-5) == []
+
     def test_read_entries_empty_file(self, tmp_path: Path) -> None:
         log_path = tmp_path / "audit.jsonl"
         logger = AuditLogger(path=log_path)
