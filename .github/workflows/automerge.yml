@@ -14,7 +14,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  actions: read
+  checks: read
+  contents: write
+  pull-requests: write
+  statuses: read
 
 concurrency:
   group: automerge-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.run_id }}
@@ -35,25 +39,9 @@ jobs:
           ref: main
           persist-credentials: false
 
-      # An installation token causes the merge push to start the normal main
-      # CI, CodeQL and downstream release workflows. GITHUB_TOKEN suppresses them.
-      - name: Create auto-merge app token
-        id: app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.AUTOMERGE_APP_ID }}
-          private-key: ${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: ${{ github.event.repository.name }}
-          permission-actions: read
-          permission-checks: read
-          permission-statuses: read
-          permission-contents: write
-          permission-pull-requests: write
-
       - name: Find and evaluate labeled pull requests
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
