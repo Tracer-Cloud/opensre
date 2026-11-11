@@ -40,10 +40,6 @@ It retries on PR and CI events and periodically for external checks. GitHub
 branch protection and review requirements still apply. The label is the
 maintainer's decision that the PR is ready; it does not itself review code.
 
-Create the repository label `automerge` if it is absent. Install a GitHub App
-on this repository with Actions, Checks and Commit statuses read access, and
-Contents and Pull requests write access. Set its ID in the repository variable
-`AUTOMERGE_APP_ID` and its private key in the repository secret
-`AUTOMERGE_APP_PRIVATE_KEY`. The workflow fails before merging if the app is
-not configured. Using the app token also lets the merge push trigger the normal
-main CI, CodeQL, and downstream release workflows.
+Create the repository label `automerge` if it is absent. Auto-merges use the
+built-in GitHub Actions token; their resulting pushes do not trigger the normal
+push-triggered main CI, CodeQL, or rolling release workflows.
