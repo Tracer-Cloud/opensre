@@ -337,18 +337,19 @@ def cron_run(task_id: str, failed_only: bool) -> None:
         task,
         extra={"command": "cron_run", "failed_only": failed_only},
     )
-    from surfaces.cli.commands.cron_results import print_run_result
+    from surfaces.cli.commands.cron_results import RunNowOutput
 
+    output = RunNowOutput(_console)
     success = run_task_now(
         task_id,
         scheduler_runners(),
         only_failed=failed_only,
-        on_result=lambda run: print_run_result(_console, run),
+        on_result=output.show,
     )
     if success:
         _console.print("[green]Done.[/green]")
     else:
-        _console.print("[red]Task execution failed. Check logs for details.[/red]")
+        output.failed()
         raise SystemExit(1)
 
 

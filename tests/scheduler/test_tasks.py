@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+import infrastructure.scheduling.scheduler.run_failure as run_failure_mod
 import infrastructure.scheduling.scheduler.tasks as tasks_mod
 from config.credit_attribution import credit_actor_id
 from config.principal import Actor, Principal, StorageScope
@@ -31,6 +32,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
     LOOP_TEMPLATE_PARAM,
 )
+from infrastructure.scheduling.scheduler.run_failure import RunFailure
 from infrastructure.scheduling.scheduler.storage import task_store
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tests.scheduler._bundle import real_runners, runners_with_agent
@@ -277,7 +279,9 @@ class TestMessageBuilders:
         assert "bot_token" not in captured
         assert captured.get("custom_param") == "safe_value"
 
-    def test_manual_loop_failure_raises(self) -> None:
+    def test_an_unexpected_loop_failure_names_only_its_type_and_reaches_sentry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         task = ScheduledTask(
             kind=TaskKind.MANUAL_LOOP,
             cron="0 9 * * *",
@@ -285,12 +289,24 @@ class TestMessageBuilders:
             chat_id="-100",
             params={LOOP_PROMPT_PARAM: "Check incidents."},
         )
+        crash = RuntimeError("upstream 500: x-api-key sk-live-secret")
+        reported: list[BaseException] = []
+        monkeypatch.setattr(
+            run_failure_mod, "capture_exception", lambda exc, **_: reported.append(exc)
+        )
 
         def _raise(_payload: dict[str, object]) -> str:
-            raise RuntimeError("LLM unavailable")
+            raise crash
 
-        with pytest.raises(RuntimeError, match="Manual loop failed"):
+        with pytest.raises(RunFailure) as raised:
             tasks_mod.build_message(task, runners_with_agent(_raise))
+
+        # Members see the category and exception type; the detail goes to Sentry.
+        assert str(raised.value) == (
+            "The run failed on an unexpected error (RuntimeError) before it had a report."
+        )
+        assert raised.value.kind == "message_build_failed"
+        assert reported == [crash]
 
     def test_sentry_morning_digest_uses_agent_runner(self) -> None:
         task = ScheduledTask(
@@ -323,7 +339,7 @@ class TestMessageBuilders:
         def _raise(_payload: dict[str, object]) -> str:
             raise RuntimeError("LLM unavailable")
 
-        with pytest.raises(RuntimeError, match="Sentry morning digest failed"):
+        with pytest.raises(RunFailure, match=r"unexpected error \(RuntimeError\)"):
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
     def test_sentry_uptime_watch_uses_agent_runner_port(self) -> None:
@@ -414,7 +430,7 @@ class TestMessageBuilders:
         def _raise(_payload: dict[str, object]) -> str:
             raise RuntimeError("LLM unavailable")
 
-        with pytest.raises(RuntimeError, match="PostHog metric report failed"):
+        with pytest.raises(RunFailure, match=r"unexpected error \(RuntimeError\)"):
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
 

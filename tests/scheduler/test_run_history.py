@@ -151,7 +151,8 @@ def test_a_failed_run_keeps_the_prompt_and_credentials_never_reach_the_record(
 
     [record] = read_run_records(task.id)
     assert record["status"] == "failed"
-    assert "Manual loop failed" in record["error"]
+    assert "unexpected error (RuntimeError)" in record["error"]
+    assert "model unavailable" not in record["error"]
     assert record["prompts"][0]["text"].startswith("Task:")
     path = run_records_path(task.id)
     assert path is not None

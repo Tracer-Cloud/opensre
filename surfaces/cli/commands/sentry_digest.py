@@ -244,6 +244,7 @@ def sentry_uptime_watch_run(task_id: str) -> None:
     from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
     from integrations.sentry.digest_prerequisites import require_digest_delivery_provider
+    from surfaces.cli.commands.cron_results import RunNowOutput
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     task = get_task(task_id)
@@ -254,11 +255,12 @@ def sentry_uptime_watch_run(task_id: str) -> None:
     require_digest_delivery_provider(task.provider.value)
 
     _console.print(f"Running Sentry uptime watch task {task_id}...")
-    success = run_task_now(task_id, scheduler_runners())
+    output = RunNowOutput(_console)
+    success = run_task_now(task_id, scheduler_runners(), on_result=output.show)
     if success:
         _console.print("[green]Done.[/green]")
     else:
-        _console.print("[red]Task execution failed. Check logs for details.[/red]")
+        output.failed()
         raise SystemExit(1)
 
 
@@ -433,6 +435,7 @@ def sentry_digest_schedule_run(task_id: str) -> None:
     from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
     from integrations.sentry.digest_prerequisites import require_digest_delivery_provider
+    from surfaces.cli.commands.cron_results import RunNowOutput
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     task = get_task(task_id)
@@ -443,11 +446,12 @@ def sentry_digest_schedule_run(task_id: str) -> None:
     require_digest_delivery_provider(task.provider.value)
 
     _console.print(f"Running Sentry digest task {task_id}...")
-    success = run_task_now(task_id, scheduler_runners())
+    output = RunNowOutput(_console)
+    success = run_task_now(task_id, scheduler_runners(), on_result=output.show)
     if success:
         _console.print("[green]Done.[/green]")
     else:
-        _console.print("[red]Task execution failed. Check logs for details.[/red]")
+        output.failed()
         raise SystemExit(1)
 
 
