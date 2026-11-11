@@ -11,11 +11,12 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
+from infrastructure.process.boot import SCHEDULED_COMMAND_PROFILE
 from infrastructure.scheduling.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
 from infrastructure.scheduling.scheduler.sources import CLI_POSTHOG_METRIC_REPORT
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import add_task_and_echo, validate_cron_and_timezone
+from surfaces.shared.process_boot import configure_process
 
 _console = Console()
 _PROVIDER_CHOICES = [p.value for p in SUPPORTED_DELIVERY_PROVIDERS]
@@ -49,11 +50,11 @@ def posthog_report_command() -> None:
 )
 def posthog_report_run(stats_period: str, metrics: str) -> None:
     """Run the metric report once and print it to stdout."""
-    from bootstrap.adapters import scheduler_runners
     from integrations.posthog.report_prerequisites import (
         DEFAULT_POSTHOG_PERIOD,
         require_posthog_integration,
     )
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
 
     require_posthog_integration()
     configure_process(SCHEDULED_COMMAND_PROFILE)
@@ -224,7 +225,6 @@ def posthog_report_schedule_remove(task_id: str) -> None:
 @click.argument("task_id")
 def posthog_report_schedule_run(task_id: str) -> None:
     """Run a scheduled PostHog metric report task immediately."""
-    from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
     from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
@@ -232,6 +232,7 @@ def posthog_report_schedule_run(task_id: str) -> None:
         require_posthog_integration,
         require_report_delivery_provider,
     )
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
     from surfaces.cli.commands.cron_results import RunNowOutput
 
     configure_process(SCHEDULED_COMMAND_PROFILE)

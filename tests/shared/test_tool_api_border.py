@@ -48,15 +48,6 @@ def test_consumer_tool_package_imports_match_the_allowlist(consumer: str) -> Non
     TOOL_BORDER.assert_matches_allowlist(imported, _ALLOWED[consumer], consumer=f"{consumer}/")
 
 
-def test_bootstrap_reaches_the_tool_packages_only_through_their_api() -> None:
-    """The composition root wires tools together; it must not open these packages up."""
-    # Arrange / Act
-    imported = TOOL_BORDER.internal_imports_under(REPO_ROOT / "bootstrap")
-
-    # Assert
-    assert imported == set()
-
-
 def test_the_contract_api_survives_being_imported_second() -> None:
     """``import core.llm.types`` must not re-enter a half-built ``core.tool``.
 

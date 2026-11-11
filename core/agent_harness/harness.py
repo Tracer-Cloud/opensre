@@ -7,7 +7,7 @@ Create the session, attach an agent, run turns::
     follow = session.chat("…")            # turn 2 — same attached agent
 
 Embedded scripts that need local adapters use
-``bootstrap.embedded.start_embedded_session``. Scheduled one-shots may use
+``surfaces.embedded.start_embedded_session``. Scheduled one-shots may use
 :meth:`AgentSession.run_headless_turn`; a loop keeps one agent for the loop.
 
 A host with its own ports (the gateway pool, the REPL) builds the agent through
@@ -95,9 +95,9 @@ class SessionConfig:
     open_store: bool = True
     session_manager: SessionManager | None = None
     # Optional process boot run once at :meth:`AgentSession.startup`. A
-    # callable, not a flag: ``core`` may not import ``bootstrap`` (package
-    # layers), so the host supplies the step. Embedded scripts use
-    # :func:`bootstrap.embedded.start_embedded_session`, which fills this
+    # callable, not a flag: ``core`` may not import the hosts above it
+    # (package layers), so the host supplies the step. Embedded scripts use
+    # :func:`surfaces.embedded.start_embedded_session`, which fills this
     # with ``configure_process(EMBEDDED_PROFILE)``. CLI, gateway and web
     # already boot their own profile and leave this unset.
     boot_process: Callable[[], None] | None = None
@@ -164,9 +164,9 @@ class AgentSession:
             for prompt in prompts:
                 result = session.chat(prompt)
 
-        Does **not** import ``bootstrap`` — package layers forbid it. Embedded
+        Does **not** import ``surfaces`` — package layers forbid it. Embedded
         hosts that need local adapters use
-        :func:`bootstrap.embedded.start_embedded_session` (or pass
+        :func:`surfaces.embedded.start_embedded_session` (or pass
         ``SessionConfig(boot_process=…)`` after calling
         ``configure_process``). Surfaces that already booted another profile
         leave ``boot_process`` unset.

@@ -10,8 +10,8 @@ Here the runner is a value instead. :meth:`SchedulerRunners.gated` returns a
 new bundle rather than mutating a registered one, so a host states its gate
 once, at construction, and double-gating has no shape to happen in.
 
-The bundle is assembled by the composition root (``bootstrap.adapters``), which
-is the only layer allowed to see both ``integrations`` and ``tools``.
+The bundle is assembled in ``integrations.scheduled_agent_bootstrap`` and handed
+to the scheduler by the host that starts it.
 """
 
 from __future__ import annotations

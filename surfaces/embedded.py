@@ -1,16 +1,16 @@
 """Start an agent session from an embedding Python program.
 
 ``AgentSession.start`` deliberately boots nothing: ``core`` may not import
-``bootstrap`` (package layering), so the process-boot step is passed in by the
+the hosts above it (package layering), so the process-boot step is passed in by the
 caller. CLI, gateway and web already boot their own profile and call
 ``AgentSession`` directly.
 
 An embedded host has no such boot, and without adapters ``resolve_integrations``
 returns nothing — the agent then answers with zero integrations connected. This
-module is the one line that supplies it, and it lives here because ``bootstrap``
-is the tier allowed to import both sides.
+module is the one line that supplies it, and it lives in ``surfaces`` because
+only a host may import both ``tools`` and ``integrations``.
 
-    from bootstrap.embedded import start_embedded_session
+    from surfaces.embedded import start_embedded_session
 
     session = start_embedded_session()
     result = session.chat("why did checkout fail?")
@@ -20,9 +20,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession, OutputSink, SessionConfig, SessionCore
 from core.agent_harness.ports import PromptContextProvider
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 
 def embedded_boot_step() -> None:

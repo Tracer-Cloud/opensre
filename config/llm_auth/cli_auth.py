@@ -1,8 +1,9 @@
 """Port for checking a local CLI provider's auth, filled once at boot.
 
 ``config.llm_auth.credentials`` reports prompt-safe auth status without importing
-``integrations``; the integrations-backed checker is bundled at the composition
-root (``bootstrap.adapters``) and installed once, mirroring
+``integrations``; the integrations-backed checker
+(``integrations.harness_adapters.install_cli_auth_checker``) is installed once
+at boot, mirroring
 :class:`infrastructure.scheduling.scheduler.delivery_bundle.ScheduledDeliveryAdapters`.
 """
 

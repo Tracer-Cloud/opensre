@@ -36,7 +36,7 @@ not free-function turn dumps. Construct one agent per logical
 session (or scheduled loop), then many turns — do not rebuild every message.
 Process boot (`configure_process`) and headless construction
 (`DefaultHeadlessBuild.agent`) are separate layers. `core` must not import
-`bootstrap`; embedded hosts use `bootstrap.embedded.start_embedded_session`.
+the hosts above it; embedded hosts use `surfaces.embedded.start_embedded_session`.
 
 | Path | Call |
 |------|------|
@@ -181,8 +181,10 @@ Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the
 `build_tools` / `build_prompts` branch in each host. Gateway
 chat and the interactive shell share `TurnRunner` + `SessionAgentPool`
-(`build_shell_agent` remains for tests / direct construction). Do not
-reintroduce peer `bootstrap.adapters` copies under surfaces or gateway.
+(`build_shell_agent` remains for tests / direct construction). Capability
+registration is named once per host (`CAPABILITY_REGISTRARS` in
+`surfaces/shared/process_boot.py` and `gateway/core/process/boot.py`); do not
+add a third copy.
 
 **Bind ports:** session-aware defaults implement
 `SessionBindable` / `ConsoleBindable` / `OutputBindable` (`ports.py`).
@@ -301,7 +303,7 @@ to it instead of re-implementing bootstrap + persistence:
   REPL exit calls :meth:`SessionManager.close` via
   :meth:`SessionManager.for_session`.
 - **gateway** — process boot is
-  :func:`bootstrap.process.configure_process` (``GATEWAY_PROFILE``);
+  :func:`gateway.core.process.boot.configure_process` (``GATEWAY_PROFILE``);
   `GatewayController` stays lifecycle-only (credentials → process boot →
   transports). Per-chat session create/resolve stays on
   `gateway/core/storage/session/resolver.py::SessionResolver` →
@@ -461,14 +463,14 @@ a headless agent on every message for the same logical session.
 **Host API shape**
 
 ```python
-from bootstrap.embedded import start_embedded_session
+from surfaces.embedded import start_embedded_session
 
 session = start_embedded_session()  # EMBEDDED_PROFILE + default agent
 result = session.chat("…")  # turn 1
 result = session.chat("…")  # turn 2 — same attached agent
 ```
 
-``AgentSession.start`` must not import ``bootstrap`` (layer contract). Surfaces
+``AgentSession.start`` must not import ``surfaces`` (layer contract). Surfaces
 that already ran another process profile call ``startup()`` (or pass an
 explicit ``boot_process``).
 

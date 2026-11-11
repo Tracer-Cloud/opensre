@@ -562,6 +562,10 @@ RULES: tuple[PathRule, ...] = (
     PathRule("integrations/", ("tests/integrations/",)),
     PathRule("surfaces/cli/", ("tests/cli/",)),
     PathRule("surfaces/interactive_shell/", ("tests/interactive_shell/",)),
+    PathRule(
+        "gateway/core/process/boot.py",
+        ("gateway/tests/", "tests/infrastructure/process/"),
+    ),
     PathRule("gateway/", ("gateway/tests/",)),
     PathRule("tools/", ("tests/tools/",)),
     PathRule(
@@ -596,7 +600,10 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule("config/", ("tests/config/",)),
-    PathRule("bootstrap/", ("tests/bootstrap/",)),
+    PathRule(
+        "surfaces/shared/process_boot.py",
+        ("tests/surfaces/", "tests/infrastructure/process/"),
+    ),
     PathRule(
         "surfaces/shared/account_credits.py",
         ("tests/shared/test_account_credits.py",),

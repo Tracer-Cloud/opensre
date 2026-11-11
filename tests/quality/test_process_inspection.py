@@ -13,7 +13,6 @@ _PSUTIL_SANCTIONED = (
     _REPO_ROOT / "infrastructure" / "process" / "tree.py",
 )
 _SOURCE_ROOTS = (
-    "bootstrap",
     "config",
     "core",
     "gateway",

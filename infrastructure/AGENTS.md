@@ -26,11 +26,11 @@ into a subpackage.
 
 ## Import borders
 
-Per **Tier 4** in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md):
+Per **Tier 3** in [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md):
 
-`infrastructure/` may import: `config` (and may cross-import its Tier-4 sibling `core`).
+`infrastructure/` may import: `config` (and may cross-import its Tier-3 sibling `core`).
 
-`infrastructure/` must not import: `surfaces`, `gateway`, `bootstrap`, `tools`,
+`infrastructure/` must not import: `surfaces`, `gateway`, `tools`,
 `integrations`.
 
 ## Cross-cutting rules

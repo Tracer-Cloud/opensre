@@ -5,18 +5,40 @@ from __future__ import annotations
 import os
 import ssl
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import certifi
 import pytest
 
-from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
-from bootstrap.process import BootStep, ProcessName, ProcessProfile, configure_process
 from config.constants import SSL_CERT_DIR_ENV, SSL_CERT_FILE_ENV
+from config.frozen_ca_bundle import use_bundled_ca_certificates
 from config.local_env import OPENSRE_PROJECT_ENV_PATH_ENV, bootstrap_opensre_env
+from infrastructure.process.boot import (
+    BootStep,
+    CapabilityRegistrars,
+    ProcessName,
+    ProcessProfile,
+    boot_process,
+    reset_process_runtime_for_tests,
+)
 
 _ENV_ONLY = ProcessProfile(name=ProcessName.EMBEDDED, steps=frozenset({BootStep.ENV}))
+_NO_CAPABILITIES = CapabilityRegistrars(
+    integration_adapters=lambda: None,
+    tool_adapters=lambda: None,
+    cli_auth_checker=lambda: None,
+    scheduled_delivery=lambda: None,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_process_runtime() -> Iterator[None]:
+    """Boot runs a profile once per process; the env-file test boots afresh."""
+    reset_process_runtime_for_tests()
+    yield
+    reset_process_runtime_for_tests()
 
 
 def _verify_paths(cafile: str | None, capath: str | None) -> Any:
@@ -66,10 +88,12 @@ def test_a_ca_bundle_set_in_the_env_file_is_kept(
     env_file = tmp_path / ".env"
     env_file.write_text(f"{SSL_CERT_FILE_ENV}={corporate}\n", encoding="utf-8")
     monkeypatch.setenv(OPENSRE_PROJECT_ENV_PATH_ENV, str(env_file))
-    monkeypatch.setattr("bootstrap.process.bootstrap_opensre_env_once", bootstrap_opensre_env)
+    monkeypatch.setattr(
+        "infrastructure.process.boot.bootstrap_opensre_env_once", bootstrap_opensre_env
+    )
     monkeypatch.setattr(ssl, "get_default_verify_paths", _verify_paths(None, None))
 
-    configure_process(_ENV_ONLY)
+    boot_process(_ENV_ONLY, _NO_CAPABILITIES)
 
     assert os.environ[SSL_CERT_FILE_ENV] == str(corporate)
 

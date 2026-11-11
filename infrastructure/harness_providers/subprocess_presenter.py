@@ -5,8 +5,9 @@ process helpers) and is therefore invisible to ``core.agent_harness``.
 Installing it here lets the default agent execute shell tools instead of
 refusing them, without core importing tools or gateway.
 
-The presenter is an immutable value installed once at the composition root
-(``bootstrap.adapters``) and read through :func:`resolve_subprocess_presenter`,
+The presenter is an immutable value installed once at boot by ``tools``' own
+registration (``tools.harness_adapters``) and read through
+:func:`resolve_subprocess_presenter`,
 mirroring
 :class:`infrastructure.scheduling.scheduler.delivery_bundle.ScheduledDeliveryAdapters`.
 There is no setter — nothing rewrites it after boot.

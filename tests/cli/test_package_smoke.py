@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from bootstrap.frozen_ca_bundle import use_bundled_ca_certificates
 from config.constants import SSL_CERT_DIR_ENV, SSL_CERT_FILE_ENV
+from config.frozen_ca_bundle import use_bundled_ca_certificates
 from surfaces.cli.app import cli
 from tools.registry_index import BAKED_INDEX_RELATIVE_PATH
 

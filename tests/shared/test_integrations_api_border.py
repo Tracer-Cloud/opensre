@@ -34,14 +34,6 @@ _ALLOWED: dict[str, frozenset[str]] = {
             "integrations.telegram.formatting",
         }
     ),
-    "bootstrap": frozenset(
-        {
-            "integrations.discord.scheduled_delivery",
-            "integrations.rocketchat.scheduled_delivery",
-            "integrations.slack.scheduled_delivery",
-            "integrations.telegram.scheduled_delivery",
-        }
-    ),
     "tools": frozenset(
         {
             "integrations.sentry.issue_url",

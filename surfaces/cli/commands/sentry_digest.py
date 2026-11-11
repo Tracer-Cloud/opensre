@@ -11,11 +11,12 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
+from infrastructure.process.boot import SCHEDULED_COMMAND_PROFILE
 from infrastructure.scheduling.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
 from infrastructure.scheduling.scheduler.sources import CLI_SENTRY_MORNING_DIGEST
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import add_task_and_echo, validate_cron_and_timezone
+from surfaces.shared.process_boot import configure_process
 
 _console = Console()
 _PROVIDER_CHOICES = [p.value for p in SUPPORTED_DELIVERY_PROVIDERS]
@@ -160,8 +161,8 @@ def sentry_uptime_watch_add(
     if params:
         _console.print(f"  Project: {params['project_slug']}")
 
-    from bootstrap.adapters import install_scheduled_delivery_adapters
     from infrastructure.scheduling.scheduler.executor import deliver_scheduled_message
+    from integrations.scheduled_delivery import install_scheduled_delivery_adapters
     from integrations.sentry.uptime import format_uptime_watch_active_message
 
     active_message = format_uptime_watch_active_message(
@@ -239,10 +240,10 @@ def sentry_uptime_watch_remove(task_id: str) -> None:
 @click.argument("task_id")
 def sentry_uptime_watch_run(task_id: str) -> None:
     """Run a scheduled Sentry uptime watch task immediately."""
-    from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
     from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
     from integrations.sentry.digest_prerequisites import require_digest_delivery_provider
     from surfaces.cli.commands.cron_results import RunNowOutput
 
@@ -274,7 +275,7 @@ def sentry_uptime_watch_run(task_id: str) -> None:
 )
 def sentry_digest_run(project_slug: str) -> None:
     """Run the morning digest once and print the report to stdout."""
-    from bootstrap.adapters import scheduler_runners
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     payload: dict[str, str] = {
@@ -430,10 +431,10 @@ def sentry_digest_schedule_remove(task_id: str) -> None:
 @click.argument("task_id")
 def sentry_digest_schedule_run(task_id: str) -> None:
     """Run a scheduled Sentry digest task immediately."""
-    from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
     from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
     from integrations.sentry.digest_prerequisites import require_digest_delivery_provider
     from surfaces.cli.commands.cron_results import RunNowOutput
 

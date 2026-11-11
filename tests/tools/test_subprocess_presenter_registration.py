@@ -36,9 +36,9 @@ def test_process_boot_installs_a_subprocess_presenter_for_the_default_agent() ->
     subprocess_presenter.reset()
 
     # Act.
-    from bootstrap.adapters import install_harness_adapters
+    from tools.harness_adapters import register_harness_adapters
 
-    install_harness_adapters()
+    register_harness_adapters()
 
     # Assert.
     assert harness_providers.resolve_subprocess_presenter() is not None

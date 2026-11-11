@@ -11,14 +11,15 @@ fails closed — ``gateway`` and ``surfaces`` are peer packages that must not
 import each other.
 
 Shared process setup — environment, error reporting, adapter registration —
-lives in ``bootstrap.process``. Each host picks a profile rather than repeating
-the order: this CLI uses ``CLI_PROFILE`` (via ``surfaces.cli.startup``), the
-gateway ``GATEWAY_PROFILE``, the web app ``WEB_PROFILE``.
+lives in ``infrastructure.process.boot``. Each host picks a profile rather than
+repeating the order: this CLI uses ``CLI_PROFILE`` (via ``surfaces.cli.startup``),
+the gateway ``GATEWAY_PROFILE``, the web app ``WEB_PROFILE``.
 
 Driving the agent from Python instead of the CLI::
 
-    from bootstrap.process import EMBEDDED_PROFILE, configure_process
     from core.agent_harness import AgentSession
+    from infrastructure.process.boot import EMBEDDED_PROFILE
+    from surfaces.shared.process_boot import configure_process
 
     configure_process(EMBEDDED_PROFILE)
 
@@ -31,7 +32,7 @@ Driving the agent from Python instead of the CLI::
 ``configure_process`` comes first and is what registers the harness adapters
 tools resolve through; ``AgentSession.start()`` only loads the environment, so
 on its own the agent starts but no tool is available. It cannot self-bootstrap —
-``core`` sits below ``bootstrap`` in the layer contract, so the caller wires it.
+``core`` sits below ``surfaces`` in the layer contract, so the caller wires it.
 ``EMBEDDED_PROFILE`` deliberately leaves Sentry and LLM preloading to the host
 process.
 

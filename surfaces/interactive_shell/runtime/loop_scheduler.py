@@ -7,11 +7,12 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
+from infrastructure.process.boot import SCHEDULED_COMMAND_PROFILE
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_service_operation
 from infrastructure.scheduling.scheduler.runner import start_background_scheduler
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun
+from surfaces.shared.process_boot import configure_process
 
 log = logging.getLogger(__name__)
 
@@ -69,8 +70,8 @@ def reload_loop_scheduler() -> int:
 
 def run_loop_now(task_id: str, *, on_result: Callable[[TaskRun], None] | None = None) -> bool:
     """Fire one loop task immediately in this process; False when the run failed."""
-    from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     return run_task_now(
@@ -87,7 +88,7 @@ def shutdown_loop_scheduler() -> None:
 def _start_locked() -> int:
     global _scheduler, _task_count
 
-    from bootstrap.adapters import scheduler_runners
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     scheduler, task_count = start_background_scheduler(

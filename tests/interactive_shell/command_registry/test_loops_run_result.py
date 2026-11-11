@@ -7,8 +7,8 @@ from collections.abc import Callable
 
 from rich.console import Console
 
-import bootstrap.adapters as adapters
 import infrastructure.scheduling.scheduler.runner as scheduler_runner
+import integrations.scheduled_agent_bootstrap as scheduled_agents
 import surfaces.interactive_shell.runtime.loop_scheduler as loop_scheduler
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.types import (
@@ -50,7 +50,7 @@ def test_run_now_reports_failed_destination_after_partial_delivery(monkeypatch) 
 
     monkeypatch.setattr(loop_scheduler, "configure_process", lambda _profile: None)
     monkeypatch.setattr(
-        adapters,
+        scheduled_agents,
         "scheduler_runners",
         lambda: SchedulerRunners(agent=lambda _payload: ""),
     )

@@ -1,7 +1,7 @@
 """Everything the CLI process does once, before the Click group runs.
 
 ``main()`` is an entrypoint: read argv, invoke the group, map the outcome to an
-exit code. Shared env boot lives in :func:`bootstrap.process.configure_process`;
+exit code. Shared env boot lives in :func:`surfaces.shared.process_boot.configure_process`;
 this module adds CLI-only terminal hooks after that.
 
 ``--help`` / ``-h`` skip this module: they only need Click usage text, not
@@ -105,13 +105,14 @@ def run(group: Any, argv: list[str]) -> Callable[[], None] | None:
     Returns the error-reporting start a bare ``opensre`` must run once its
     banner is painted; ``None`` for subcommands, which initialise in line.
     """
-    from bootstrap.adapters import install_cli_auth_checker
-    from bootstrap.process import CLI_PROFILE, configure_process
+    from infrastructure.process.boot import CLI_PROFILE
     from infrastructure.terminal.prompt_support import (
         install_questionary_ctrl_c_double_exit,
         install_questionary_escape_cancel,
     )
+    from integrations.harness_adapters import install_cli_auth_checker
     from surfaces.cli.signals import install_sigint_handler
+    from surfaces.shared.process_boot import configure_process
     from surfaces.shared.terminal.output.boundary import install_product_adapters
 
     command = _first_command(group, argv)

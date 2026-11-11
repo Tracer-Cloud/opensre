@@ -31,7 +31,6 @@ def quick_checks(changed: list[str], *, root: Path) -> tuple[Check, ...]:
 def quality_checks() -> tuple[Check, ...]:
     """Return the mandatory checks, including contracts spanning package boundaries."""
     sources = (
-        "bootstrap",
         "config",
         "core",
         "gateway",

@@ -39,7 +39,10 @@ def controller(
 ) -> Iterator[tuple[GatewayController, _CountingSync]]:
     monkeypatch.delenv("OPENSRE_ALERT_LISTENER_TOKEN", raising=False)
     sync = _CountingSync()
-    monkeypatch.setattr("bootstrap.adapters.webapp_loop_sync", lambda _runners=None: sync)
+    monkeypatch.setattr(
+        "integrations.webapp_scheduled_loops.webapp_loop_sync_from_environment",
+        lambda _runners=None: sync,
+    )
     started = GatewayController()
     started._start_webapp_loop_sync(logging.getLogger("test"))
     # What gateway.startup attaches when the gateway starts.
@@ -122,7 +125,10 @@ def test_a_stop_that_lands_just_before_the_clear_still_ends_the_thread(
 ) -> None:
     # Arrange
     sync = _CountingSync()
-    monkeypatch.setattr("bootstrap.adapters.webapp_loop_sync", lambda _runners=None: sync)
+    monkeypatch.setattr(
+        "integrations.webapp_scheduled_loops.webapp_loop_sync_from_environment",
+        lambda _runners=None: sync,
+    )
     gateway = GatewayController()
     gateway._webapp_loop_sync_wake = _StopDuringClear(gateway)
 

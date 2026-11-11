@@ -203,7 +203,10 @@ def test_webapp_sync_keeps_report_and_poll_cadences_when_nudged_mid_pass(
     sync.sync.side_effect = _poll
     sync.report.side_effect = _report
     thread_factory = MagicMock()
-    monkeypatch.setattr("bootstrap.adapters.webapp_loop_sync", lambda _runners=None: sync)
+    monkeypatch.setattr(
+        "integrations.webapp_scheduled_loops.webapp_loop_sync_from_environment",
+        lambda _runners=None: sync,
+    )
     monkeypatch.setattr("gateway.core.lifecycle.controller.monotonic", clock)
     monkeypatch.setattr("gateway.core.lifecycle.controller.threading.Thread", thread_factory)
     monkeypatch.setattr(wake, "wait", _wait)

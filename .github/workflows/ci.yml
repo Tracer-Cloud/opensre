@@ -18,7 +18,7 @@ permissions:
 env:
   OPENSRE_CICD: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  PYTHON_SOURCE_PATHS: "bootstrap config core gateway integrations infrastructure surfaces tools"
+  PYTHON_SOURCE_PATHS: "config core gateway integrations infrastructure surfaces tools"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -62,7 +62,7 @@ jobs:
         run: |
           uv run python -m tests.ci_sharding report --label=tools-runtime tests/tools tests/core core/agent_harness/prompts/skills tests/infrastructure tests/filestorage tests/utils tests/masking --ignore=tests/core/agent --ignore=tests/core/tool/test_contracts.py --ignore=tests/tools/test_registry_index.py --ignore=tests/tools/selection
           uv run python -m tests.ci_sharding report --label=cli-runtime tests/cli tests/interactive_shell tests/surfaces tests/core/agent tests/analytics tests/sandbox --ignore=tests/cli/test_smoke.py
-          uv run python -m tests.ci_sharding report --label=integrations-and-misc tests/integrations tests/bootstrap tests/benchmarks tests/shared tests/config tests/github_ci tests/quality tests/packaging tests/scheduler gateway/tests
+          uv run python -m tests.ci_sharding report --label=integrations-and-misc tests/integrations tests/benchmarks tests/shared tests/config tests/github_ci tests/quality tests/packaging tests/scheduler gateway/tests
 
       - name: Shared static checks
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
@@ -356,7 +356,6 @@ jobs:
               --splits=6 --group=1
             pytest_paths: >-
               tests/integrations
-              tests/bootstrap
               tests/benchmarks
               tests/shared
               tests/config
@@ -371,7 +370,6 @@ jobs:
               --splits=6 --group=2
             pytest_paths: >-
               tests/integrations
-              tests/bootstrap
               tests/benchmarks
               tests/shared
               tests/config
@@ -386,7 +384,6 @@ jobs:
               --splits=6 --group=3
             pytest_paths: >-
               tests/integrations
-              tests/bootstrap
               tests/benchmarks
               tests/shared
               tests/config
@@ -401,7 +398,6 @@ jobs:
               --splits=6 --group=4
             pytest_paths: >-
               tests/integrations
-              tests/bootstrap
               tests/benchmarks
               tests/shared
               tests/config
@@ -416,7 +412,6 @@ jobs:
               --splits=6 --group=5
             pytest_paths: >-
               tests/integrations
-              tests/bootstrap
               tests/benchmarks
               tests/shared
               tests/config
@@ -431,7 +426,6 @@ jobs:
               --splits=6 --group=6
             pytest_paths: >-
               tests/integrations
-              tests/bootstrap
               tests/benchmarks
               tests/shared
               tests/config
@@ -738,7 +732,6 @@ jobs:
               - "setup.cfg"
               - "setup.py"
               - "uv.lock"
-              - "bootstrap/**"
               - "config/**"
               - "core/**"
               - "gateway/**"

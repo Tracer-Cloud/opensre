@@ -23,7 +23,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Roots listed in ``[tool.setuptools.packages.find]``.
 _SHIPPED_ROOTS = (
-    "bootstrap",
     "config",
     "core",
     "gateway",
