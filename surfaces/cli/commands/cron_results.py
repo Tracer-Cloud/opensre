@@ -26,6 +26,26 @@ def print_run_result(console: Console, run: TaskRun) -> None:
         console.print(Text(run.error))
 
 
+class RunNowOutput:
+    """Show each attempt a run-now records, then close a failed run without hiding its reason."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+        self._shown = False
+
+    def show(self, run: TaskRun) -> None:
+        """``run_task_now``'s ``on_result``: show the attempt, including why it failed."""
+        self._shown = True
+        print_run_result(self._console, run)
+
+    def failed(self) -> None:
+        """Close a failed run; only a run that recorded no attempt points at the logs."""
+        from infrastructure.terminal.theme import ERROR
+
+        hint = "" if self._shown else " Check logs for details."
+        self._console.print(Text(f"Task execution failed.{hint}", style=str(ERROR)))
+
+
 def _run_status_label(run: TaskRun) -> str:
     """Describe whether a run was abandoned or recovered by a later attempt."""
     from infrastructure.scheduling.scheduler.types import TaskStatus

@@ -2,9 +2,9 @@
 
 Each task kind maps to a function that produces a formatted report string
 suitable for delivery to messaging providers. Builders dispatch through the
-agent runner registered on :class:`SchedulerRunners`; failures raise
-RuntimeError so the executor records FAILED in cron logs without masking
-outages as success.
+agent runner registered on :class:`SchedulerRunners`; an agent failure raises
+:class:`RunFailure` naming why, so the executor records FAILED with that reason
+without masking outages as success or leaking exception text.
 """
 
 from __future__ import annotations
@@ -23,10 +23,12 @@ from core.agent_harness import (
     resolve_scheduled_skill,
 )
 from infrastructure.observability.trace.trace_session import inherit_trace_session
+from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CREATED_BY_PARAM
 from infrastructure.scheduling.scheduler.loop_owner import unattended_scope
 from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
+from infrastructure.scheduling.scheduler.run_failure import run_failure
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.sources import (
     SCHEDULED_GITHUB_PR_SWEEP,
@@ -37,7 +39,7 @@ from infrastructure.scheduling.scheduler.sources import (
     SCHEDULED_SENTRY_UPTIME_WATCH,
 )
 from infrastructure.scheduling.scheduler.storage import patch_scheduler_skill_pin
-from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind, TaskReport
 
 logger = logging.getLogger(__name__)
 
@@ -108,23 +110,25 @@ def _build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     return builder(task, runners)
 
 
-def _build_sentry_morning_digest(task: ScheduledTask, runners: SchedulerRunners) -> str:
-    """Build a Sentry morning digest via the headless summarizing-sentry-issues skill path."""
+def _run_agent(task: ScheduledTask, runners: SchedulerRunners, payload: AgentPayload) -> TaskReport:
+    """Run ``payload`` on the agent runner; a failure raises :class:`RunFailure` naming why."""
     try:
-        safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        payload = {
-            "stats_period": "24h",
-            "query": "is:unresolved",
-            **safe_params,
-            "source": SCHEDULED_SENTRY_MORNING_DIGEST,
-            "task_id": task.id,
-        }
         return runners.agent(payload)
     except Exception as exc:
-        logger.error("Sentry morning digest failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Sentry morning digest failed for task {task.id}. Check logs for details."
-        ) from exc
+        raise run_failure(task, exc) from exc
+
+
+def _build_sentry_morning_digest(task: ScheduledTask, runners: SchedulerRunners) -> str:
+    """Build a Sentry morning digest via the headless summarizing-sentry-issues skill path."""
+    safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
+    payload = {
+        "stats_period": "24h",
+        "query": "is:unresolved",
+        **safe_params,
+        "source": SCHEDULED_SENTRY_MORNING_DIGEST,
+        "task_id": task.id,
+    }
+    return _run_agent(task, runners, payload)
 
 
 def _build_sentry_uptime_watch(task: ScheduledTask, runners: SchedulerRunners) -> str:
@@ -134,54 +138,36 @@ def _build_sentry_uptime_watch(task: ScheduledTask, runners: SchedulerRunners) -
     Implemented via the agent-runner port so ``platform`` does not import
     ``integrations`` (layering).
     """
-    try:
-        safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        payload = {
-            **safe_params,
-            "source": SCHEDULED_SENTRY_UPTIME_WATCH,
-            "task_id": task.id,
-        }
-        return runners.agent(payload)
-    except Exception as exc:
-        logger.error("Sentry uptime watch failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Sentry uptime watch failed for task {task.id}. Check logs for details."
-        ) from exc
+    safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
+    payload = {
+        **safe_params,
+        "source": SCHEDULED_SENTRY_UPTIME_WATCH,
+        "task_id": task.id,
+    }
+    return _run_agent(task, runners, payload)
 
 
 def _build_github_pr_sweep(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build a GitHub PR sweep digest via the headless agent path."""
-    try:
-        safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        payload = {
-            **safe_params,
-            "source": SCHEDULED_GITHUB_PR_SWEEP,
-            "task_id": task.id,
-        }
-        return runners.agent(payload)
-    except Exception as exc:
-        logger.error("GitHub PR sweep failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"GitHub PR sweep failed for task {task.id}. Check logs for details."
-        ) from exc
+    safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
+    payload = {
+        **safe_params,
+        "source": SCHEDULED_GITHUB_PR_SWEEP,
+        "task_id": task.id,
+    }
+    return _run_agent(task, runners, payload)
 
 
 def _build_posthog_metric_report(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build a PostHog per-metric report via the headless summarizing-posthog-analytics skill path."""
-    try:
-        safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        payload = {
-            "stats_period": "7d",
-            **safe_params,
-            "source": SCHEDULED_POSTHOG_METRIC_REPORT,
-            "task_id": task.id,
-        }
-        return runners.agent(payload)
-    except Exception as exc:
-        logger.error("PostHog metric report failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"PostHog metric report failed for task {task.id}. Check logs for details."
-        ) from exc
+    safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
+    payload = {
+        "stats_period": "7d",
+        **safe_params,
+        "source": SCHEDULED_POSTHOG_METRIC_REPORT,
+        "task_id": task.id,
+    }
+    return _run_agent(task, runners, payload)
 
 
 def _build_work_item_reminder(task: ScheduledTask, _runners: SchedulerRunners) -> str:
@@ -231,30 +217,24 @@ def _build_work_item_checkin(task: ScheduledTask, _runners: SchedulerRunners) ->
 def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build a manual prompt-loop report via the headless assistant path.
 
-    On failure, raises RuntimeError so the executor records the failure
+    On failure, raises :class:`RunFailure` so the executor records why
     without leaking exception details to the chat.
     """
-    try:
-        safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
-        prompt = current_loop_prompt(safe_params)
-        if not prompt:
-            return f"⚠️ Manual loop task {task.id} has no prompt configured."
-        payload = {
-            **safe_params,
-            "source": SCHEDULED_MANUAL_LOOP,
-            "task_id": task.id,
-            "name": task.name,
-            "task_name": task.name,
-            "loop_prompt": prompt,
-            "window_hours": task.window_hours,
-            "timezone": task.timezone,
-        }
-        return runners.agent(payload)
-    except Exception as exc:
-        logger.error("Manual loop failed for task %s: %s", task.id, exc)
-        raise RuntimeError(
-            f"Manual loop failed for task {task.id}. Check logs for details."
-        ) from exc
+    safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
+    prompt = current_loop_prompt(safe_params)
+    if not prompt:
+        return f"⚠️ Manual loop task {task.id} has no prompt configured."
+    payload = {
+        **safe_params,
+        "source": SCHEDULED_MANUAL_LOOP,
+        "task_id": task.id,
+        "name": task.name,
+        "task_name": task.name,
+        "loop_prompt": prompt,
+        "window_hours": task.window_hours,
+        "timezone": task.timezone,
+    }
+    return _run_agent(task, runners, payload)
 
 
 def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> str:

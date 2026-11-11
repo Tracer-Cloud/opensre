@@ -49,12 +49,17 @@ WORK_UNVERIFIED_ERROR_KIND = "work_unverified"
 REPORT_MISSING_ERROR_KIND = "report_missing"
 TURN_INTERRUPTED_ERROR_KIND = "turn_interrupted"
 
+# ``WorkOutcome.error_kind`` of a run that failed before it had a report, for a
+# reason with no category of its own; its error text says what went wrong.
+MESSAGE_BUILD_FAILED_ERROR_KIND = "message_build_failed"
+
 # The whole reply of a stateless agent loop tick that found nothing to act on.
 # It is a no-op that delivers nothing. Shared so the runner's instructions and
 # ``integrations.scheduled_outcomes``, which scores the reply, agree on it.
 STATELESS_LOOP_IDLE_REPLY = "NO_ACTION"
 
 __all__ = [
+    "MESSAGE_BUILD_FAILED_ERROR_KIND",
     "NON_RETRYABLE_WORK_ERROR_KINDS",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
     "OPENSRE_SCHEDULER_BUILD_ENV",

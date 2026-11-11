@@ -21,12 +21,15 @@ from typing import Any
 import pytest
 
 import infrastructure.scheduling.scheduler as scheduler_pkg
+import infrastructure.scheduling.scheduler.run_failure as run_failure_module
 import infrastructure.scheduling.scheduler.storage.database as scheduler_database
 import integrations.webapp_requests.ledger as request_ledger
 import integrations.webapp_scheduled_loops.loop_runs as loop_runs_module
 import integrations.webapp_scheduled_loops.sync as sync_module
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope, current_scope
+from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
+from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_GROUP_ID_PARAM,
     LOOP_PROMPT_PARAM,
@@ -46,6 +49,7 @@ from infrastructure.scheduling.scheduler.types import (
     Provider,
     ScheduledTask,
     TaskKind,
+    TaskReport,
     TaskStatus,
 )
 from integrations.webapp_scheduled_loops import WebappLoopSync
@@ -780,6 +784,39 @@ def test_a_failed_run_without_an_error_names_why_its_work_fell_short() -> None:
     # Assert: the loop's page says why instead of showing a bare failure.
     [run] = webapp.reports[0][0]["runs"]
     assert run["error"] == "The agent finished without a report to deliver."
+
+
+def test_a_tick_out_of_credits_tells_the_loops_page_why(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: every tick of a workspace out of hosted credits failed as "Manual loop
+    failed for task … Check logs for details", so members never learned credits ran out."""
+    # Arrange: the hosted proxy refuses the tick's model call for credits.
+    with _org_scope():
+        loop = create_manual_loop(name="CI/CD fix loop", prompt="Fix CI.", cron="0 0 * * *")
+    reported: list[BaseException] = []
+    monkeypatch.setattr(
+        run_failure_module, "capture_exception", lambda exc, **_: reported.append(exc)
+    )
+
+    def out_of_credits(_payload: dict[str, Any]) -> TaskReport:
+        raise OpenSRECreditsExhaustedError("OpenSRE credit exhausted (provider billing/quota).")
+
+    # Act
+    with _org_scope():
+        ran = execute_task(
+            loop.task, "2026-11-11T05:00:00Z", SchedulerRunners(agent=out_of_credits)
+        )
+    webapp = _Webapp()
+    _sync(webapp).report(force=True)
+
+    # Assert: the page names the cause, and an expected condition never pages Sentry.
+    assert not ran
+    [run] = webapp.reports[0][0]["runs"]
+    assert (run["trigger"], run["status"]) == ("schedule", "failed")
+    assert run["error"] == (
+        "The workspace is out of OpenSRE credits. Top up or upgrade the plan, "
+        "or wait for the monthly reset."
+    )
+    assert reported == []
 
 
 def test_a_run_ending_is_reported_and_an_unchanged_one_is_not() -> None:

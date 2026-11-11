@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from config.constants.scheduler import MESSAGE_BUILD_FAILED_ERROR_KIND
 from infrastructure.observability.trace.submitted_messages import (
     SubmittedMessages,
     collect_submitted_messages,
@@ -25,6 +26,7 @@ from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PAR
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_execution_operation
 from infrastructure.scheduling.scheduler.outcomes import WorkStatus
 from infrastructure.scheduling.scheduler.run_activity import RunActivity, collect_run_activity
+from infrastructure.scheduling.scheduler.run_failure import RunFailure
 from infrastructure.scheduling.scheduler.run_history import (
     record_run_finished,
     record_run_started,
@@ -201,8 +203,15 @@ def _execute_claimed_task(
     except RuntimeError as exc:
         if _skip_cancelled_schedule(claim, task, fire_time):
             return False
-        # Pipeline failures — record without leaking details to chat
-        _record_failure(claim, task, fire_time, str(exc), stage="message_build")
+        # A builder's own reason; agent failures arrive as RunFailure, never raw exception text.
+        _record_failure(
+            claim,
+            task,
+            fire_time,
+            str(exc),
+            stage="message_build",
+            error_kind=exc.kind if isinstance(exc, RunFailure) else MESSAGE_BUILD_FAILED_ERROR_KIND,
+        )
         return False
     except Exception as exc:
         if _skip_cancelled_schedule(claim, task, fire_time):
@@ -447,12 +456,13 @@ def _record_failure(
     error: str,
     *,
     stage: str,
+    error_kind: str = MESSAGE_BUILD_FAILED_ERROR_KIND,
     message_chars: int | None = None,
     result: FanOutResult | None = None,
 ) -> None:
     """Record a failed execution in the claim store and emit analytics."""
     if stage == "message_build" and not record_run_report(
-        claim, TaskReport("", work_status=WorkStatus.FAILED, error_kind="message_build_failed")
+        claim, TaskReport("", work_status=WorkStatus.FAILED, error_kind=error_kind)
     ):
         return
     outcomes = result.outcomes if result is not None else ()
