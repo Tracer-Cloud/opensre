@@ -44,7 +44,7 @@ def quality_checks() -> tuple[Check, ...]:
     return (
         Check("lint", "static", ("-m", "ruff", "check", *lint_paths)),
         Check("format", "static", ("-m", "ruff", "format", "--check", *lint_paths)),
-        Check("imports", "static", (".github/ci/check_imports.py", "--strict")),
+        Check("imports", "static", (".github/ci/check_imports.py",)),
         Check(
             "integration-registry",
             "static",

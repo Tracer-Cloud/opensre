@@ -1,3 +1,9 @@
+# Import-graph contracts. Run: make check-imports
+#
+# Remove ignore_imports entries as refactors land; link the fixing PR/issue.
+# Direct (non-transitive) edges are the counterpart in
+# .github/ci/check_direct_imports.py.
+
 [importlinter]
 root_packages =
     bootstrap
@@ -9,11 +15,46 @@ root_packages =
     infrastructure
     tools
 
-[importlinter:contract:config-independent]
-name = Config is independent
-type = independence
-modules =
+[importlinter:contract:opensre-layers]
+name = OpenSRE package layers (transitive)
+type = layers
+layers =
+    surfaces | gateway
+    bootstrap
+    tools | integrations
+    # ``:`` = siblings may cross-import (import-linter multi-item layers).
+    # ``|`` would forbid core <-> infrastructure, but both packages depend on each other.
+    core : infrastructure
+    # Bottom layer: config imports no other first-party package.
     config
+ignore_imports =
+    # infrastructure -> integrations (T-4 debt — scheduler / observability)
+    infrastructure.analytics.github_identity -> integrations.github
+    infrastructure.observability.errors.sentry -> integrations.llm_cli
+    infrastructure.scheduling.scheduler.credentials -> integrations.catalog
+    # surfaces -> gateway (cli + repl gateway commands)
+    surfaces.cli.commands.gateway -> gateway.core.process
+    surfaces.gateway_entry -> gateway.core.lifecycle.controller
+    surfaces.gateway_entry -> gateway.web.web_server
+    surfaces.interactive_shell.command_registry.gateway_cmds -> gateway.core.process
+    # tools -> integrations (T-4 debt — vendor tools / reporting)
+    tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry
+    tools.cross_vendor.fix_sentry_issue.context -> integrations.sentry.issue_url
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.coding_agent
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.git
+    tools.cross_vendor.fix_sentry_issue.runner -> integrations.github
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.coding_agent
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.git
+    tools.cross_vendor.fix_sentry_issue.ship -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.coding_agent
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.errors -> integrations.git
+    tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli
+    tools.interactive_shell.shell.merge_guard -> integrations.git
+    tools.system.python_execution_tool.credentials -> integrations.github
 
 [importlinter:contract:gateway-core-below-surfaces]
 name = Gateway core sits below transports and web
@@ -44,7 +85,3 @@ modules =
     gateway.transports.slack
     gateway.transports.discord
     gateway.transports.telegram
-
-# Full layered contracts (core ⊄ tools, integrations ⊄ cli, …) live in
-# ``.importlinter.strict`` for local burn-down. Run: ``make check-layers-strict``
-# Regenerate baselines: ``uv run lint-imports --config .importlinter.strict``

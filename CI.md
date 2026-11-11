@@ -103,7 +103,7 @@ constant-condition toggles to hide failures.
 
 Tests that fail under CI load are real bugs: harden synchronization rather than
 ignoring flakes. For import/API-border failures, use the package API allowed by
-`.importlinter.strict` or the border allowlist, not an internal leaf unless the
+`.importlinter` or the border allowlist, not an internal leaf unless the
 edge is explicitly exempted.
 
 The Cursor stop hook `.cursor/hooks/check-ci-failures.sh` re-prompts when an open

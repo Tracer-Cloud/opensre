@@ -9,7 +9,7 @@ export
 	install-gateway-on-new-server destroy-gateway-on-new-server \
 	test test-full test-cov test-scope test-cli-smoke test-grafana \
 	clean lint format-check format typecheck vulture \
-	check-imports check-cycles check-layers check-imports-strict check-layers-strict check check-full pre-push install-hooks help
+	check-imports check-cycles check-layers check check-full pre-push install-hooks help
 
 
 ifneq ($(wildcard .venv/bin/python),)
@@ -160,12 +160,6 @@ check-imports:
 # Deprecated aliases — use ``check-imports`` instead.
 check-cycles check-layers: check-imports
 
-# Optional: full transitive layer contracts (when .importlinter.strict exists).
-check-imports-strict:
-	$(PYTHON) .github/ci/check_imports.py --strict
-
-check-layers-strict: check-imports-strict
-
 # Run fast local feedback; broader validation remains an explicit target.
 check: pre-push
 
@@ -218,7 +212,6 @@ help:
 	@echo "  make format          - Format code with ruff"
 	@echo "  make typecheck       - Type check with mypy"
 	@echo "  make check-imports   - Import cycles, layers, and direct-edge checks"
-	@echo "  make check-layers-strict - Full transitive layer contracts (.importlinter.strict)"
 	@echo "  make check-full      - All quality checks and full test suite (opt-in)"
 	@echo "  make install-hooks   - Install blocking push validation in this checkout"
 	@echo "  make pre-push        - Ruff lint and format checks on changed Python files"

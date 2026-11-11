@@ -13,9 +13,9 @@ last column says whether peers may import each other.
 
 | Tier | Packages | May import | Must never import | Peer rule |
 | --- | --- | --- | --- | --- |
-| 1 (top) | `surfaces`, `gateway` | `bootstrap`, `tools`, `integrations`, `core`, `infrastructure`, `config` | — | Independent peers; must not import each other, except three tracked CLI/REPL gateway-command edges listed in `.importlinter.strict`. |
+| 1 (top) | `surfaces`, `gateway` | `bootstrap`, `tools`, `integrations`, `core`, `infrastructure`, `config` | — | Independent peers; must not import each other, except three tracked CLI/REPL gateway-command edges listed in `.importlinter`. |
 | 2 | `bootstrap` | `tools`, `integrations`, `core`, `infrastructure`, `config` | `surfaces`, `gateway` | Composition root. The only package that may import `tools` **and** `integrations` together, because wiring needs both. |
-| 3 | `tools` | `core`, `infrastructure`, `config` | `surfaces`, `gateway`, `bootstrap` | Peer of `integrations`: must not import it. Existing edges are listed as debt in `.importlinter.strict`. |
+| 3 | `tools` | `core`, `infrastructure`, `config` | `surfaces`, `gateway`, `bootstrap` | Peer of `integrations`: must not import it. Existing edges are listed as debt in `.importlinter`. |
 | 3 | `integrations` | `core`, `infrastructure`, `config` | `tools`, `surfaces`, `gateway`, `bootstrap` | Peer of `tools`: must not import it. |
 | 4 | `core`, `infrastructure` | `config` | `surfaces`, `gateway`, `bootstrap`, `tools`, `integrations` | Siblings: **may** cross-import each other. |
 | 5 (bottom) | `config` | — (nothing first-party) | everything above | Independent — imports no other first-party package. |
@@ -137,7 +137,7 @@ responsibility:
   configuration. See [tool-placement-policy.md](tool-placement-policy.md).
 
 `tools` and `integrations` are peers, so neither may import the other in new
-code. The exceptions in `.importlinter.strict` are tracked migration debt, not
+code. The exceptions in `.importlinter` are tracked migration debt, not
 precedent: they cover the existing cross-vendor tools and a few incidental
 credential/client edges. Single-vendor tools avoid the peer edge entirely by
 living inside their owning `integrations/<vendor>/` package. `bootstrap`

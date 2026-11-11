@@ -620,7 +620,6 @@ RULES: tuple[PathRule, ...] = (
     PathRule(".pre-commit-config.yaml", ("tests/github_ci/",)),
     PathRule("mypy.ini", ("tests/github_ci/",)),
     PathRule(".importlinter", ("tests/shared/", "tests/github_ci/")),
-    PathRule(".importlinter.strict", ("tests/shared/", "tests/github_ci/")),
     PathRule(".gitignore", ("tests/github_ci/",)),
 )
 

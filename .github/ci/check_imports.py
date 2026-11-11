@@ -3,10 +3,10 @@
 Orchestrates, in order:
 
 1. **Cycles** — module-load SCCs (``check_import_cycles``)
-2. **Layers** — ``config`` independence via import-linter (``.importlinter``)
+2. **Layers** — package layers and gateway borders via import-linter (``.importlinter``)
 3. **Direct edges** — forbidden top-level imports (``check_direct_imports``)
 
-Used by ``make check-imports``, ``make check``, and CI.
+Used by ``make check-imports`` and CI.
 
 Exit codes:
     0 — all checks passed
@@ -37,7 +37,7 @@ class ImportCheck:
     run: Callable[[], int]
 
 
-def _run_importlinter(*, config: Path | None = None) -> int:
+def _run_importlinter() -> int:
     scripts_dir = Path(sys.executable).parent
     lint_imports = next(
         (
@@ -56,37 +56,26 @@ def _run_importlinter(*, config: Path | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    command = [str(lint_imports)]
-    if config is not None:
-        command.extend(["--config", str(config)])
-    completed = subprocess.run(command, cwd=_REPO_ROOT, check=False)
+    completed = subprocess.run([str(lint_imports)], cwd=_REPO_ROOT, check=False)
     return int(completed.returncode)
 
 
-def import_checks(*, strict_layers: bool = False) -> Sequence[ImportCheck]:
-    layer_config = _REPO_ROOT / ".importlinter.strict" if strict_layers else None
+def import_checks() -> Sequence[ImportCheck]:
     return (
         ImportCheck("Import cycles (Tarjan SCC)", check_import_cycles),
-        ImportCheck(
-            "Import layers (import-linter)",
-            lambda: _run_importlinter(config=layer_config),
-        ),
+        ImportCheck("Import layers (import-linter)", _run_importlinter),
         ImportCheck("Forbidden direct import edges (module + nested)", check_direct_imports),
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv or [])
-    strict_layers = False
-    if args == ["--strict"]:
-        strict_layers = True
-        args = []
     if args:
         print(f"Unknown arguments: {' '.join(args)}", file=sys.stderr)
-        print("Usage: check_imports.py [--strict]", file=sys.stderr)
+        print("Usage: check_imports.py", file=sys.stderr)
         return 2
 
-    checks = import_checks(strict_layers=strict_layers)
+    checks = import_checks()
     failures: list[str] = []
 
     for index, check in enumerate(checks, start=1):
