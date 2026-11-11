@@ -169,9 +169,9 @@ def main() -> int:
         if args.command == "generate":
             return generate(args)
         summarize(args.runs)
-        return 0
     except (ValueError, OSError) as exc:
         parser.exit(2, f"Evaluation failed: {type(exc).__name__}\n")
+    return 0
 
 
 if __name__ == "__main__":

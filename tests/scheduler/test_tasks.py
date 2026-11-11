@@ -32,7 +32,6 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
     LOOP_TEMPLATE_PARAM,
 )
-from infrastructure.scheduling.scheduler.run_failure import RunFailure
 from infrastructure.scheduling.scheduler.storage import task_store
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tests.scheduler._bundle import real_runners, runners_with_agent
@@ -298,7 +297,7 @@ class TestMessageBuilders:
         def _raise(_payload: dict[str, object]) -> str:
             raise crash
 
-        with pytest.raises(RunFailure) as raised:
+        with pytest.raises(run_failure_mod.RunFailure) as raised:
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
         # Members see the category and exception type; the detail goes to Sentry.
@@ -339,7 +338,7 @@ class TestMessageBuilders:
         def _raise(_payload: dict[str, object]) -> str:
             raise RuntimeError("LLM unavailable")
 
-        with pytest.raises(RunFailure, match=r"unexpected error \(RuntimeError\)"):
+        with pytest.raises(run_failure_mod.RunFailure, match=r"unexpected error \(RuntimeError\)"):
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
     def test_sentry_uptime_watch_uses_agent_runner_port(self) -> None:
@@ -430,7 +429,7 @@ class TestMessageBuilders:
         def _raise(_payload: dict[str, object]) -> str:
             raise RuntimeError("LLM unavailable")
 
-        with pytest.raises(RunFailure, match=r"unexpected error \(RuntimeError\)"):
+        with pytest.raises(run_failure_mod.RunFailure, match=r"unexpected error \(RuntimeError\)"):
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
 
