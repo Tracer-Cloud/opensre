@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SynthesisResult:
-    status: Literal["ok", "model_unavailable", "deadline"]
+    status: Literal["ok", "model_unavailable", "deadline", "invalid_report"]
     content: str = ""
 
 
@@ -36,7 +36,9 @@ def synthesize(
         if receive.poll(timeout):
             try:
                 content = receive.recv()
-                if isinstance(content, str) and content.strip():
+                if isinstance(content, SynthesisResult):
+                    result = content
+                elif isinstance(content, str) and content.strip():
                     result = SynthesisResult("ok", content)
             except EOFError:
                 logger.warning("Telemetry model process exited without a report")

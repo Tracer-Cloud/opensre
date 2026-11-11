@@ -16,6 +16,7 @@ from core.telemetry import structured_investigation
 from core.telemetry.models import Evidence, Measurement, Scope, WatchRule
 from core.telemetry.reports import Analysis, InvestigationReport, evidence_snapshot, partial_report
 from core.telemetry.storage.store import WatchStore
+from core.telemetry.structured_investigation import _worker as _actual_worker
 from core.telemetry.synthesis import SynthesisResult
 from core.telemetry.watch import WatchRunner
 
@@ -60,6 +61,16 @@ def _slow_worker(_connection: Connection, _payload: str, _provider: str) -> None
     import time
 
     time.sleep(60)
+
+
+def _oversized_model(_payload: str, _provider: str) -> str:
+    return "x" * (structured_investigation.TELEMETRY_STRUCTURED_REPORT_MAX_CHARS + 1)
+
+
+def _oversized_worker(connection: Connection, payload: str, provider: str) -> None:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(structured_investigation, "_model_report", _oversized_model)
+        _actual_worker(connection, payload, provider)
 
 
 @pytest.fixture
@@ -137,6 +148,15 @@ def test_empty_and_oversized_inputs_do_not_start_a_model(monkeypatch: pytest.Mon
     assert large.failure_reason == "input_limit"
     invalid = structured_investigation.investigate(_scope(), Measurement(float("nan"), 1, 150), {})
     assert invalid.failure_reason == "invalid_input" and invalid.measurement is None
+
+
+def test_oversized_reply_through_actual_worker_is_invalid_report(
+    model_route: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(structured_investigation, "_worker", _oversized_worker)
+    report = structured_investigation.investigate(_scope(), _sample(), _evidence())
+    assert report.status == "partial" and report.failure_reason == "invalid_report"
+    assert report.analysis.facts == () and "20/20 failed requests" in report.render()
 
 
 def test_snapshot_is_redacted_stable_and_isolated_from_other_incidents() -> None:

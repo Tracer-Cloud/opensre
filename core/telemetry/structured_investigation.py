@@ -15,7 +15,7 @@ from config.constants.telemetry import (
 from core.telemetry.investigation import _checked_route
 from core.telemetry.models import Evidence, Measurement, Scope
 from core.telemetry.reports import Analysis, InvestigationReport, evidence_snapshot, partial_report
-from core.telemetry.synthesis import synthesize
+from core.telemetry.synthesis import SynthesisResult, synthesize
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,11 @@ def _worker(connection: Connection, payload: str, expected_provider: str) -> Non
     try:
         content = _model_report(payload, expected_provider)
         # Preserve complete JSON or reject it; clipping can change claims or credentials.
-        connection.send(content if len(content) <= TELEMETRY_STRUCTURED_REPORT_MAX_CHARS else "")
+        connection.send(
+            content
+            if len(content) <= TELEMETRY_STRUCTURED_REPORT_MAX_CHARS
+            else SynthesisResult("invalid_report")
+        )
     except Exception:
         logger.exception("Structured telemetry synthesis failed")
         connection.send("")
