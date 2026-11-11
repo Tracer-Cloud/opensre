@@ -240,6 +240,35 @@ def test_json_cli_export_resolves_saved_citations_and_preserves_delivery_text(
     assert events[0]["report"]["analysis"]["facts"][0]["evidence_refs"] == [records[1].ref]
 
 
+def test_json_export_redacts_legacy_event_text_without_inventing_structure(tmp_path: Path) -> None:
+    from click.testing import CliRunner
+
+    from surfaces.cli.commands.triage import triage_command
+
+    path = tmp_path / "watch.db"
+    store = WatchStore(path, "same")
+    store.observe(_scope(), "bad", WatchRule(service="payment", environment="demo"), _sample())
+    pending = store.pending()
+    assert pending is not None
+    store.save_report(pending[0], _scope(), "password=legacy-secret alice@example.com")
+    result = CliRunner().invoke(triage_command, ["reports", "--state", str(path), "--json"])
+    assert result.exit_code == 0, result.output
+    assert "legacy-secret" not in result.output and "alice@example.com" not in result.output
+    assert json.loads(result.output)[0]["report"] is None
+
+
+def test_numeric_digest_references_survive_the_delivery_sanitizer() -> None:
+    from core.telemetry.investigation import sanitize
+
+    # This input produced an all-digit digest matching the card-number redaction rule.
+    records, _ = evidence_snapshot(_scope(), _sample(), {"logs": [{"message": "error 3"}]})
+    report = InvestigationReport(
+        _scope(), _sample(), records, Analysis.model_validate(_analysis(records[1].ref))
+    )
+    assert sanitize(records[1].ref) == records[1].ref
+    assert records[1].ref in sanitize(report.render())
+
+
 def test_structured_replay_records_the_actual_payload_and_explicit_partial_status() -> None:
     from tests.core.telemetry.evaluation.cases import load_cases
     from tests.core.telemetry.evaluation.runner import run_case

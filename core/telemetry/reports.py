@@ -117,7 +117,9 @@ def evidence_snapshot(
         data = redact_values(value, redactor=sanitize)
         encoded = json.dumps(data, sort_keys=True, allow_nan=False)
         identity = json.dumps([safe_scope, kind, len(records), data], sort_keys=True)
-        ref = kind + ":" + hashlib.sha256(identity.encode()).hexdigest()[:16]
+        digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
+        # Break numeric runs so the display sanitizer cannot mistake a ref for card data.
+        ref = kind + ":" + digest[:8] + "_" + digest[8:]
         records.append(EvidenceRecord(ref, kind, encoded))
 
     add("counter", asdict(sample))

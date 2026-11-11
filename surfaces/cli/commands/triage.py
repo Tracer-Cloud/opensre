@@ -154,6 +154,7 @@ def reports(state: Path, as_json: bool) -> None:
         for event in events:
             structured = event.pop("report_json")
             event["report"] = json.loads(structured) if structured else None
+            event["body"] = sanitize(event["body"])
         click.echo(json.dumps(events))
         return
     for event in events:
