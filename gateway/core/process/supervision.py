@@ -102,6 +102,8 @@ def _clear_runtime_files() -> None:
 
 def read_gateway_log_tail(lines: int = 50) -> str:
     """Return the last *lines* of the gateway log ('' when there is none)."""
+    if lines <= 0:
+        return ""
     try:
         with GATEWAY_LOG_FILE.open("r", errors="replace") as log:
             return "".join(deque(log, maxlen=lines)).rstrip("\n")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -100,3 +101,37 @@ def test_gateway_stop_reports_result(runner: CliRunner) -> None:
 
     assert result.exit_code == 0
     assert "stopped" in result.output
+
+
+def test_gateway_logs_rejects_negative_lines(runner: CliRunner) -> None:
+    for invalid in ("-1", "-5", "-10"):
+        result = runner.invoke(cli, ["gateway", "logs", "-n", invalid])
+        assert result.exit_code == 2
+        assert "Invalid value for '-n' / '--lines'" in result.output
+        assert "is not in the range x>=0" in result.output
+
+
+def test_gateway_logs_accepts_non_negative_lines(runner: CliRunner, tmp_path: Path) -> None:
+    from gateway.core.process.supervision import read_gateway_log_tail
+
+    log_file = tmp_path / "gateway.log"
+    log_file.write_text("line 1\nline 2\nline 3\n")
+
+    with (
+        patch("gateway.core.process.supervision.GATEWAY_LOG_FILE", log_file),
+        patch("surfaces.cli.commands.gateway.GATEWAY_LOG_FILE", log_file),
+    ):
+        # Defensive function guard tests
+        assert read_gateway_log_tail(-5) == ""
+        assert read_gateway_log_tail(0) == ""
+        assert read_gateway_log_tail(2) == "line 2\nline 3"
+
+        # CLI invocation with positive lines
+        result_pos = runner.invoke(cli, ["gateway", "logs", "-n", "2"])
+        assert result_pos.exit_code == 0
+        assert "line 2\nline 3" in result_pos.output
+        assert "line 1" not in result_pos.output
+
+        # CLI invocation with zero lines
+        result_zero = runner.invoke(cli, ["gateway", "logs", "-n", "0"])
+        assert result_zero.exit_code == 0

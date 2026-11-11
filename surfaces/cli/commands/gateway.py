@@ -100,7 +100,14 @@ def gateway_status_command() -> None:
 
 
 @gateway_command.command("logs")
-@click.option("-n", "--lines", default=50, show_default=True, help="Lines of history to print.")
+@click.option(
+    "-n",
+    "--lines",
+    type=click.IntRange(min=0),
+    default=50,
+    show_default=True,
+    help="Lines of history to print.",
+)
 @click.option("-f", "--follow", is_flag=True, help="Keep printing new log lines (Ctrl-C to exit).")
 def gateway_logs_command(lines: int, follow: bool) -> None:
     """Print the gateway daemon logs."""
