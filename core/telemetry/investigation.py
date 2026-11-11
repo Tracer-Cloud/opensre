@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import multiprocessing
 import re
 from dataclasses import asdict
 from multiprocessing.connection import Connection
@@ -16,6 +15,7 @@ from config.constants.telemetry import (
 )
 from core.llm.types import LLMRoute
 from core.telemetry.models import Evidence, Measurement, Scope
+from core.telemetry.synthesis import synthesize
 from infrastructure.safety.secret_redaction import redact_text, redact_values
 
 logger = logging.getLogger(__name__)
@@ -98,30 +98,8 @@ def investigate(scope: Scope, sample: Measurement, evidence: Evidence) -> str:
     payload = evidence_payload(scope, sample, evidence)
     if len(payload) > TELEMETRY_EVIDENCE_MAX_CHARS:
         raise ValueError("Evidence exceeds the model input budget.")
-    context = multiprocessing.get_context("spawn")
-    receive, send = context.Pipe(duplex=False)
-    process = context.Process(target=_worker, args=(send, payload, provider), daemon=True)
-    report = ""
-    try:
-        process.start()
-        send.close()
-        if receive.poll(TELEMETRY_MODEL_TIMEOUT_SECONDS):
-            try:
-                report = receive.recv()
-            except EOFError:
-                logger.warning("Telemetry model process exited without a report")
-    finally:
-        send.close()
-        receive.close()
-        if process.pid is not None:
-            process.join(timeout=1)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=2)
-            if process.is_alive():
-                process.kill()
-                process.join()
-            process.close()
+    result = synthesize(payload, provider, _worker, timeout=TELEMETRY_MODEL_TIMEOUT_SECONDS)
+    report = result.content
     rate = f"{sample.errors:g}/{sample.total:g} failed requests"
     facts = f"Observed: {rate} in the configured service/window.\n"
     if report.strip():

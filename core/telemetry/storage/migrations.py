@@ -25,3 +25,5 @@ def migrate(conn: sqlite3.Connection) -> None:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(episodes)")}
     if "measurement" not in columns:
         conn.execute("ALTER TABLE episodes ADD COLUMN measurement TEXT")
+    if "report_json" not in columns:
+        conn.execute("ALTER TABLE episodes ADD COLUMN report_json TEXT")

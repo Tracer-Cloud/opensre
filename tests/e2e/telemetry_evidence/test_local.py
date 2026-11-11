@@ -14,7 +14,8 @@ from clickhouse_connect.driver.exceptions import DatabaseError
 from config.constants.telemetry import TELEMETRY_CLICKHOUSE_PASSWORD_ENV
 from config.llm_credentials import resolve_env_credential
 from core.telemetry.evidence_queries import InvestigationScope
-from core.telemetry.models import Scope
+from core.telemetry.models import Measurement, Scope
+from core.telemetry.reports import evidence_snapshot
 from integrations.clickhouse.investigation_queries import ClickHouseInvestigationReader
 from integrations.clickhouse.telemetry import ClickHouseEvidenceConfig
 from tests.e2e.telemetry_evidence.otel_fixtures import payloads
@@ -104,6 +105,18 @@ def test_otlp_evidence_queries_against_local_stack(request: pytest.FixtureReques
         limited = reader.get_trace(identifiers["auth"], limit=1)
         assert limited.data is not None and len(limited.data) == 1 and limited.truncated
         assert reader.get_trace("f" * 32).status == "empty"
+        # The watch's initial evidence path must preserve the same safe text boundaries.
+        initial = reader.evidence(scope.incident)
+        assert "ghp_" not in str(initial) and "BEGIN PRIVATE KEY" not in str(initial)
+        assert any(row["text_truncated"] for row in initial["traces"])
+        records, evidence_payload = evidence_snapshot(
+            scope.incident, Measurement(30, 30, end), initial
+        )
+        assert (
+            records
+            and "fixture-secret" not in evidence_payload
+            and "alice@example.com" not in evidence_payload
+        )
         with pytest.raises(DatabaseError):
             reader._get_client().command(
                 "INSERT INTO otel_traces SELECT * FROM otel_traces WHERE 0"

@@ -14,10 +14,11 @@ from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from core.telemetry import investigation
+from core.telemetry import investigation, reports, structured_investigation, synthesis
 from core.telemetry.models import Evidence, Measurement, Scope
+from core.telemetry.reports import InvestigationReport, evidence_snapshot
 from tests.core.telemetry.evaluation.cases import IncidentCase, load_cases
 from tests.core.telemetry.evaluation.judge.score import read_runs
 
@@ -25,16 +26,35 @@ from tests.core.telemetry.evaluation.judge.score import read_runs
 def run_case(
     case: IncidentCase,
     repeat: int,
-    investigator: Callable[[Scope, Measurement, Evidence], str] = investigation.investigate,
+    investigator: Callable[[Scope, Measurement, Evidence], str | InvestigationReport] | None = None,
+    *,
+    candidate: Literal["baseline", "structured"] = "baseline",
 ) -> dict[str, Any]:
     """Only incident input crosses the investigator boundary; labels stay outside it."""
     incident = case.incident
     scope, measurement = incident.scope(), incident.measurement()
-    payload = investigation.evidence_payload(scope, measurement, incident.evidence)
+    payload = (
+        evidence_snapshot(scope, measurement, incident.evidence)[1]
+        if candidate == "structured"
+        else investigation.evidence_payload(scope, measurement, incident.evidence)
+    )
+    if investigator is None:
+        investigator = (
+            structured_investigation.investigate
+            if candidate == "structured"
+            else investigation.investigate
+        )
     started = time.monotonic()
     report, error_type, status = "", None, "completed"
+    structured = None
     try:
-        report = investigator(scope, measurement, incident.evidence)
+        result = investigator(scope, measurement, incident.evidence)
+        if isinstance(result, InvestigationReport):
+            structured = json.loads(result.to_json())
+            report = result.render()
+            status = "partial" if result.status == "partial" else "completed"
+        else:
+            report = result
         if (
             "Partial investigation: model analysis was unavailable or exceeded its deadline."
             in report
@@ -58,6 +78,8 @@ def run_case(
         "payload_sha256": hashlib.sha256(payload.encode()).hexdigest(),
         "expectations": case.expectations.model_dump(),
         "report": report,
+        "candidate": candidate,
+        "structured_report": structured,
         "status": status,
         "error_type": error_type,
         "duration_seconds": time.monotonic() - started,
@@ -66,18 +88,22 @@ def run_case(
     }
 
 
-def provenance(dataset_sha256: str) -> dict[str, Any]:
+def provenance(dataset_sha256: str, candidate: str = "baseline") -> dict[str, Any]:
     """Record source identity and resolved route without serializing credentials/settings."""
     from core.llm.client_builders import build_agent_client
 
     route = investigation._checked_route()
     client = build_agent_client(route)
     root = Path(__file__).resolve().parents[4]
-    source = inspect.getsource(investigation)
-    synthesis_source = inspect.getsource(investigation._model_report)
+    module = structured_investigation if candidate == "structured" else investigation
+    source = inspect.getsource(module) + inspect.getsource(synthesis)
+    if candidate == "structured":
+        source += inspect.getsource(reports) + inspect.getsource(investigation)
+    synthesis_source = inspect.getsource(module._model_report)
     return {
         "kind": "manifest",
         "schema_version": 1,
+        "candidate": candidate,
         "created_at": datetime.now(UTC).isoformat(),
         "revision": subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=root, text=True
@@ -106,7 +132,7 @@ def generate(args: argparse.Namespace) -> int:
     ]
     if not selected or args.repeats < 1:
         raise ValueError("Select at least one case and a positive repeat count")
-    manifest = provenance(dataset_hash)
+    manifest = provenance(dataset_hash, args.candidate)
     manifest.update({"selected_cases": [case.id for case in selected], "repeats": args.repeats})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -116,7 +142,7 @@ def generate(args: argparse.Namespace) -> int:
         output.flush()
         for case in selected:
             for repeat in range(1, args.repeats + 1):
-                result = run_case(case, repeat)
+                result = run_case(case, repeat, candidate=args.candidate)
                 output.write(json.dumps(result) + "\n")
                 output.flush()
                 failures += result["status"] != "completed"
@@ -158,6 +184,9 @@ def main() -> int:
         "--split", choices=["development", "holdout", "all"], default="development"
     )
     generate_parser.add_argument("--case", help="Optional exact case ID")
+    generate_parser.add_argument(
+        "--candidate", choices=["baseline", "structured"], default="baseline"
+    )
     generate_parser.add_argument("--repeats", type=int, default=3)
     generate_parser.add_argument(
         "--output", type=Path, required=True, help="New JSONL file; never overwritten"

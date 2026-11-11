@@ -1,7 +1,7 @@
 # Telemetry investigation baseline (draft)
 
-Measure the existing `core.telemetry.investigation.investigate` entrypoint before
-changing its prompt, output format, or evidence access. Generation uses the real
+Measure baseline v0 (`core.telemetry.investigation.investigate`) against the
+structured v1 candidate (`core.telemetry.structured_investigation.investigate`). Generation uses the real
 redaction, input budget, no-tool synthesis and killable model process. It does
 not run a watch, contact ClickHouse, or deliver notifications.
 
@@ -11,10 +11,11 @@ not run a watch, contact ClickHouse, or deliver notifications.
   proposed grading expectations, not independently verified ground truth.
 - No live investigator scores or human/judge agreement are established by this
   draft. Unit tests use injected investigators/judges and make no model calls.
-- The report remains free text. The deterministic check verifies the retained
+- The baseline report remains free text. Its deterministic check verifies the retained
   detector-count prefix only; it does not validate every count in model prose,
-  citation existence, or causal support. Those need structured reports in the
-  next slice. Semantic scores are advisory, with no release threshold yet.
+  citation existence, or causal support. The structured candidate validates citation
+  membership before retention; that still does not establish entailment or causality.
+  Semantic scores are advisory, with no release threshold yet.
 
 ## Case design and review
 
@@ -55,6 +56,10 @@ uv run python -m tests.core.telemetry.evaluation.runner generate \
 uv run python -m tests.core.telemetry.evaluation.runner generate \
   --split development --repeats 3 --output work/triage-baseline.jsonl
 
+uv run python -m tests.core.telemetry.evaluation.runner generate \
+  --candidate structured --split development --repeats 3 \
+  --output work/triage-structured.jsonl
+
 uv run python -m tests.core.telemetry.evaluation.runner summarize \
   work/triage-baseline.jsonl
 ```
@@ -62,7 +67,15 @@ uv run python -m tests.core.telemetry.evaluation.runner summarize \
 Options: `--cases` defaults to the included dataset; `--case` optionally selects
 an exact ID; `--split` defaults to `development` (`holdout`/`all` are explicit);
 `--repeats` defaults to three and must be positive; `--output` is required and
-must not exist. Select a compatible split when selecting a holdout case.
+must not exist. `--candidate` defaults to `baseline`; `structured` evaluates the
+same implementation used by the watch. Use separate output files and fixed model
+configuration to compare candidates. Select a compatible split when selecting a holdout case.
+
+Structured results include the validated report and its diagnostic status.
+An inconclusive analysis is a completed execution, not a proven diagnosis;
+source/model/validation failures remain partial executions. The retained payload
+contains the exact evidence references used by the candidate. Scoring still
+assesses the rendered report against that payload and the evaluator expectations.
 
 The JSONL manifest captures revision, dirty-worktree status, dataset/source
 hashes, synthesis function source (including its prompt), provider, parent-side

@@ -1536,6 +1536,9 @@ if TYPE_CHECKING:
     from config.constants.telemetry import (
         TELEMETRY_REPORT_MAX_CHARS as TELEMETRY_REPORT_MAX_CHARS,
     )
+    from config.constants.telemetry import (
+        TELEMETRY_STRUCTURED_REPORT_MAX_CHARS as TELEMETRY_STRUCTURED_REPORT_MAX_CHARS,
+    )
     from config.constants.tempo import (
         TEMPO_API_KEY_ENV as TEMPO_API_KEY_ENV,
     )

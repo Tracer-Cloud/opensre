@@ -164,8 +164,10 @@ class ClickHouseEvidenceReader:
         )
         traces = self._query(
             "SELECT toString(Timestamp) AS timestamp, TraceId AS trace_id, SpanId AS span_id, "
-            "SpanName AS operation, StatusCode AS status, "
-            "substringUTF8(StatusMessage, 1, 400) AS message, Duration / 1e6 AS duration_ms "
+            "if(lengthUTF8(SpanName) > 200, '[OMITTED:oversize]', SpanName) AS operation, StatusCode AS status, "
+            "if(lengthUTF8(StatusMessage) > 400, '[OMITTED:oversize]', StatusMessage) AS message, "
+            "lengthUTF8(SpanName) > 200 OR lengthUTF8(StatusMessage) > 400 AS text_truncated, "
+            "Duration / 1e6 AS duration_ms "
             "FROM otel_traces"
             + where
             + "ORDER BY StatusCode = 'Error' DESC, Timestamp DESC LIMIT 10",
@@ -173,7 +175,9 @@ class ClickHouseEvidenceReader:
         )
         logs = self._query(
             "SELECT toString(Timestamp) AS timestamp, TraceId AS trace_id, "
-            "SeverityText AS severity, substringUTF8(Body, 1, 400) AS message "
+            "if(lengthUTF8(SeverityText) > 200, '[OMITTED:oversize]', SeverityText) AS severity, "
+            "if(lengthUTF8(Body) > 400, '[OMITTED:oversize]', Body) AS message, "
+            "lengthUTF8(SeverityText) > 200 OR lengthUTF8(Body) > 400 AS text_truncated "
             "FROM otel_logs" + where + "ORDER BY SeverityNumber DESC, Timestamp DESC LIMIT 10",
             self._parameters(scope),
         )

@@ -14,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from core.telemetry.models import Health, Measurement, Scope, WatchRule
+from core.telemetry.reports import InvestigationReport
 from core.telemetry.storage.migrations import migrate
 from infrastructure.database import sqlite_connection, sqlite_transaction
 
@@ -24,6 +25,8 @@ class WatchStore:
         if fingerprint is None:
             if not path.is_file():
                 raise ValueError("Watch state does not exist.")
+            with self._connection() as conn, sqlite_transaction(conn, immediate=True):
+                migrate(conn)
             return
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         try:
@@ -103,17 +106,20 @@ class WatchStore:
         sample = Measurement(**json.loads(row["measurement"])) if row["measurement"] else None
         return row["id"], Scope(**json.loads(row["scope"])), sample
 
-    def save_report(self, episode: str, scope: Scope, report: str) -> None:
+    def save_report(self, episode: str, scope: Scope, report: str | InvestigationReport) -> None:
         """Persist the completed report and opening notification in one transaction."""
         start = datetime.fromtimestamp(scope.start, UTC).isoformat()
         end = datetime.fromtimestamp(scope.end, UTC).isoformat()
+        rendered = report.render() if isinstance(report, InvestigationReport) else report
+        structured = report.to_json() if isinstance(report, InvestigationReport) else None
         body = (
             f"OPENED {scope.service} ({scope.environment})\nIncident {episode}\n"
-            f"Window {start} → {end}\n{report}"
+            f"Window {start} → {end}\n{rendered}"
         )
         with self._connection() as conn, sqlite_transaction(conn, immediate=True):
             result = conn.execute(
-                "UPDATE episodes SET report=? WHERE id=? AND report IS NULL", (report, episode)
+                "UPDATE episodes SET report=?, report_json=? WHERE id=? AND report IS NULL",
+                (rendered, structured, episode),
             )
             if result.rowcount:
                 conn.execute(
@@ -124,7 +130,13 @@ class WatchStore:
     def events(self) -> list[dict[str, Any]]:
         """Return retained lifecycle reports in delivery order."""
         with self._connection() as conn:
-            return [dict(row) for row in conn.execute("SELECT * FROM events ORDER BY id")]
+            return [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT events.*, episodes.report_json FROM events "
+                    "LEFT JOIN episodes ON events.episode=episodes.id ORDER BY events.id"
+                )
+            ]
 
     def pending_events(self) -> list[dict[str, Any]]:
         """Read a bounded ordered outbox batch without scanning delivered history."""

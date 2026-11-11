@@ -10,10 +10,11 @@ from collections.abc import Callable, Iterator
 from filelock import FileLock
 
 from core.telemetry.models import Evidence, EvidenceReader, Health, Measurement, Scope, WatchRule
+from core.telemetry.reports import InvestigationReport, partial_report
 from core.telemetry.storage.store import WatchStore
 
 logger = logging.getLogger(__name__)
-Investigator = Callable[[Scope, Measurement, Evidence], str]
+Investigator = Callable[[Scope, Measurement, Evidence], str | InvestigationReport]
 Delivery = Callable[[str, str], bool]
 
 
@@ -54,17 +55,24 @@ class WatchRunner:
         if pending is None:
             return
         episode, scope, sample = pending
+        report: str | InvestigationReport
         try:
             if sample is None:
                 raise ValueError("Original detector measurement is unavailable.")
             evidence = self.reader.evidence(scope)
-            report = self.investigate(scope, sample, evidence)
         except Exception:
-            logger.exception("Telemetry investigation incomplete")
-            report = (
-                "Partial investigation: the detector opened this incident, but evidence or "
-                "analysis was unavailable. Cause unknown; check the telemetry source and retry manually."
-            )
+            logger.exception("Telemetry investigation evidence unavailable")
+            report = partial_report(scope, sample, "source_unavailable")
+        else:
+            try:
+                report = self.investigate(scope, sample, evidence)
+                if isinstance(report, InvestigationReport) and (
+                    report.scope != scope or report.measurement != sample
+                ):
+                    report = partial_report(scope, sample, "invalid_report")
+            except Exception:
+                logger.exception("Telemetry investigation analysis unavailable")
+                report = partial_report(scope, sample, "model_unavailable")
         self.store.save_report(episode, scope, report)
 
     def _deliver_pending(self) -> None:

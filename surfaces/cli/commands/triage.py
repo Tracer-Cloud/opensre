@@ -14,9 +14,10 @@ from pydantic import Field, ValidationError
 from config.constants.telemetry import TELEMETRY_CLICKHOUSE_PASSWORD_ENV
 from config.llm_credentials import resolve_env_credential
 from config.strict_config import StrictConfigModel
-from core.telemetry.investigation import investigate, sanitize
+from core.telemetry.investigation import sanitize
 from core.telemetry.models import WatchRule
 from core.telemetry.storage.store import WatchStore
+from core.telemetry.structured_investigation import investigate
 from core.telemetry.watch import WatchRunner, poll
 from integrations.clickhouse import ClickHouseEvidenceConfig, ClickHouseEvidenceReader
 
@@ -132,17 +133,29 @@ def watch(config_path: Path, state: Path, once: bool, telegram: bool, chat_id: s
 
 @triage_command.command("reports")
 @click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Optional: export events and structured reports as JSON.",
+)
+@click.option(
     "--state",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     required=True,
     help="Required SQLite path used by the watch.",
 )
-def reports(state: Path) -> None:
+def reports(state: Path, as_json: bool) -> None:
     """Show complete retained opening/recovery reports and delivery status."""
     try:
         events = WatchStore(state, None).events()
     except Exception as exc:
         raise click.ClickException("Cannot read this watch state file.") from exc
+    if as_json:
+        for event in events:
+            structured = event.pop("report_json")
+            event["report"] = json.loads(structured) if structured else None
+        click.echo(json.dumps(events))
+        return
     for event in events:
         status = "delivered" if event["delivered"] else "pending"
         click.echo(f"\nEvent {event['id']} ({status})\n{sanitize(event['body'])}")

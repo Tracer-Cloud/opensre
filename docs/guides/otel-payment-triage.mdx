@@ -188,8 +188,30 @@ The model sees only the selected evidence from the incident's service,
 environment, and time window, with a 90-second analysis deadline. It cannot
 run tools, execute SQL, or make changes to the application. If evidence or the
 model is unavailable, OpenSRE saves a partial report with the cause marked
-unknown. A report is an evidence-based explanation, not a guaranteed root cause.
+unknown. Reports separate observed facts, unverified hypotheses, unknowns and a
+next check. Facts and hypotheses cite references to retained, redacted evidence.
+References outside that evidence are rejected and produce a partial report.
+Valid references establish evidence identity; they do not prove the claim or its cause.
+A report is an evidence-based explanation, not a guaranteed root cause.
 The span sample is not a collection of complete distributed traces.
+
+Reports show `completed`, `inconclusive` or `partial` investigation status.
+`completed` means analysis finished, not that the cause is proven or the service
+recovered. No trace/log rows produces an inconclusive finding. Model failures,
+deadlines and invalid output produce partial findings with the detector counts
+retained. Recovery still requires the watch's independent health checks.
+
+To export retained events together with structured reports and their evidence:
+
+```bash
+uv run opensre triage reports --state work/payment-watch.db --json
+```
+
+The optional `--json` flag defaults off. Existing reports remain readable; older
+free-text reports have a null structured report. Opening an existing state file
+upgrades its schema without resetting incidents or delivery status. The watch
+saves readable text, structured analysis and the opening event together before
+attempting delivery. Delivery retries reuse the saved result.
 
 ## Live evidence query acceptance test
 
