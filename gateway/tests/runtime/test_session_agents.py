@@ -18,6 +18,7 @@ from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnRes
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.session_agents import SessionAgentPool
 from infrastructure.turn_host.session_lock import (
+    SessionExecutionBusyError,
     retain_session_execution_lock,
     retained_session_execution_locks,
     session_execution_lock,
@@ -388,6 +389,36 @@ def test_session_execution_lock_is_reentrant_on_one_thread(
         session_execution_lock(session.session_id),
         session_execution_lock(session.session_id, timeout=0, reentrant=True),
     ):
+        pass
+
+
+def test_session_execution_lock_rejects_overlapping_non_reentrant_lease_on_same_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An overlapping lease without reentrancy is detected as busy instead of crashing on filelock."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    with session_execution_lock(session.session_id):
+        # Default timeout (-1)
+        with pytest.raises(SessionExecutionBusyError), session_execution_lock(session.session_id):
+            pass
+        # Explicit timeout
+        with (
+            pytest.raises(SessionExecutionBusyError),
+            session_execution_lock(session.session_id, timeout=1),
+        ):
+            pass
+        # Retained lock without reentrancy
+        with retained_session_execution_locks(), pytest.raises(SessionExecutionBusyError):
+            retain_session_execution_lock(session.session_id)
+
+    # After outer scope releases, new lease acquisition succeeds cleanly
+    with session_execution_lock(session.session_id):
         pass
 
 
