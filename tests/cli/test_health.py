@@ -98,3 +98,30 @@ def test_health_command_exits_one_when_any_integration_failed() -> None:
 
     assert result.exit_code == 1
     assert "1 failed" in result.output
+
+
+def test_health_command_rejects_non_positive_rate() -> None:
+    runner = CliRunner()
+
+    for invalid_rate in ["0", "-1", "-10"]:
+        result = runner.invoke(cli, ["health", "--rate", invalid_rate])
+        assert result.exit_code == 2
+        assert "Invalid value for '--rate'" in result.output
+        assert "is not in the range x>=1" in result.output
+
+        result_watch = runner.invoke(cli, ["health", "--watch", "--rate", invalid_rate])
+        assert result_watch.exit_code == 2
+        assert "Invalid value for '--rate'" in result_watch.output
+        assert "is not in the range x>=1" in result_watch.output
+
+
+def test_health_command_watch_accepts_valid_rate() -> None:
+    runner = CliRunner()
+    with (
+        patch("integrations.verify.verify_integrations", return_value=[]),
+        patch("time.sleep", side_effect=KeyboardInterrupt) as mock_sleep,
+    ):
+        result = runner.invoke(cli, ["health", "--watch", "--rate", "2"])
+
+    assert result.exit_code == 0
+    mock_sleep.assert_called_once_with(2)

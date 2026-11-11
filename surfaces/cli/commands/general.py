@@ -78,7 +78,11 @@ def version_command() -> None:
 @click.command(name="health")
 @click.option("--watch", is_flag=True, help="Continuously refresh the health report.")
 @click.option(
-    "--rate", default=5, show_default=True, help="Refresh interval in seconds (with --watch)."
+    "--rate",
+    type=click.IntRange(min=1),
+    default=5,
+    show_default=True,
+    help="Refresh interval in seconds (with --watch).",
 )
 def health_command(watch: bool, rate: int) -> None:
     """Show a quick health summary of the local agent setup."""
