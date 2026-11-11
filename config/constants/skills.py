@@ -21,16 +21,18 @@ REPORTING_GITHUB_CI_FAILURES_SKILL_NAME = "reporting-github-ci-failures"
 # children are present, the rows are the outcome choices below rather than each
 # child's ``getting_started`` label. The automation row opens a follow-up; the
 # shell row never reaches the model.
-ONBOARDING_MENU_TITLE = "What would you like to do?"
+ONBOARDING_MENU_TITLE = "What should OpenSRE do first?"
+# Accent line above every onboarding picker; other pickers keep "Ask User".
+ONBOARDING_MENU_HEADER = "Get started"
 
 # Master onboarding menu row the shell handles itself: no model turn, plain prompt.
-SKIP_DEMO_OPTION = "Open the shell"
+SKIP_DEMO_OPTION = "Skip for now"
 
 # First screen. The automation row opens the follow-up; analyze is a leaf.
 # The follow-up's title repeats the automation row without its tag.
 AUTOMATION_MENU_TITLE = "Keep my CI/CD healthy automatically"
 AUTOMATION_GROUP_OPTION = f"{AUTOMATION_MENU_TITLE} (recommended)"
-ANALYZE_REPO_OPTION = "Analyze & improve a repo"
+ANALYZE_REPO_OPTION = "Analyze a repo's CI performance"
 OUTCOME_MENU_OPTIONS = (
     AUTOMATION_GROUP_OPTION,
     ANALYZE_REPO_OPTION,
@@ -45,6 +47,19 @@ AUTOMATION_MENU_OPTIONS = (
     LOCAL_REPAIR_OPTION,
     CLOUD_REPAIR_OPTION,
     SLACK_OPTION,
+)
+
+# Shown under each onboarding row: what picking it does. Labels stay short
+# because the model receives the picked label verbatim; these never reach it.
+ONBOARDING_OPTION_DESCRIPTIONS: Mapping[str, str] = MappingProxyType(
+    {
+        AUTOMATION_GROUP_OPTION: "Fixes failing GitHub Actions checks on your pull requests",
+        ANALYZE_REPO_OPTION: "30-day report: failure rates and hours spent waiting on CI",
+        SKIP_DEMO_OPTION: "Type your own request. /demo brings this menu back",
+        LOCAL_REPAIR_OPTION: "Keeps watching your PRs and pushes fixes when checks fail",
+        CLOUD_REPAIR_OPTION: "Fixes one failing PR from the cloud, then stops",
+        SLACK_OPTION: "Hand off CI and DevOps chores by mentioning OpenSRE in Slack",
+    }
 )
 
 # Asked after a local or cloud repair leaf, before any scan or gateway probe.

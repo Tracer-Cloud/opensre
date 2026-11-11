@@ -66,7 +66,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     # map the leaf labels to skill names.
     menu = master_skill.entry_menu
     assert menu is not None
-    assert menu.title == ONBOARDING_MENU_TITLE == "What would you like to do?"
+    assert menu.title == ONBOARDING_MENU_TITLE == "What should OpenSRE do first?"
     assert (
         menu.options
         == OUTCOME_MENU_OPTIONS

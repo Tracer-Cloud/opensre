@@ -380,6 +380,46 @@ def test_draw_menu_keeps_each_row_on_one_physical_line(monkeypatch) -> None:
         assert len(visible) <= paint_width
 
 
+def test_option_descriptions_wrap_under_their_label_and_count_toward_erase_height(
+    monkeypatch,
+) -> None:
+    """Description rows belong to the block the leave-erase removes.
+
+    An undercount leaves stale rows above the next output; an overcount deletes
+    transcript rows above the menu.
+    """
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 40)
+    labels = ["Keep my CI/CD healthy", "Skip for now"]
+    descriptions = ["Fixes failing GitHub Actions checks on your pull requests", ""]
+
+    choice_menu._draw_menu(
+        title="What should OpenSRE do first?",
+        crumb="",
+        labels=labels,
+        index=0,
+        erase_lines=0,
+        header="Get started",
+        letter_keys=True,
+        descriptions=descriptions,
+    )
+
+    rows = [_ANSI_RE.sub("", row).lstrip("\r").rstrip() for row in out.getvalue().split("\r\n")]
+    painted = rows[:-1]  # every row ends with CRLF
+    assert len(painted) == choice_menu._menu_height(
+        "", labels, header="Get started", descriptions=descriptions, letter_keys=True
+    )
+    assert all(len(row) <= 39 for row in painted)
+    start = painted.index("  ❯ (A) Keep my CI/CD healthy")
+    # Wrapped and aligned under the label text, before the next option.
+    assert painted[start + 1 : start + 4] == [
+        "        Fixes failing GitHub Actions",
+        "        checks on your pull requests",
+        "    (B) Skip for now",
+    ]
+
+
 def test_reset_tty_column_writes_carriage_return(monkeypatch) -> None:
     out = io.StringIO()
     monkeypatch.setattr(sys, "stdout", out)
