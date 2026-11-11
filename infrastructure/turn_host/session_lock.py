@@ -54,15 +54,17 @@ def session_execution_lock(
     """
     held_leases = _leases_held_by_current_thread()
     existing_lease = held_leases.get(session_id)
-    if existing_lease is not None and reentrant:
-        lock, depth = existing_lease
-        held_leases[session_id] = (lock, depth + 1)
-        try:
-            yield
-        finally:
-            _, remaining_depth = held_leases[session_id]
-            held_leases[session_id] = (lock, remaining_depth - 1)
-        return
+    if existing_lease is not None:
+        if reentrant:
+            lock, depth = existing_lease
+            held_leases[session_id] = (lock, depth + 1)
+            try:
+                yield
+            finally:
+                _, remaining_depth = held_leases[session_id]
+                held_leases[session_id] = (lock, remaining_depth - 1)
+            return
+        raise SessionExecutionBusyError(session_id)
 
     lock_dir = sessions_dir() / ".locks"
     lock_dir.mkdir(parents=True, exist_ok=True)
