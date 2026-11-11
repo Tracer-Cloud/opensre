@@ -309,15 +309,17 @@ class TestAlertInboxEventClearing:
         inbox.put(IncomingAlert(text="first"))
         inbox.put(IncomingAlert(text="second"))
 
-        # Pop only one
+        # Pop only one - event should remain set because queue still has one item
         inbox.pop_nowait()
+        assert inbox.pending_event.is_set()
 
-        # Drain but queue still has one item
-        # (this is artificial; normally iter_pending drains all)
-        # Let's test with iter_pending which should drain all
+        # Pop the second - event should clear once queue is completely drained
+        inbox.pop_nowait()
+        assert not inbox.pending_event.is_set()
+
         inbox2 = AlertInbox()
         inbox2.put(IncomingAlert(text="alert"))
         inbox2.iter_pending()
 
-        # After draining all, event should be cleared
+        # After draining all via iter_pending, event should be cleared
         assert not inbox2.pending_event.is_set()

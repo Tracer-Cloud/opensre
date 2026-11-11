@@ -25,6 +25,8 @@ class IncomingAlert(StrictConfigModel):
 
 class AlertInbox:
     def __init__(self, maxsize: int = _DEFAULT_MAX_INBOX) -> None:
+        if maxsize < 1:
+            raise ValueError(f"maxsize must be at least 1, got {maxsize}")
         self._queue: deque[IncomingAlert] = deque()
         self._maxsize = maxsize
         self._dropped: int = 0
@@ -47,8 +49,12 @@ class AlertInbox:
     def pop_nowait(self) -> IncomingAlert | None:
         with self._lock:
             try:
-                return self._queue.popleft()
+                alert = self._queue.popleft()
+                if not self._queue:
+                    self._pending_event.clear()
+                return alert
             except IndexError:
+                self._pending_event.clear()
                 return None
 
     def iter_pending(self) -> list[IncomingAlert]:
@@ -65,6 +71,8 @@ class AlertInbox:
 
     def peek_last(self, n: int) -> list[IncomingAlert]:
         with self._lock:
+            if n <= 0:
+                return []
             items = list(self._queue)
             return items[-n:]
 

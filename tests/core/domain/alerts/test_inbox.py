@@ -53,7 +53,32 @@ class TestAlertInbox:
         assert inbox.qsize == 0
 
     def test_pop_nowait_returns_none_when_empty(self) -> None:
-        assert AlertInbox().pop_nowait() is None
+        inbox = AlertInbox()
+        assert inbox.pop_nowait() is None
+        assert not inbox.pending_event.is_set()
+
+    def test_pop_nowait_clears_pending_event_when_empty(self) -> None:
+        inbox = AlertInbox(maxsize=3)
+        inbox.put(IncomingAlert(text="first"))
+        assert inbox.pending_event.is_set()
+        popped = inbox.pop_nowait()
+        assert popped is not None and popped.text == "first"
+        assert not inbox.pending_event.is_set()
+
+    def test_peek_last_with_zero_or_negative_returns_empty(self) -> None:
+        inbox = AlertInbox(maxsize=3)
+        inbox.put(IncomingAlert(text="a"))
+        inbox.put(IncomingAlert(text="b"))
+        assert inbox.peek_last(0) == []
+        assert inbox.peek_last(-1) == []
+        assert [alert.text for alert in inbox.peek_last(1)] == ["b"]
+        assert [alert.text for alert in inbox.peek_last(2)] == ["a", "b"]
+
+    def test_rejects_non_positive_maxsize(self) -> None:
+        with pytest.raises(ValueError, match="maxsize must be at least 1"):
+            AlertInbox(maxsize=0)
+        with pytest.raises(ValueError, match="maxsize must be at least 1"):
+            AlertInbox(maxsize=-5)
 
     def test_drop_oldest_on_overflow(self) -> None:
         inbox = AlertInbox(maxsize=2)
