@@ -56,7 +56,6 @@ ignore = [
 
 [lint.isort]
 known-first-party = [
-    "bootstrap",
     "config",
     "core",
     "gateway",

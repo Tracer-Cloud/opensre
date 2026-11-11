@@ -26,11 +26,12 @@ def _stub_turn_result() -> TurnResult:
 def test_startup_runs_the_boot_step_the_host_supplied() -> None:
     """An embedded host must not resolve zero integrations.
 
-    ``core`` may not import ``bootstrap``, so the host passes the boot step in
+    ``core`` may not import ``surfaces``, so the host passes the boot step in
     rather than the harness reaching up a tier for it.
     """
     # Arrange — what an embedded caller supplies.
-    from bootstrap.process import EMBEDDED_PROFILE, configure_process
+    from infrastructure.process.boot import EMBEDDED_PROFILE
+    from surfaces.shared.process_boot import configure_process
 
     seen: list[Any] = []
 
@@ -66,14 +67,9 @@ def test_startup_boots_nothing_when_the_host_supplies_no_step() -> None:
 def test_start_registers_harness_adapters_so_integrations_resolve() -> None:
     """Without adapters, resolve is empty; the host's boot step must install them.
 
-    ``core`` may not import ``bootstrap``, so the caller passes an explicit
-    ``boot_process`` (or uses :func:`bootstrap.embedded.start_embedded_session`).
+    ``core`` may not import ``surfaces``, so the caller passes an explicit
+    ``boot_process`` (or uses :func:`surfaces.embedded.start_embedded_session`).
     """
-    from bootstrap.process import (
-        EMBEDDED_PROFILE,
-        configure_process,
-        reset_process_runtime_for_tests,
-    )
     from core.domain.types.tools import ToolSurface
     from infrastructure.harness_providers import (
         configured_integration_services,
@@ -81,6 +77,8 @@ def test_start_registers_harness_adapters_so_integrations_resolve() -> None:
         resolve_integrations,
         resolve_surface_tools,
     )
+    from infrastructure.process.boot import EMBEDDED_PROFILE, reset_process_runtime_for_tests
+    from surfaces.shared.process_boot import configure_process
 
     reset_harness_providers()
     reset_process_runtime_for_tests()
@@ -105,7 +103,7 @@ def test_start_registers_harness_adapters_so_integrations_resolve() -> None:
 def test_start_does_not_inject_an_embedded_boot_step() -> None:
     """CLI/gateway leave ``boot_process`` unset; ``start`` must not fill one in.
 
-    ``core`` may not import ``bootstrap``. Embedded hosts use
+    ``core`` may not import ``surfaces``. Embedded hosts use
     ``start_embedded_session`` (or pass an explicit boot step).
     """
     session = AgentSession.start(SessionConfig(open_store=False, persistent_tasks=False))

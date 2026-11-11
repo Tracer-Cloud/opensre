@@ -21,7 +21,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Same list the Makefile type-checks and lints (``PYTHON_SOURCE_PATHS``).
 _PRODUCT_PACKAGES = (
-    "bootstrap",
     "config",
     "core",
     "gateway",

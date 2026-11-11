@@ -2,7 +2,7 @@
 
 Lives beside its process helpers in ``tools`` rather than in ``gateway``: every
 non-TTY host needs it, and ``core.agent_harness`` may import neither package.
-:func:`bootstrap.adapters.install_harness_adapters` registers it on the
+:func:`tools.harness_adapters.register_harness_adapters` registers it on the
 harness port so the default agent can execute shell tools after process boot.
 """
 

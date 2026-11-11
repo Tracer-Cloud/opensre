@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.sources import (
     CLI_POSTHOG_METRIC_REPORT,
     CLI_SENTRY_MORNING_DIGEST,
@@ -83,4 +84,15 @@ def run_scheduled_agent_digest(payload: AgentPayload) -> TaskReport:
     return runner.run(payload)
 
 
-__all__ = ["RUNNERS", "ScheduledRunner", "run_scheduled_agent_digest", "runs_model_turn"]
+def scheduler_runners() -> SchedulerRunners:
+    """The runner bundle scheduled tasks dispatch through, for a host to install."""
+    return SchedulerRunners(agent=run_scheduled_agent_digest, runs_model_turn=runs_model_turn)
+
+
+__all__ = [
+    "RUNNERS",
+    "ScheduledRunner",
+    "run_scheduled_agent_digest",
+    "runs_model_turn",
+    "scheduler_runners",
+]

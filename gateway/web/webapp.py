@@ -15,10 +15,10 @@ from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 
-from bootstrap.process import WEB_PROFILE, configure_process
 from config.environment import get_environment
 from config.llm_settings import LLMSettings
 from config.version import get_opensre_version
+from gateway.core.process.boot import configure_process
 from gateway.core.process.component_status import read_component_status
 from gateway.core.process.readiness import is_gateway_ready
 from gateway.core.process.shutdown_record import PREVIOUS_SHUTDOWN_COMPONENT
@@ -26,6 +26,7 @@ from gateway.core.process.state_counts import read_state_counts
 from gateway.web.loop_routes import router as loop_router
 from gateway.web.prompt_routes import router as prompt_router
 from infrastructure.alert_intake import router as alert_router
+from infrastructure.process.boot import WEB_PROFILE
 from infrastructure.request_body_limit import RequestBodyLimitMiddleware
 from infrastructure.scheduling.scheduler.claim_lease import default_claim_lease_renewer
 

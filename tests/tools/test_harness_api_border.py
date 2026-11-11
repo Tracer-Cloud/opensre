@@ -1,7 +1,6 @@
 """``tools/``, ``integrations/`` and ``infrastructure/`` import the agent harness only through its API.
 
-Third border test after the shell and gateway ones. ``bootstrap/`` is exempt: it
-is the composition root and wiring harness internals is its role.
+Third border test after the shell and gateway ones.
 
 The allowlist is compared exactly in both directions, so it can only shrink: a
 new internal import fails immediately, and an entry no longer imported must be

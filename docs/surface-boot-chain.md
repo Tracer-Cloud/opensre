@@ -4,8 +4,8 @@ OpenSRE can be reached in several ways — the `opensre` CLI, the interactive
 shell, the gateway daemon (chat channels), the gateway's web app, scheduled
 `cron` commands, and even a plain Python script embedding the agent. Each of
 them starts up by running the same shared setup —
-`configure_process(<profile>)` in
-[`bootstrap/process.py`](https://github.com/Tracer-Cloud/opensre/blob/main/bootstrap/process.py) — rather than assembling
+`configure_process(<profile>)`, which runs the ordered steps in
+[`infrastructure/process/boot.py`](https://github.com/Tracer-Cloud/opensre/blob/main/infrastructure/process/boot.py) — rather than assembling
 its own startup sequence. A surface's own code is responsible only for its
 channel and UX (rendering to a terminal, replying in chat, serving an HTTP
 route, parsing CLI arguments) plus any prerequisites specific to that
@@ -84,7 +84,7 @@ that's already started is a harmless no-op.
   profile. The long-running `cron start` daemon uses the scheduler-worker
   profile instead, since it needs its own error reporting and only needs to
   register task runners once, not on every run.
-- **Embedded Python usage** — [`bootstrap/embedded.py`](https://github.com/Tracer-Cloud/opensre/blob/main/bootstrap/embedded.py)
+- **Embedded Python usage** — [`surfaces/embedded.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/embedded.py)
   runs the embedded profile. This is also the pattern to follow if you're
   driving the agent from your own Python script: run
   `configure_process(EMBEDDED_PROFILE)` before your first request.

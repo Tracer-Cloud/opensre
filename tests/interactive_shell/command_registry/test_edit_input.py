@@ -400,7 +400,7 @@ def test_loop_schedule_edit_replaces_the_shells_live_trigger(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    import bootstrap.adapters as adapters
+    import integrations.scheduled_agent_bootstrap as scheduled_agents
     import surfaces.interactive_shell.runtime.loop_scheduler as scheduler
     from infrastructure.scheduling.scheduler.runners import SchedulerRunners
     from infrastructure.scheduling.scheduler.storage import task_store
@@ -410,7 +410,7 @@ def test_loop_schedule_edit_replaces_the_shells_live_trigger(
     )
     monkeypatch.setattr(scheduler, "configure_process", lambda _profile: None)
     monkeypatch.setattr(
-        adapters, "scheduler_runners", lambda: SchedulerRunners(agent=lambda _payload: "")
+        scheduled_agents, "scheduler_runners", lambda: SchedulerRunners(agent=lambda _payload: "")
     )
     monkeypatch.setattr(scheduler, "_scheduler", None)
     monkeypatch.setattr(scheduler, "_task_count", 0)

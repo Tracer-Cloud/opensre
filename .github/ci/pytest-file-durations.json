@@ -495,22 +495,6 @@
     "seconds": 0.147,
     "tests": 8
   },
-  "tests/bootstrap/test_adapters.py": {
-    "seconds": 6.689,
-    "tests": 2
-  },
-  "tests/bootstrap/test_embedded_session.py": {
-    "seconds": 0.224,
-    "tests": 3
-  },
-  "tests/bootstrap/test_process.py": {
-    "seconds": 0.065,
-    "tests": 9
-  },
-  "tests/bootstrap/test_subprocess_presenter.py": {
-    "seconds": 0.02,
-    "tests": 3
-  },
   "tests/cli/test_args.py": {
     "seconds": 0.032,
     "tests": 6
@@ -1614,6 +1598,14 @@
   "tests/infrastructure/observability/test_streaming.py": {
     "seconds": 0.118,
     "tests": 12
+  },
+  "tests/infrastructure/process/test_capability_registrars.py": {
+    "seconds": 6.689,
+    "tests": 2
+  },
+  "tests/infrastructure/process/test_process_boot.py": {
+    "seconds": 0.065,
+    "tests": 9
   },
   "tests/infrastructure/safety/auth/test_jwt_auth.py": {
     "seconds": 0.089,
@@ -2959,6 +2951,10 @@
     "seconds": 0.037,
     "tests": 5
   },
+  "tests/surfaces/test_embedded_session.py": {
+    "seconds": 0.224,
+    "tests": 3
+  },
   "tests/surfaces/test_entrypoint.py": {
     "seconds": 0.014,
     "tests": 2
@@ -3722,6 +3718,10 @@
   "tests/tools/test_sre_guidance_tool.py": {
     "seconds": 0.052,
     "tests": 11
+  },
+  "tests/tools/test_subprocess_presenter_registration.py": {
+    "seconds": 0.02,
+    "tests": 3
   },
   "tests/tools/test_telegram_send_message_tool.py": {
     "seconds": 0.065,

@@ -144,7 +144,6 @@ azure_sql = [
 
 [tool.setuptools.packages.find]
 include = [
-  "bootstrap*",
   "config*",
   "core*",
   "gateway*",
@@ -172,7 +171,6 @@ data_file = ".pytest_cache/.coverage"
 
 [tool.vulture]
 paths = [
-  "bootstrap",
   "config",
   "core",
   "gateway",

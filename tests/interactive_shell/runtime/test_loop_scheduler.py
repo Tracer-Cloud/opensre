@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-import bootstrap.adapters as adapters
+import integrations.scheduled_agent_bootstrap as scheduled_agents
 import surfaces.interactive_shell.runtime.loop_scheduler as loop_scheduler
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 
@@ -29,7 +29,7 @@ def started(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[SchedulerRunners]]
     monkeypatch.setattr(loop_scheduler, "configure_process", lambda _profile: None)
     monkeypatch.setattr(loop_scheduler, "start_background_scheduler", fake_start)
     monkeypatch.setattr(
-        adapters, "scheduler_runners", lambda: SchedulerRunners(agent=lambda _p: "")
+        scheduled_agents, "scheduler_runners", lambda: SchedulerRunners(agent=lambda _p: "")
     )
     monkeypatch.setattr(loop_scheduler, "_scheduler", None)
     monkeypatch.setattr(loop_scheduler, "_task_count", 0)

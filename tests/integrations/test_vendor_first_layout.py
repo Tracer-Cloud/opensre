@@ -57,6 +57,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "probes.py",
         "registry.py",
         "scheduled_agent_bootstrap.py",
+        # Every provider's scheduled-delivery adapter, bundled for a host to
+        # install (not a vendor): the delivery peer of scheduled_agent_bootstrap.py.
+        "scheduled_delivery.py",
         # Cross-cutting scheduled-agent runner for user-defined prompt loops
         # (not a SaaS vendor). Routed by scheduled_agent_bootstrap like the
         # vendor digests, but owns no vendor package of its own.

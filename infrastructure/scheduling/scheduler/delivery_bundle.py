@@ -2,7 +2,7 @@
 
 The executor resolves a ``Provider`` to its delivery adapter through this bundle
 instead of importing vendor modules, so a new delivery vendor is added by
-extending the bundle at the composition root (``bootstrap.adapters``) — the
+extending the bundle in ``integrations.scheduled_delivery`` — the
 scheduler stays vendor-agnostic and imports no ``integrations`` package.
 
 The bundle is an immutable value assembled at a composition root and installed

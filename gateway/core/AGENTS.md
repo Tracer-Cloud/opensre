@@ -51,7 +51,7 @@ answers "at capacity" forever.
 ## Process boot vs lifecycle
 
 Shared process setup (env → Sentry → harness adapters → capability warnings →
-LLM preload) is :func:`bootstrap.process.configure_process` with
+LLM preload) is :func:`gateway.core.process.boot.configure_process` with
 ``GATEWAY_PROFILE``. After logging and credentials,
 `GatewayController.start_gateway` configures the process, builds **one**
 `TurnRunner(gate=…)`, then `start_surfaces()` and `start_scheduler()`.
@@ -61,5 +61,6 @@ Hosting is a thin call: `scheduler_runners().gated(turn_gate).install()` then
 :func:`infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload` (shell/CLI
 writers); the controller only polls and resyncs.
 
-Process boot has one entrypoint: :func:`bootstrap.process.configure_process`
-with ``GATEWAY_PROFILE``. Do not add a gateway-local wrapper around it.
+Process boot has one entrypoint: :func:`gateway.core.process.boot.configure_process`
+with ``GATEWAY_PROFILE`` — the shared order in :mod:`infrastructure.process.boot`
+plus this host's ``CAPABILITY_REGISTRARS``. Do not add another wrapper around it.

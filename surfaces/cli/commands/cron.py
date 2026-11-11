@@ -303,11 +303,12 @@ def _warn_if_rerun_duplicates(task_id: str) -> None:
 )
 def cron_run(task_id: str, failed_only: bool) -> None:
     """Run a scheduled task immediately (ad-hoc one-shot for debugging)."""
-    from bootstrap.adapters import scheduler_runners
-    from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
+    from infrastructure.process.boot import SCHEDULED_COMMAND_PROFILE
     from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
     from infrastructure.scheduling.scheduler.runner import failed_retry_scope, run_task_now
     from infrastructure.scheduling.scheduler.storage import get_task
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
+    from surfaces.shared.process_boot import configure_process
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
 
@@ -405,9 +406,10 @@ def cron_logs(task_id: str, limit: int, run_id: int | None, as_json: bool) -> No
 )
 def cron_start(service: bool) -> None:
     """Start the scheduler daemon (blocks until interrupted)."""
-    from bootstrap.adapters import scheduler_runners
-    from bootstrap.process import SCHEDULER_WORKER_PROFILE, configure_process
+    from infrastructure.process.boot import SCHEDULER_WORKER_PROFILE
     from infrastructure.scheduling.scheduler.runner import start_scheduler
+    from integrations.scheduled_agent_bootstrap import scheduler_runners
+    from surfaces.shared.process_boot import configure_process
 
     # Dedicated scheduler process — not SCHEDULED_COMMAND (one-shot CLI helpers).
     configure_process(SCHEDULER_WORKER_PROFILE)

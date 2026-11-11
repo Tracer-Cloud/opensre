@@ -18,8 +18,8 @@ import pytest
 @pytest.fixture(autouse=True)
 def _harness_providers_per_test() -> Iterator[None]:
     """Wire harness ports before each test; reset after to avoid session leakage."""
-    from bootstrap.adapters import install_cli_auth_checker
     from infrastructure.harness_providers import reset_harness_providers
+    from integrations.harness_adapters import install_cli_auth_checker
     from surfaces.shared.terminal.output.boundary import install_harness_providers
 
     install_harness_providers()

@@ -113,7 +113,7 @@ def _install_fake_bundle() -> dict[Provider, _FakeAdapter]:
 
 def _install_real_bundle() -> None:
     """Install the production adapter bundle (exercises the real vendor adapters)."""
-    from bootstrap.adapters import scheduled_delivery_adapters
+    from integrations.scheduled_delivery import scheduled_delivery_adapters
 
     scheduled_delivery_adapters().install()
 

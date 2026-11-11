@@ -17,7 +17,6 @@ from tests.shared.product_sources import product_python_files
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PRODUCT_ROOTS = (
-    "bootstrap",
     "config",
     "core",
     "gateway",

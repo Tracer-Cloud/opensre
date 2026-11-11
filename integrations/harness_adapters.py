@@ -115,6 +115,43 @@ def register_harness_adapters() -> None:
     _register_gateway_persona()
     _register_preferred_evidence_sources()
     _register_skill_prerequisite_checks()
+    _register_integration_setup_command()
+    _register_loop_member_resolver()
+
+
+def install_cli_auth_checker() -> None:
+    """Bind the CLI auth checker ``config`` reports installed CLI providers through.
+
+    The ``integrations.llm_cli`` import is deferred to the first check, so a bare
+    CLI invocation (e.g. ``opensre --help``) does not pay the subprocess-client cost.
+    """
+    from config.llm_auth.cli_auth import CliAuthChecker, CliAuthState
+
+    def check(provider: str) -> CliAuthState | None:
+        from integrations.llm_cli import check_cli_auth
+
+        return check_cli_auth(provider)
+
+    CliAuthChecker(check).install()
+
+
+def _register_integration_setup_command() -> None:
+    """Name the command an integration's "set it up" call to action points at.
+
+    The shell, the REPL and the gateway's slash surface all run it, so the CTA
+    names a command the reader can run where they read it.
+    """
+    from infrastructure.harness_providers import IntegrationSetupCommand
+
+    IntegrationSetupCommand(lambda service_id: f"/integrations setup {service_id}").install()
+
+
+def _register_loop_member_resolver() -> None:
+    """A private loop's owner is one member under their Slack and web app ids."""
+    from infrastructure.scheduling.scheduler.loop_owner import install_member_resolver
+    from integrations.webapp_requests import member_user_id
+
+    install_member_resolver(member_user_id)
 
 
 def _register_skill_prerequisite_checks() -> None:

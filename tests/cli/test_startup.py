@@ -27,9 +27,9 @@ import pytest
 
 from surfaces.cli.app import cli
 
-# Env is bound via bootstrap.process; Sentry/adapters are imported
+# Env is bound via infrastructure.process.boot; Sentry/adapters are imported
 # inside CLI ``run()`` so those patches target the defining module.
-_ENV = "bootstrap.process.bootstrap_opensre_env_once"
+_ENV = "infrastructure.process.boot.bootstrap_opensre_env_once"
 _SENTRY = "infrastructure.observability.errors.sentry.init_sentry"
 _ADAPTERS = "surfaces.shared.terminal.output.boundary.install_product_adapters"
 _ESCAPE = "infrastructure.terminal.prompt_support.install_questionary_escape_cancel"
@@ -49,7 +49,7 @@ def _silence_all(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_startup_runs_the_steps_in_the_required_order(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
-    from bootstrap.process import reset_process_runtime_for_tests
+    from infrastructure.process.boot import reset_process_runtime_for_tests
     from surfaces.cli import startup
 
     reset_process_runtime_for_tests()
@@ -64,7 +64,7 @@ def test_startup_runs_the_steps_in_the_required_order(monkeypatch: pytest.Monkey
     # Act
     startup.run(cli, ["doctor"])
 
-    # Assert — shared bootstrap.process boots env; CLI owns Sentry then Rich adapters.
+    # Assert — shared process boot loads env; CLI owns Sentry then Rich adapters.
     assert order.index("env") < order.index("sentry"), order
     assert order.index("sentry") < order.index("adapters"), order
 
@@ -78,8 +78,8 @@ def test_startup_installs_the_cli_auth_checker(monkeypatch: pytest.MonkeyPatch) 
     """
     # Arrange: a registry that reports claude-code installed + logged in, and no
     # checker installed yet (undo the autouse fixture's install).
-    from bootstrap.process import reset_process_runtime_for_tests
     from config.llm_auth import cli_auth
+    from infrastructure.process.boot import reset_process_runtime_for_tests
     from surfaces.cli import startup
 
     reset_process_runtime_for_tests()
@@ -108,7 +108,7 @@ def test_startup_installs_the_cli_auth_checker(monkeypatch: pytest.MonkeyPatch) 
 def test_missing_sentry_module_is_tolerated_during_update(monkeypatch: pytest.MonkeyPatch) -> None:
     """``opensre update`` must still run when sentry_sdk is being replaced."""
     # Arrange
-    from bootstrap.process import reset_process_runtime_for_tests
+    from infrastructure.process.boot import reset_process_runtime_for_tests
     from surfaces.cli import startup
 
     reset_process_runtime_for_tests()
@@ -124,7 +124,7 @@ def test_missing_sentry_module_still_raises_for_other_commands(
 ) -> None:
     """Outside `update`, a missing sentry_sdk is a real broken install."""
     # Arrange
-    from bootstrap.process import reset_process_runtime_for_tests
+    from infrastructure.process.boot import reset_process_runtime_for_tests
     from surfaces.cli import startup
 
     reset_process_runtime_for_tests()
@@ -154,7 +154,7 @@ def test_bare_shell_raises_when_sentry_sdk_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bare ``opensre`` checks presence inline before background init."""
-    from bootstrap.process import reset_process_runtime_for_tests
+    from infrastructure.process.boot import reset_process_runtime_for_tests
     from surfaces.cli import startup
 
     reset_process_runtime_for_tests()
@@ -172,7 +172,7 @@ def test_bare_shell_hands_back_error_reporting_start_and_does_not_run_it(
     # Arrange
     import threading
 
-    from bootstrap.process import reset_process_runtime_for_tests
+    from infrastructure.process.boot import reset_process_runtime_for_tests
     from surfaces.cli import startup
 
     reset_process_runtime_for_tests()

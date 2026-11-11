@@ -2,10 +2,11 @@
 
 The layer contract forbids ``core/agent_harness`` from importing ``integrations``
 or ``tools``. Their behavior reaches the harness through the role-named modules
-in this package: adapters register at process boot via
-:func:`bootstrap.adapters.install_harness_adapters` (CLI, gateway, web, and
-embedded profiles). Do not reintroduce a second registration site in a surface
-or in :mod:`gateway.core.lifecycle.controller`.
+in this package: ``integrations`` and ``tools`` each register their own adapters
+(``register_harness_adapters`` in each), and every host runs both at process
+boot through :mod:`infrastructure.process.boot` (CLI, gateway, web, scheduler,
+and embedded profiles). Do not add a registration site in a surface or in
+:mod:`gateway.core.lifecycle.controller`.
 """
 
 from __future__ import annotations

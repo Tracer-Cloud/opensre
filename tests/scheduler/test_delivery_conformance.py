@@ -39,8 +39,8 @@ DELIVERY_SPECS_COVER = frozenset({Provider.TELEGRAM, Provider.SLACK, Provider.RO
 
 def test_the_executor_delivers_to_exactly_these_providers() -> None:
     """The installed adapter bundle is the real answer to "can this be delivered?"."""
-    # Arrange / Act: the composition root assembles exactly the deliverable set.
-    from bootstrap.adapters import scheduled_delivery_adapters
+    # Arrange / Act: the installed bundle assembles exactly the deliverable set.
+    from integrations.scheduled_delivery import scheduled_delivery_adapters
 
     reachable = scheduled_delivery_adapters().providers()
 

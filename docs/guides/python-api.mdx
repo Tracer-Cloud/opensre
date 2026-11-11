@@ -35,7 +35,8 @@ environment with `uv run python your_script.py`.
 Register adapters before the first turn:
 
 ```python
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 configure_process(EMBEDDED_PROFILE)
 ```
@@ -48,8 +49,9 @@ Use `session.chat()` to query configured developer tools and observability
 sources (e.g. GitHub star velocity, PR backlog, deployment status):
 
 ```python
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 # 1. Register tools and adapter plugins once per process
 configure_process(EMBEDDED_PROFILE)
@@ -79,8 +81,9 @@ context and answers with its findings:
 ```python
 import json
 
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 configure_process(EMBEDDED_PROFILE)
 session = AgentSession.start()
@@ -101,8 +104,9 @@ print(result.primary_response_text)
 Every surface goes through the same verb:
 
 ```python
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 configure_process(EMBEDDED_PROFILE)
 
@@ -120,7 +124,7 @@ if (result.answered or action_ok) and not result.cancelled:
 Or the one-liner that wires the same boot step for you:
 
 ```python
-from bootstrap.embedded import start_embedded_session
+from surfaces.embedded import start_embedded_session
 
 session = start_embedded_session()
 ```
@@ -128,7 +132,7 @@ session = start_embedded_session()
 `AgentSession.start()` resolves the environment, opens a session, and attaches
 an agent with the standard ports — the same tools and prompts the interactive
 shell uses. It does **not** register adapters (``core`` may not import
-``bootstrap``); call ``configure_process`` first or use
+``surfaces``); call ``configure_process`` first or use
 ``start_embedded_session``.
 
 Always verify turn success before trusting chat text:
@@ -147,8 +151,9 @@ For recurring daily workflows (such as scheduled morning digests or CI health
 checks), start an in-process session and forward findings to team channels:
 
 ```python
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 configure_process(EMBEDDED_PROFILE)
 
@@ -197,9 +202,10 @@ explicit `SessionGoal` so the completion condition, checklist, and turn limit
 do not depend on the first turn inferring them:
 
 ```python
-from bootstrap.process import EMBEDDED_PROFILE, configure_process
 from core.agent_harness import AgentSession
 from core.agent_harness.session_goal import SessionGoal
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
 configure_process(EMBEDDED_PROFILE)
 session = AgentSession.start()

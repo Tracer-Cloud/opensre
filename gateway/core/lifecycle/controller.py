@@ -1,7 +1,7 @@
 """Gateway process entrypoint and lifecycle owner.
 
 ``GatewayController`` boots the background agent: logging, credentials,
-:func:`bootstrap.process.configure_process` (``GATEWAY_PROFILE``), then one
+:func:`gateway.core.process.boot.configure_process` (``GATEWAY_PROFILE``), then one
 turn runner and the components that use it.
 
 * :meth:`start_surfaces` starts web and chat transports together
@@ -120,7 +120,8 @@ class GatewayController:
 
     def start_gateway(self, *, wait: bool = True) -> GatewayController:
         """Credential hydrate, shared process boot, then channels + scheduler."""
-        from bootstrap.process import GATEWAY_PROFILE, configure_process
+        from gateway.core.process.boot import configure_process
+        from infrastructure.process.boot import GATEWAY_PROFILE
 
         logger = self.logger = configure_logging()
         set_ready(False)
@@ -183,11 +184,12 @@ class GatewayController:
         :func:`request_scheduler_reload`; this process only installs gated
         runners and starts :func:`start_background_scheduler`.
         """
-        from bootstrap.adapters import install_scheduled_delivery_adapters, scheduler_runners
         from infrastructure.scheduling.scheduler.reload_signal import (
             consume_scheduler_reload_request,
         )
         from infrastructure.scheduling.scheduler.runner import start_background_scheduler
+        from integrations.scheduled_agent_bootstrap import scheduler_runners
+        from integrations.scheduled_delivery import install_scheduled_delivery_adapters
 
         # Multiplexed scheduled-agent runners (Sentry digest, etc.).
         # A scheduled run costs a turn, so it takes the same capacity gate chat
@@ -338,10 +340,10 @@ class GatewayController:
         loops it changes are picked up by the reload watcher like any other. A
         member's "run it now" in chat starts its run here too, beside the app's.
         """
-        from bootstrap.adapters import webapp_loop_sync
         from infrastructure.scheduling.scheduler.run_now import install_loop_run_starter
+        from integrations.webapp_scheduled_loops import webapp_loop_sync_from_environment
 
-        sync = webapp_loop_sync(self._scheduler_runners)
+        sync = webapp_loop_sync_from_environment(self._scheduler_runners)
         if sync is None or self._webapp_loop_sync_thread is not None:
             return
         self._webapp_loop_sync = sync
@@ -392,9 +394,16 @@ class GatewayController:
         """
         if self._knowledge_threads:
             return
-        from bootstrap.adapters import knowledge_scan_service, webapp_knowledge_sync
+        from integrations.knowledge_scans import (
+            install_scan_service,
+            knowledge_scan_service_from_environment,
+        )
+        from integrations.webapp_knowledge import webapp_knowledge_sync_from_environment
 
-        scans = self._knowledge_scans = knowledge_scan_service()
+        scans = self._knowledge_scans = knowledge_scan_service_from_environment()
+        # This process's scan service, so ``/knowledge scan`` in a gateway turn
+        # pokes it instead of scanning inside the turn.
+        install_scan_service(scans)
         if scans is not None:
             self.components["knowledge_scans"] = "scanning connected integrations"
             self._knowledge_threads.append(
@@ -405,7 +414,11 @@ class GatewayController:
                     daemon=True,
                 )
             )
-        sync = webapp_knowledge_sync(scans)
+        # The app's rescan requests and the scan status it shows go to the scans.
+        sync = webapp_knowledge_sync_from_environment(
+            request_rescan=scans.request_rescan if scans is not None else None,
+            scan_status=scans.status_rows if scans is not None else None,
+        )
         if sync is not None:
             self.components["webapp_knowledge"] = "syncing with the web app"
             self._knowledge_threads.append(

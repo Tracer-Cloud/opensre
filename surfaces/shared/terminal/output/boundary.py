@@ -13,13 +13,14 @@ from __future__ import annotations
 def install_harness_providers() -> None:
     """Register integrations/tools adapters into :mod:`infrastructure.harness_providers`.
 
-    Harness composition root for the interactive shell and tests. Lives in
-    ``surfaces`` (not ``tools``) because ``tools`` and ``integrations`` are
-    sibling layers and must not import each other — see ``.importlinter.strict``.
+    Harness wiring for the interactive shell and tests: the registrars every
+    surfaces-hosted process boots with. Lives in ``surfaces`` (not ``tools``)
+    because ``tools`` and ``integrations`` are sibling layers and must not
+    import each other — see ``.importlinter``.
     """
-    from bootstrap.adapters import install_harness_adapters
+    from surfaces.shared.process_boot import CAPABILITY_REGISTRARS
 
-    install_harness_adapters()
+    CAPABILITY_REGISTRARS.install_harness_adapters()
 
 
 def install_product_adapters() -> None:

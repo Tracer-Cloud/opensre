@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import logging
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -131,7 +132,8 @@ def test_gateway_integrations_setup_returns_headless_guidance_even_with_tty(
 
 def test_gateway_manager_registers_harness_adapters(monkeypatch: pytest.MonkeyPatch) -> None:
     """Gateway boot must register harness adapters so production turns see slash_invoke."""
-    from bootstrap.process import reset_process_runtime_for_tests
+    import gateway.core.process.boot as gateway_boot
+    from infrastructure.process.boot import reset_process_runtime_for_tests
 
     calls: list[str] = []
 
@@ -143,8 +145,16 @@ def test_gateway_manager_registers_harness_adapters(monkeypatch: pytest.MonkeyPa
 
     # Boot runs once per profile; clear it so this test sees the real sequence.
     reset_process_runtime_for_tests()
-    # Registration happens in bootstrap.process via GATEWAY_PROFILE.
-    monkeypatch.setattr("bootstrap.process.install_harness_adapters", _record("adapters"))
+    # Registration happens in gateway.core.process.boot via GATEWAY_PROFILE.
+    monkeypatch.setattr(
+        gateway_boot,
+        "CAPABILITY_REGISTRARS",
+        replace(
+            gateway_boot.CAPABILITY_REGISTRARS,
+            integration_adapters=_record("adapters"),
+            tool_adapters=lambda: None,
+        ),
+    )
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kwargs: None,

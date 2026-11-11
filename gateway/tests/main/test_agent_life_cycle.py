@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -65,15 +66,24 @@ def _patch_non_telegram_components(monkeypatch) -> None:
 
 
 def _patch_process_boot(monkeypatch) -> None:
-    """Neutralize shared bootstrap.process side effects during lifecycle tests."""
-    from bootstrap.process import reset_process_runtime_for_tests
+    """Neutralize shared process-boot side effects during lifecycle tests."""
+    import gateway.core.process.boot as gateway_boot
+    from infrastructure.process.boot import reset_process_runtime_for_tests
 
     reset_process_runtime_for_tests()
     monkeypatch.setattr(
-        "bootstrap.process.bootstrap_opensre_env_once",
+        "infrastructure.process.boot.bootstrap_opensre_env_once",
         lambda **_kwargs: None,
     )
-    monkeypatch.setattr("bootstrap.process.install_harness_adapters", lambda: None)
+    monkeypatch.setattr(
+        gateway_boot,
+        "CAPABILITY_REGISTRARS",
+        replace(
+            gateway_boot.CAPABILITY_REGISTRARS,
+            integration_adapters=lambda: None,
+            tool_adapters=lambda: None,
+        ),
+    )
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kwargs: None,

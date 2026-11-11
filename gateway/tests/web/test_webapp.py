@@ -19,7 +19,7 @@ def test_webapp_module_calls_init_sentry_on_import(monkeypatch: pytest.MonkeyPat
     # Arrange: importing the module runs shared process boot, which is idempotent
     # per profile — an earlier import in this session already consumed it, so a
     # reload alone would assert against a no-op.
-    from bootstrap.process import reset_process_runtime_for_tests
+    from infrastructure.process.boot import reset_process_runtime_for_tests
 
     init_mock = MagicMock()
     monkeypatch.setattr("infrastructure.observability.errors.sentry.init_sentry", init_mock)

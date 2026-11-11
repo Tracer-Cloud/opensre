@@ -1126,8 +1126,8 @@ def _patch_cron_run_deps(
         calls.append({"task_id": tid, "only_failed": only_failed})
         return True
 
-    monkeypatch.setattr("bootstrap.process.configure_process", lambda _profile: None)
-    monkeypatch.setattr("bootstrap.adapters.scheduler_runners", object)
+    monkeypatch.setattr("surfaces.shared.process_boot.configure_process", lambda _profile: None)
+    monkeypatch.setattr("integrations.scheduled_agent_bootstrap.scheduler_runners", object)
     monkeypatch.setattr("infrastructure.scheduling.scheduler.storage.get_task", lambda _tid: task)
     monkeypatch.setattr(
         "infrastructure.scheduling.scheduler.runner.run_task_now", _fake_run_task_now
