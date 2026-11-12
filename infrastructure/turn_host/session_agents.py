@@ -176,7 +176,8 @@ class SessionAgentPool:
         with self._locks_guard:
             self._agents.pop(session_id, None)
             self._outputs.pop(session_id, None)
-            self._session_locks.pop(session_id, None)
+            if session_id not in self._session_claims:
+                self._session_locks.pop(session_id, None)
 
     def _drop_sessions_except(self, keep_session_id: str) -> None:
         with self._locks_guard:

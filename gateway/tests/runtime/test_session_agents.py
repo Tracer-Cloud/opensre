@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -569,6 +570,45 @@ def test_drop_session_removes_cached_agent_and_output(monkeypatch: pytest.Monkey
     assert pool.cached_session_ids == frozenset()
     second = pool.agent_for(session=session, output=MagicMock(), logger=logger)
     assert second is not first
+
+
+def test_drop_session_during_active_turn_preserves_lock_serialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = _fake_agent_pool(monkeypatch)
+    session_id = "test-session-drop-lock"
+    entered_first = threading.Event()
+    release_first = threading.Event()
+    concurrent_entry = False
+
+    def first_turn() -> None:
+        with pool._lock_for(session_id):
+            entered_first.set()
+            release_first.wait(timeout=2.0)
+
+    t1 = threading.Thread(target=first_turn)
+    t1.start()
+    entered_first.wait(timeout=1.0)
+
+    # drop_session invoked mid-turn while session has active claims
+    pool.drop_session(session_id)
+
+    def second_turn() -> None:
+        nonlocal concurrent_entry
+        with pool._lock_for(session_id):
+            concurrent_entry = True
+
+    t2 = threading.Thread(target=second_turn)
+    t2.start()
+    t2.join(timeout=0.1)
+
+    assert not concurrent_entry, "Second turn entered while first turn was still holding the lock!"
+    release_first.set()
+    t1.join(timeout=1.0)
+    t2.join(timeout=1.0)
+    assert concurrent_entry
+    # Lock is cleaned up once all claims are released
+    assert session_id not in pool._session_locks
 
 
 def test_retain_only_current_session_drops_stale_ids_after_rotation(
