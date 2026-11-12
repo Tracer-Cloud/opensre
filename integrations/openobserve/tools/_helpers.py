@@ -147,7 +147,7 @@ def _post_search(
     入参：
         base_url：OpenObserve 实例的基础 URL。
         org：组织名称，用于构造端点路径。
-        payload：搜索请求体（含 sql/promql 与微秒时间窗）。
+        payload：搜索请求体（含 SQL 与微秒时间窗）。
         api_token：API token，优先于 username/password 使用。
         username：用户名，用于 Basic 认证。
         password：密码，用于 Basic 认证。
@@ -190,6 +190,7 @@ def _post_search(
 def _get_json(
     *,
     url: str,
+    params: dict[str, str] | None = None,
     api_token: str,
     username: str,
     password: str,
@@ -202,6 +203,7 @@ def _get_json(
 
     入参：
         url：完整的目标 URL（含端点路径）。
+        params：可选的 URL 查询参数。
         api_token：API token，优先于 username/password 使用。
         username：用户名，用于 Basic 认证。
         password：密码，用于 Basic 认证。
@@ -218,7 +220,7 @@ def _get_json(
     headers = {}
     headers.update(_auth_headers(api_token, username, password))
     try:
-        response = httpx.get(url, headers=headers, timeout=max(1.0, timeout_seconds))
+        response = httpx.get(url, headers=headers, params=params, timeout=max(1.0, timeout_seconds))
         response.raise_for_status()
         body = response.json()
     except Exception as err:

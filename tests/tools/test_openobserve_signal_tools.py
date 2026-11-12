@@ -129,17 +129,30 @@ def _capture_post(monkeypatch: pytest.MonkeyPatch, response: MockHttpxResponse) 
 def _capture_get(monkeypatch: pytest.MonkeyPatch, response: MockHttpxResponse) -> dict[str, Any]:
     captured: dict[str, Any] = {}
 
-    def _fake_get(url: str, headers: dict[str, str], timeout: float) -> MockHttpxResponse:
-        captured.update(url=url, headers=headers, timeout=timeout)
+    def _fake_get(
+        url: str,
+        headers: dict[str, str],
+        timeout: float,
+        params: dict[str, str] | None = None,
+    ) -> MockHttpxResponse:
+        captured.update(url=url, headers=headers, timeout=timeout, params=params)
         return response
 
     monkeypatch.setattr(GET_PATH, _fake_get)
     return captured
 
 
-def test_metrics_request_payload_response_and_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+# Upstream PrometheusRangeQuery contract and response example:
+# https://github.com/openobserve/openobserve/blob/v0.15.0/src/handler/http/request/promql/mod.rs#L226-L303
+def test_metrics_documented_query_range_contract_response_and_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     series = [{"metric": {"__name__": "up"}, "values": [[1, "1"]]} for _ in range(3)]
-    captured = _capture_post(monkeypatch, MockHttpxResponse({"data": {"result": series}}))
+    response = {
+        "status": "success",
+        "data": {"resultType": "matrix", "result": series},
+    }
+    captured = _capture_get(monkeypatch, MockHttpxResponse(response))
 
     result = query_openobserve_metrics(
         base_url=f"{BASE_URL}/",
@@ -155,30 +168,30 @@ def test_metrics_request_payload_response_and_limit(monkeypatch: pytest.MonkeyPa
         timeout_seconds=7,
     )
 
-    assert captured["url"] == f"{BASE_URL}/api/acme/_search"
+    assert captured["url"] == f"{BASE_URL}/api/acme/prometheus/api/v1/query_range"
     assert captured["headers"]["Authorization"] == "Bearer token"
-    assert captured["headers"]["Content-Type"] == "application/json"
     assert captured["timeout"] == 7
-    payload = captured["payload"]
-    assert payload["size"] == 2
-    assert payload["query"]["query_type"] == "promql"
-    assert payload["query"]["promql"] == "up"
-    assert payload["query"]["step"] == 30
-    expected_window_us = 15 * 60 * 1_000_000
-    actual_window_us = payload["query"]["end_time"] - payload["query"]["start_time"]
-    assert abs(actual_window_us - expected_window_us) < 1_000_000
+    params = captured["params"]
+    assert params["query"] == "up"
+    assert params["step"] == "30"
+    assert "size" not in params
+    actual_window_seconds = float(params["end"]) - float(params["start"])
+    assert abs(actual_window_seconds - 15 * 60) < 1
     assert result["available"] is True
     assert result["records"] == series[:2]
     assert result["total_returned"] == 2
     assert result["effective_limit"] == 2
 
 
-def test_metrics_accepts_common_record_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    _capture_post(monkeypatch, MockHttpxResponse({"hits": [{"metric": "up"}]}))
+def test_metrics_query_range_omits_optional_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = {"status": "success", "data": {"resultType": "matrix", "result": []}}
+    captured = _capture_get(monkeypatch, MockHttpxResponse(response))
 
     result = query_openobserve_metrics(base_url=BASE_URL, promql="up", api_token="token")
 
-    assert result["records"] == [{"metric": "up"}]
+    assert "step" not in captured["params"]
+    assert result["available"] is True
+    assert result["records"] == []
 
 
 @pytest.mark.parametrize(
@@ -193,14 +206,14 @@ def test_metrics_accepts_common_record_response(monkeypatch: pytest.MonkeyPatch)
 def test_metrics_validation_does_not_call_http(
     kwargs: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    post = MagicMock()
-    monkeypatch.setattr(POST_PATH, post)
+    get = MagicMock()
+    monkeypatch.setattr(GET_PATH, get)
 
     result = query_openobserve_metrics(**kwargs)
 
     assert result["available"] is False
     assert result["records"] == []
-    post.assert_not_called()
+    get.assert_not_called()
 
 
 def test_traces_request_payload_response_and_basic_auth(
@@ -308,7 +321,7 @@ def test_streams_accepts_bare_list_and_basic_auth(monkeypatch: pytest.MonkeyPatc
 
 
 def test_metrics_http_error_returns_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    _capture_post(
+    _capture_get(
         monkeypatch,
         MockHttpxResponse({}, raise_for_status_error=RuntimeError("metrics failed")),
     )

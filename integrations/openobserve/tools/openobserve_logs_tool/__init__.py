@@ -15,6 +15,7 @@ from integrations.openobserve.tools._helpers import (
     _bounded_limit,
     _extract_records,
     _openobserve_available,
+    _openobserve_extract_params,
     _post_search,
 )
 
@@ -56,32 +57,6 @@ def _map_query_openobserve_logs(
         label="OpenObserve Logs",
         summary=", ".join(parts),
     )
-
-
-def _openobserve_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """从 sources 中提取 OpenObserve 工具的入参。
-
-    入参：
-        sources：各集成的凭据与状态字典，必须包含 "openobserve" 键。
-    返回：
-        参数字典：包含 base_url、org、stream、query、api_token、
-        username、password、time_range_minutes、limit、max_results、
-        integration_id 等字段。
-    """
-    oo = sources["openobserve"]
-    return {
-        "base_url": str(oo.get("base_url", "")).strip(),
-        "org": str(oo.get("org", "default")).strip() or "default",
-        "stream": str(oo.get("stream", "")).strip(),
-        "query": str(oo.get("query", "")).strip(),
-        "api_token": str(oo.get("api_token", "")).strip(),
-        "username": str(oo.get("username", "")).strip(),
-        "password": str(oo.get("password", "")).strip(),
-        "time_range_minutes": int(oo.get("time_range_minutes", 60) or 60),
-        "limit": 50,
-        "max_results": int(oo.get("max_results", _DEFAULT_MAX_RESULTS) or _DEFAULT_MAX_RESULTS),
-        "integration_id": str(oo.get("integration_id", "")).strip(),
-    }
 
 
 @tool(

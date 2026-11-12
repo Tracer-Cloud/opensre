@@ -992,6 +992,9 @@ if TYPE_CHECKING:
     from config.constants.new_relic import (
         NEW_RELIC_NRQL_TIMEOUT_SECONDS as NEW_RELIC_NRQL_TIMEOUT_SECONDS,
     )
+    from config.constants.openobserve import (
+        OPENOBSERVE_TRACE_STREAM_ENV as OPENOBSERVE_TRACE_STREAM_ENV,
+    )
     from config.constants.opensearch import (
         OPENSEARCH_API_KEY_ENV as OPENSEARCH_API_KEY_ENV,
     )

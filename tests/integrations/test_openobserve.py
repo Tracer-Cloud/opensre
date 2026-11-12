@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from config.constants.openobserve import OPENOBSERVE_TRACE_STREAM_ENV
 from integrations.openobserve import classify
 from integrations.openobserve.verifier import verify_openobserve
 
@@ -32,7 +33,7 @@ def test_load_env_integrations_includes_trace_stream(
     monkeypatch.setenv("OPENOBSERVE_URL", "https://openobserve.example.com")
     monkeypatch.setenv("OPENOBSERVE_TOKEN", "token")
     monkeypatch.setenv("OPENOBSERVE_STREAM", "logs")
-    monkeypatch.setenv("OPENOBSERVE_TRACE_STREAM", "traces_prod")
+    monkeypatch.setenv(OPENOBSERVE_TRACE_STREAM_ENV, "traces_prod")
 
     records = [item for item in load_env_integrations() if item["service"] == "openobserve"]
 

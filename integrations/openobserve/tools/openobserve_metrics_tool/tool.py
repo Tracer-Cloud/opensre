@@ -14,10 +14,9 @@ from infrastructure.text.truncation import truncate
 from integrations.openobserve.tools._helpers import (
     _DEFAULT_MAX_RESULTS,
     _bounded_limit,
-    _extract_records,
+    _get_json,
     _openobserve_available,
     _openobserve_extract_params,
-    _post_search,
 )
 
 #: 限制回显到报告摘要中的 PromQL 查询文本长度。
@@ -25,19 +24,7 @@ _QUERY_SUMMARY_TRUNCATE_LEN = 80
 
 
 def _extract_metric_results(body: dict[str, Any]) -> list[dict[str, Any]]:
-    """从指标搜索响应中提取结果列表。
-
-    优先复用通用记录解析；当响应采用 Prometheus 风格（``data.result``
-    数组）时，逐个取出其中的元素。
-
-    入参：
-        body：OpenObserve 指标搜索 API 的响应体字典。
-    返回：
-        结果字典列表；无法解析时返回空列表。
-    """
-    records = _extract_records(body)
-    if records:
-        return records
+    """从 Prometheus 兼容的 ``data.result`` 响应中提取指标序列。"""
     data = body.get("data")
     if isinstance(data, dict):
         result = data.get("result")
@@ -180,22 +167,20 @@ def query_openobserve_metrics(
     effective_limit = _bounded_limit(limit, max_results)
     now = datetime.now(UTC)
     start = now - timedelta(minutes=max(1, time_range_minutes))
-    query_payload: dict[str, Any] = {
-        "query_type": "promql",
-        "promql": normalized_promql,
-        # OpenObserve 的 _search API 采用自 epoch 起的微秒时间窗。
-        "start_time": int(start.timestamp() * 1_000_000),
-        "end_time": int(now.timestamp() * 1_000_000),
+    org_name = (org or "default").strip() or "default"
+    endpoint = f"{base}/api/{org_name}/prometheus/api/v1/query_range"
+    query_params = {
+        "query": normalized_promql,
+        "start": str(start.timestamp()),
+        "end": str(now.timestamp()),
     }
     if step_seconds and int(step_seconds) > 0:
-        query_payload["step"] = int(step_seconds)
-    payload = {"query": query_payload, "size": effective_limit}
+        query_params["step"] = str(int(step_seconds))
 
     try:
-        body = _post_search(
-            base_url=base,
-            org=org,
-            payload=payload,
+        body = _get_json(
+            url=endpoint,
+            params=query_params,
             api_token=auth_token,
             username=user,
             password=secret,
@@ -207,7 +192,7 @@ def query_openobserve_metrics(
     except Exception as err:
         return tool_unavailable("openobserve", str(err), records=[])
 
-    records = _extract_metric_results(body)[:effective_limit]
+    records = _extract_metric_results(body if isinstance(body, dict) else {})[:effective_limit]
     return {
         "source": "openobserve",
         "available": True,
