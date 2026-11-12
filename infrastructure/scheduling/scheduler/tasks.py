@@ -30,6 +30,7 @@ from infrastructure.scheduling.scheduler.loop_prompt import current_loop_prompt
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.run_failure import run_failure
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.schedule_cancel import schedule_cancelled
 from infrastructure.scheduling.scheduler.sources import (
     SCHEDULED_GITHUB_PR_SWEEP,
     SCHEDULED_MANUAL_LOOP,
@@ -254,7 +255,12 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> Ta
         "skill_revision": task.skill_revision,
         "skill_inputs": dict(task.skill_inputs),
     }
-    return _run_agent(task, runners, payload)
+    try:
+        return runners.agent(payload)
+    except Exception as exc:
+        if schedule_cancelled(task.id):
+            raise
+        raise run_failure(task, exc) from exc
 
 
 def _record_followed_revision(task: ScheduledTask, revision: str) -> None:

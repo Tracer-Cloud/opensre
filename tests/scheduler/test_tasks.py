@@ -551,19 +551,24 @@ class TestRecurringSkillBuilders:
     def test_recurring_skill_failure_raises_run_failure(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
+
+        current = find_action_skill("delivering-morning-briefings")
+        assert current is not None
         task = ScheduledTask(
             kind=TaskKind.RECURRING_SKILL,
             cron="0 8 * * 1-5",
             provider=Provider.SLACK,
             chat_id="C123",
             skill_name="delivering-morning-briefings",
-            skill_revision=f"v2:{_current_major()}:" + "0" * 64,
+            skill_revision=skill_revision(current),
         )
         crash = RuntimeError("provider 503: secret token leak")
         reported: list[BaseException] = []
         monkeypatch.setattr(
             run_failure_mod, "capture_exception", lambda exc, **_: reported.append(exc)
         )
+        monkeypatch.setattr(tasks_mod, "schedule_cancelled", lambda _id: False)
 
         def _raise(_payload: dict[str, object]) -> str:
             raise crash
@@ -576,3 +581,36 @@ class TestRecurringSkillBuilders:
         )
         assert raised.value.kind == "message_build_failed"
         assert reported == [crash]
+
+    def test_recurring_skill_cancelled_during_run_does_not_report_run_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
+
+        current = find_action_skill("delivering-morning-briefings")
+        assert current is not None
+        task = ScheduledTask(
+            id="task-cancelled",
+            kind=TaskKind.RECURRING_SKILL,
+            cron="0 8 * * 1-5",
+            provider=Provider.SLACK,
+            chat_id="C123",
+            skill_name="delivering-morning-briefings",
+            skill_revision=skill_revision(current),
+        )
+        crash = RuntimeError("Scheduled skill 'delivering-morning-briefings' failed: no report")
+        reported: list[BaseException] = []
+        monkeypatch.setattr(
+            run_failure_mod, "capture_exception", lambda exc, **_: reported.append(exc)
+        )
+        monkeypatch.setattr(tasks_mod, "schedule_cancelled", lambda _id: True)
+
+        def _raise(_payload: dict[str, object]) -> str:
+            raise crash
+
+        with pytest.raises(RuntimeError) as raised:
+            tasks_mod.build_message(task, runners_with_agent(_raise))
+
+        assert raised.value is crash
+        assert not isinstance(raised.value, run_failure_mod.RunFailure)
+        assert reported == []
