@@ -1,7 +1,7 @@
 """Grouped, collapsible tool-action log rendered above the closing reply.
 
 Tool calls are buffered per turn and flushed here. By default a TTY shows
-nothing: the full call + result detail is stashed for Ctrl+O only. With
+a compact count and Ctrl+O hint, with call + result details stashed. With
 ``/verbose on`` (``TRACER_VERBOSE``) the calls render as bordered sections, one
 per run of same-kind calls (all ``GitHub CLI`` calls together, etc.), each
 showing concise status lines — never the inline ``key: value ·`` arguments.
@@ -48,8 +48,8 @@ _MIN_BOX_WIDTH = _MIN_INNER + 4
 def flush_action_log(console: Console, session: Session) -> None:
     """Flush the turn's buffered tool calls; clear the buffer.
 
-    On a TTY the calls stay hidden unless verbose output is on: their detail is
-    stashed for Ctrl+O and nothing is printed. Verbose renders grouped sections.
+    On a TTY the calls stay collapsed unless verbose output is on: their detail
+    is stashed for Ctrl+O and one summary is printed. Verbose renders grouped sections.
     Off a TTY (gateway/logs) the full detail is printed inline so nothing is
     lost where Ctrl+O does not exist. A no-op when the turn recorded no calls.
 
@@ -67,7 +67,7 @@ def flush_action_log(console: Console, session: Session) -> None:
         return
 
     if not verbose_output_enabled():
-        _stash_hidden(session, entries)
+        _stash_hidden(console, session, entries)
         return
 
     # Rows are sized to the width the buffered writer renders at. Sizing them
@@ -83,11 +83,16 @@ def flush_action_log(console: Console, session: Session) -> None:
     print_repl_renderable(console, Group(*rows))
 
 
-def _stash_hidden(session: Session, entries: list[ActionLogEntry]) -> None:
-    """Keep the turn's call detail reachable via Ctrl+O without printing a row."""
-    detail = "\n\n".join(entry.detail for entry in entries if entry.detail)
-    if detail:
-        session.terminal.stash_collapsed_tool_output(detail)
+def _stash_hidden(console: Console, session: Session, entries: list[ActionLogEntry]) -> None:
+    """Keep call details behind a single discoverable expansion hint."""
+    details = [entry.detail for entry in entries if entry.detail]
+    if not details:
+        return
+    session.terminal.stash_collapsed_tool_output("\n\n".join(details))
+    count = len(details)
+    summary = Text(f"  {count} tool call{'s' if count != 1 else ''}", style=str(SECONDARY))
+    summary.append(" · Ctrl+O to expand", style=str(DIM))
+    print_repl_renderable(console, Group(Text(""), summary))
 
 
 def _box_width(console: Console) -> int:

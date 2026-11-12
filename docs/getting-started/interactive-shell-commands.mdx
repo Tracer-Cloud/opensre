@@ -67,6 +67,14 @@ platform and prints that call's starting directory.
 | **Ctrl+C** once | Cancel in-flight streaming work or interrupt the current prompt |
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
 | **Ctrl+D** | Exit when the prompt is empty and nothing is running (same resume hint as `/exit`) |
+| **Ctrl+O** | Expand stored tool details; repeat to cycle through recent results |
+
+While a turn runs, one activity line shows the current tool or phase, elapsed
+time, and **Esc to stop**. Token counts appear when space permits. Narrow
+terminals prioritize the activity and stop control over token counts.
+Tool details stay collapsed behind a short call count and **Ctrl+O to expand**.
+Small results expand in the transcript; larger results open `$PAGER` or `less`
+when available, otherwise print inline. Use `/verbose on` to show grouped calls.
 
 Every launch asks what you want to do: analyze a repository, keep CI/CD healthy
 automatically, or open the shell. Keeping CI/CD healthy then asks for a local

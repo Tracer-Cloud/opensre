@@ -86,6 +86,42 @@ def test_status_row_fits_every_terminal_width(monkeypatch) -> None:
             assert "\n" not in rendered
 
 
+def test_narrow_status_prioritizes_activity_time_and_stop_over_token_counts(monkeypatch) -> None:
+    """A busy turn stays identifiable at 40 columns, even after a large reply."""
+    from surfaces.shared.terminal.prompt_layout import prompt_text_width
+
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.state.time.monotonic", lambda: 100.0
+    )
+    spinner = SpinnerState(frames=("◌",))
+    spinner.start()
+    spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
+    spinner.set_active_action("GitHub CLI · gh api repos/example/project/actions/runs")
+    spinner.bytes_in = 400_000
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.state.time.monotonic", lambda: 103.0
+    )
+
+    for width in (39, 99, 159):
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.runtime.core.state.prompt_line_width",
+            lambda width=width: width,
+        )
+        rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
+        assert "GitHub CLI" in rendered
+        assert "3s" in rendered
+        assert rendered.endswith("Esc to stop")
+        assert prompt_text_width(rendered) <= width
+        if width == 39:
+            assert "tokens" not in rendered
+
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.state.prompt_line_width", lambda: 19
+    )
+    compact = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
+    assert "3s" in compact and "Esc to stop" in compact
+
+
 def test_live_tool_folds_into_spinner_row_and_clears() -> None:
     """Running tool appears on the same status row as the phase; clear drops it."""
     spinner = SpinnerState()
@@ -96,12 +132,13 @@ def test_live_tool_folds_into_spinner_row_and_clears() -> None:
 
     spinner.set_active_action("Execute · cd /tmp")
     rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert "Invoking tools…" in rendered
+    assert "Invoking tools…" not in rendered
     assert "Execute · cd /tmp" in rendered
 
     spinner.clear_active_action()
     cleared = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
     assert "Execute · cd /tmp" not in cleared
+    assert "Invoking tools…" in cleared
 
 
 def test_active_action_stack_keeps_earlier_tools_until_they_end() -> None:
@@ -199,6 +236,6 @@ def test_status_shimmer_includes_live_tool_on_same_row() -> None:
     spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
     spinner.set_active_action("GitHub CLI · gh api repos/x")
     plain = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
-    assert "Invoking tools…" in plain
+    assert "Invoking tools…" not in plain
     assert "GitHub CLI" in plain
     assert plain.count("\n") == 0

@@ -328,8 +328,8 @@ class SpinnerState:
         self.started_at: float = 0.0
         self.bytes_in: int = 0
         self.phase: str = ""
-        # In-flight tools in start order. The live status row appends the first
-        # still-running tool after the phase label; the ReAct loop emits every
+        # In-flight tools in start order. The live status row names the first
+        # still-running tool in place of the phase; the ReAct loop emits every
         # start before any end, so a single slot would display the last tool
         # and clear on the first completion.
         self._in_flight_actions: list[_InFlightAction] = []
@@ -441,14 +441,11 @@ class SpinnerState:
         return ui_theme.BOLD_REPLY_MARKER_ANSI
 
     def inline_spinner_ansi(self) -> str:
-        """One status row: primary phase and elapsed time, then the stop hint.
+        """One row prioritizing current activity, elapsed time, and how to stop.
 
-        When a tool is in flight the label becomes
-        ``Invoking tools… · GitHub CLI · gh api …`` so awareness stays on the
-        same row as the spinner — never a second reserved prompt row. A soft
-        silver wave runs across the sentence; the glyph alone carries warmth.
-        The hint anchors to the right when space permits, separating the live
-        status from the keyboard instruction without adding another row.
+        A running tool replaces the generic phase. Token counts appear only
+        when the full activity still fits. On very narrow terminals, elapsed
+        time and the stop hint take precedence over the activity and spinner.
         """
         if not self.streaming:
             return ""
@@ -456,15 +453,8 @@ class SpinnerState:
         token_count = self.bytes_in // _CHARS_PER_TOKEN
         frame_idx = int(elapsed / self._FRAME_INTERVAL_SECONDS)
         glyph = self._SPINNER_FRAMES[frame_idx % len(self._SPINNER_FRAMES)]
-        if token_count > 0:
-            tokens_str = format_token_count_short(token_count)
-            elapsed_detail = f"{elapsed:.0f}s · ↓ {tokens_str} tokens"
-        else:
-            elapsed_detail = f"{elapsed:.0f}s"
-        label = self.phase or self.THINKING_PHASE
-        action = self.active_action
-        if action:
-            label = f"{label} · {action}"
+        elapsed_detail = f"{elapsed:.0f}s"
+        label = self.active_action or self.phase or self.THINKING_PHASE
         # One prompt-region row only: a long phase (or a narrow terminal) must
         # not soft-wrap, which desyncs row height vs the one-row confirmation
         # prefix and leaves stale spinner/status lines.
@@ -472,11 +462,27 @@ class SpinnerState:
         accent = self._phase_accent_ansi()
         width = prompt_line_width()
         lead_width = prompt_text_width(lead)
-        elapsed_width = prompt_text_width(elapsed_detail)
         hint_width = prompt_text_width(self._STOP_HINT)
+        if token_count > 0:
+            tokens_str = format_token_count_short(token_count)
+            token_detail = f"{elapsed_detail} · ↓ {tokens_str} tokens"
+            full_width = (
+                lead_width
+                + prompt_text_width(label)
+                + 1
+                + prompt_text_width(token_detail)
+                + self._MIN_HINT_GAP
+                + hint_width
+            )
+            if full_width <= width:
+                elapsed_detail = token_detail
+        elapsed_width = prompt_text_width(elapsed_detail)
         reserved = lead_width + 1 + elapsed_width + self._MIN_HINT_GAP + hint_width
         if reserved >= width:
-            visible = clip_prompt_text(f"{lead}{label} {elapsed_detail}  {self._STOP_HINT}", width)
+            compact = f"{elapsed_detail}  {self._STOP_HINT}"
+            if prompt_text_width(compact) > width:
+                compact = self._STOP_HINT
+            visible = clip_prompt_text(compact, width)
             return f"{accent}{visible}{ui_theme.ANSI_RESET}"
         clipped_label = clip_prompt_text(label, width - reserved)
         hint_gap = max(

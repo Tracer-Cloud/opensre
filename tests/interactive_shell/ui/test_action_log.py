@@ -29,9 +29,12 @@ def _push(session: Session, call_id: str, kind: str, concise: str, detail: str) 
     )
 
 
-def test_a_tty_hides_the_action_log_by_default_but_keeps_ctrl_o(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("width", (40, 100, 160))
+def test_a_tty_summarizes_hidden_calls_and_keeps_ctrl_o(
+    monkeypatch: pytest.MonkeyPatch, width: int
 ) -> None:
+    from rich.cells import cell_len
+
     monkeypatch.delenv("TRACER_VERBOSE", raising=False)
     session = Session()
     _push(
@@ -39,7 +42,7 @@ def test_a_tty_hides_the_action_log_by_default_but_keeps_ctrl_o(
         "1",
         "get github repository",
         "",
-        "Tool     get github repository\n         owner: o",
+        "Tool     get github repository\n         owner: o [literal] 查询",
     )
     _push(
         session,
@@ -50,12 +53,33 @@ def test_a_tty_hides_the_action_log_by_default_but_keeps_ctrl_o(
     )
     buffer = io.StringIO()
 
-    flush_action_log(_tty(buffer), session)
+    flush_action_log(Console(file=buffer, force_terminal=True, width=width), session)
 
-    assert buffer.getvalue() == ""  # no box, no rows, no Ctrl+O hint
+    out = Text.from_ansi(buffer.getvalue()).plain
+    assert "2 tool calls" in out
+    assert "Ctrl+O to expand" in out
+    assert "owner:" not in out
+    assert all(cell_len(line) <= width for line in out.splitlines())
     assert session.terminal.has_action_log() is False  # buffer drained
     expanded = session.terminal.next_collapsed_output_for_expand()
     assert "owner: o" in expanded and "owner: p" in expanded  # detail still behind Ctrl+O
+    assert "[literal] 查询" in expanded
+
+
+def test_empty_call_details_do_not_advertise_previous_turn_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRACER_VERBOSE", raising=False)
+    session = Session()
+    session.terminal.stash_collapsed_tool_output("previous turn")
+    _push(session, "1", "GitHub CLI", "gh pr list", "")
+    buffer = io.StringIO()
+
+    flush_action_log(_tty(buffer), session)
+
+    assert buffer.getvalue() == ""
+    assert session.terminal.has_action_log() is False
+    assert session.terminal.next_collapsed_output_for_expand() == "previous turn"
 
 
 def test_consecutive_same_kind_calls_group_into_one_bordered_section() -> None:
