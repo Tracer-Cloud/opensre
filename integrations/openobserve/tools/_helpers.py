@@ -7,13 +7,11 @@ from typing import Any
 
 import httpx
 
+from config.constants.openobserve import (
+    OPENOBSERVE_MAX_RESULTS_DEFAULT,
+    OPENOBSERVE_MAX_RESULTS_HARD_LIMIT,
+)
 from core.tool import report_run_error
-
-#: 配置允许的最大结果数默认值，与配置模型中 max_results 默认一致。
-_DEFAULT_MAX_RESULTS = 100
-
-#: 单次查询可返回的硬上限，防止调用方请求过大的结果集。
-_MAX_HARD_LIMIT = 200
 
 
 def _bounded_limit(limit: int, max_results: int) -> int:
@@ -24,9 +22,9 @@ def _bounded_limit(limit: int, max_results: int) -> int:
         max_results：配置允许的最大结果数。
     返回：
         收紧后的实际生效条数：不小于 1，且同时不超过 max_results
-        与 _MAX_HARD_LIMIT 中的较小值。
+        与 OPENOBSERVE_MAX_RESULTS_HARD_LIMIT 中的较小值。
     """
-    safe_max = max(1, min(max_results, _MAX_HARD_LIMIT))
+    safe_max = max(1, min(max_results, OPENOBSERVE_MAX_RESULTS_HARD_LIMIT))
     return max(1, min(limit, safe_max))
 
 
@@ -72,7 +70,10 @@ def _openobserve_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str,
         "password": str(oo.get("password", "")).strip(),
         "time_range_minutes": int(oo.get("time_range_minutes", 60) or 60),
         "limit": 50,
-        "max_results": int(oo.get("max_results", _DEFAULT_MAX_RESULTS) or _DEFAULT_MAX_RESULTS),
+        "max_results": int(
+            oo.get("max_results", OPENOBSERVE_MAX_RESULTS_DEFAULT)
+            or OPENOBSERVE_MAX_RESULTS_DEFAULT
+        ),
         "integration_id": str(oo.get("integration_id", "")).strip(),
     }
 

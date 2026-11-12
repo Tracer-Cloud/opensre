@@ -126,7 +126,7 @@ def test_extract_params_strips_and_uses_defaults() -> None:
     assert params["password"] == ""
     assert params["time_range_minutes"] == 60  # default
     assert params["limit"] == 50
-    assert params["max_results"] == 100  # _DEFAULT_MAX_RESULTS
+    assert params["max_results"] == 100  # OPENOBSERVE_MAX_RESULTS_DEFAULT
     assert params["integration_id"] == "oo-1"
 
 

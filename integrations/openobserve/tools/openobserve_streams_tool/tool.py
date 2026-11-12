@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.openobserve import OPENOBSERVE_MAX_RESULTS_DEFAULT
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.openobserve.tools._helpers import (
-    _DEFAULT_MAX_RESULTS,
     _bounded_limit,
     _get_json,
     _openobserve_available,
@@ -115,7 +115,7 @@ def list_openobserve_streams(
     username: str = "",
     password: str = "",
     limit: int = 50,
-    max_results: int = _DEFAULT_MAX_RESULTS,
+    max_results: int = OPENOBSERVE_MAX_RESULTS_DEFAULT,
     integration_id: str = "",
     timeout_seconds: float = 20.0,
     **_kwargs: Any,

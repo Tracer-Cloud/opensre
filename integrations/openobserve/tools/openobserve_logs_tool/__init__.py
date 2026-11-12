@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from config.constants.openobserve import OPENOBSERVE_MAX_RESULTS_DEFAULT
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 from integrations.openobserve.tools._helpers import (
-    _DEFAULT_MAX_RESULTS,
     _bounded_limit,
     _extract_records,
     _openobserve_available,
@@ -98,7 +98,7 @@ def query_openobserve_logs(
     password: str = "",
     time_range_minutes: int = 60,
     limit: int = 50,
-    max_results: int = _DEFAULT_MAX_RESULTS,
+    max_results: int = OPENOBSERVE_MAX_RESULTS_DEFAULT,
     integration_id: str = "",
     timeout_seconds: float = 20.0,
     **_kwargs: Any,

@@ -1,9 +1,14 @@
-"""OpenObserve environment variable names."""
+"""OpenObserve integration constants."""
 
 from __future__ import annotations
 
 OPENOBSERVE_TRACE_STREAM_ENV = "OPENOBSERVE_TRACE_STREAM"
 
+OPENOBSERVE_MAX_RESULTS_DEFAULT = 100
+OPENOBSERVE_MAX_RESULTS_HARD_LIMIT = 200
+
 __all__ = [
+    "OPENOBSERVE_MAX_RESULTS_DEFAULT",
+    "OPENOBSERVE_MAX_RESULTS_HARD_LIMIT",
     "OPENOBSERVE_TRACE_STREAM_ENV",
 ]

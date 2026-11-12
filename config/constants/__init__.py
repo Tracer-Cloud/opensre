@@ -993,6 +993,12 @@ if TYPE_CHECKING:
         NEW_RELIC_NRQL_TIMEOUT_SECONDS as NEW_RELIC_NRQL_TIMEOUT_SECONDS,
     )
     from config.constants.openobserve import (
+        OPENOBSERVE_MAX_RESULTS_DEFAULT as OPENOBSERVE_MAX_RESULTS_DEFAULT,
+    )
+    from config.constants.openobserve import (
+        OPENOBSERVE_MAX_RESULTS_HARD_LIMIT as OPENOBSERVE_MAX_RESULTS_HARD_LIMIT,
+    )
+    from config.constants.openobserve import (
         OPENOBSERVE_TRACE_STREAM_ENV as OPENOBSERVE_TRACE_STREAM_ENV,
     )
     from config.constants.opensearch import (

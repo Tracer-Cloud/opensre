@@ -445,6 +445,8 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_NRQL_LIMIT_MAX": "new_relic",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # openobserve
+    "OPENOBSERVE_MAX_RESULTS_DEFAULT": "openobserve",
+    "OPENOBSERVE_MAX_RESULTS_HARD_LIMIT": "openobserve",
     "OPENOBSERVE_TRACE_STREAM_ENV": "openobserve",
     # opensearch
     "OPENSEARCH_API_KEY_ENV": "opensearch",
