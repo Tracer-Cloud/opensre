@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
+
 from core.context_budget import (
     _TOKENS_PER_CHAR,
     EVICTED_TOOL_RESULT_TEXT,
@@ -271,6 +273,7 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
     ]
 
 
+@pytest.mark.timeout(5)
 def test_enforce_context_budget_does_not_infinite_loop_when_tool_use_followed_by_plain_text() -> (
     None
 ):
@@ -286,6 +289,7 @@ def test_enforce_context_budget_does_not_infinite_loop_when_tool_use_followed_by
     assert len(messages) == 3
 
 
+@pytest.mark.timeout(5)
 def test_enforce_context_budget_handles_trailing_tool_use_without_follower() -> None:
     messages = [
         {"role": "user", "content": "hello " * 200},
