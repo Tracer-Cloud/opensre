@@ -137,7 +137,7 @@ def test_streaming_prompt_height_matches_idle_with_live_tool_on_status_row() -> 
     assert filled.count("\n") == thinking_rows
     plain = _plain(filled)
     assert "GitHub CLI" in plain
-    assert "Invoking tools" in plain
+    assert "Invoking tools" not in plain
 
 
 def test_prompt_region_idle_is_just_the_composer() -> None:

@@ -1008,7 +1008,7 @@ class TestSpinnerState:
         spinner.set_phase(loop_state.SpinnerState.INVOKING_TOOLS_PHASE)
         spinner.set_active_action("GitHub CLI · gh api repos/x")
         rendered = _strip_ansi(spinner.inline_spinner_ansi())
-        assert "Invoking tools…" in rendered
+        assert "Invoking tools…" not in rendered
         assert "GitHub CLI · gh api repos/x" in rendered
 
     def test_inline_spinner_glyph_animates_with_elapsed_time(self) -> None:
