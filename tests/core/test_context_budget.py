@@ -269,3 +269,30 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
         "t1",
         "t2",
     ]
+
+
+def test_enforce_context_budget_does_not_infinite_loop_when_tool_use_followed_by_plain_text() -> (
+    None
+):
+    messages = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t1", "name": "bash", "input": {}}],
+        },
+        {"role": "user", "content": "cancelled by user " * 500},
+    ]
+    enforce_context_budget(messages, ceiling=200)
+    assert len(messages) == 3
+
+
+def test_enforce_context_budget_handles_trailing_tool_use_without_follower() -> None:
+    messages = [
+        {"role": "user", "content": "hello " * 200},
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t1", "name": "bash", "input": {}}],
+        },
+    ]
+    enforce_context_budget(messages, ceiling=100)
+    assert len(messages) == 2

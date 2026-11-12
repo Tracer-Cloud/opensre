@@ -110,6 +110,24 @@ def _has_tool_use_block(content: Any) -> bool:
     )
 
 
+def _has_tool_result_block(content: Any) -> bool:
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict)
+        and (block.get("type") == "tool_result" or isinstance(block.get("toolResult"), dict))
+        for block in content
+    )
+
+
+def _is_tool_result_message(message: dict[str, Any]) -> bool:
+    return (
+        message.get("role") in {"tool", "toolResult", "tool_result"}
+        or bool(message.get(_EVICTED_RESULT_KEY))
+        or _has_tool_result_block(message.get("content"))
+    )
+
+
 def _candidate_exchange(
     messages: list[dict[str, Any]],
     *,
@@ -129,6 +147,8 @@ def _candidate_exchange(
 
     result_messages = exchange_messages[1:]
     if not result_messages:
+        return None
+    if not all(_is_tool_result_message(message) for message in result_messages):
         return None
     if all(_is_evicted_message(message) for message in result_messages) != evicted:
         return None
@@ -175,11 +195,14 @@ def _tool_exchange_candidates(
             continue
 
         if _has_tool_use_block(message.get("content")):
+            end = index + 1
+            while end < len(messages) and _is_tool_result_message(messages[end]):
+                end += 1
             _append_candidate(
                 candidates,
                 messages,
                 start=index,
-                end=min(index + 2, len(messages)),
+                end=end,
                 message_tokens=message_tokens,
                 evicted=evicted,
             )
@@ -338,13 +361,17 @@ def _trim_lowest_value_tool_pair(
         return None
 
     selected = min(candidates, key=_eviction_priority)
+    stubbed_any = False
     for index in range(selected.start + 1, selected.end):
         stubbed = _stub_tool_result_message(messages[index])
         if stubbed is None:
             continue
         messages[index] = stubbed
+        stubbed_any = True
         if message_tokens is not None:
             message_tokens[index] = _message_token_estimate(stubbed)
+    if not stubbed_any:
+        return None
     return selected.start, selected.end
 
 
