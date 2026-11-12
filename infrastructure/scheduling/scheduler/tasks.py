@@ -237,7 +237,7 @@ def _build_manual_loop(task: ScheduledTask, runners: SchedulerRunners) -> str:
     return _run_agent(task, runners, payload)
 
 
-def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> str:
+def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> TaskReport:
     """Run a pinned recurring action skill via the headless agent path."""
     skill_name = task.skill_name.strip()
     if not skill_name:
@@ -247,15 +247,14 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
     resolved = resolve_scheduled_skill(task.skill_name, task.skill_revision)
     if resolved.repinned:
         _record_followed_revision(task, resolved.revision)
-    return runners.agent(
-        {
-            "source": SCHEDULED_RECURRING_SKILL,
-            "task_id": task.id,
-            "skill_name": task.skill_name,
-            "skill_revision": task.skill_revision,
-            "skill_inputs": dict(task.skill_inputs),
-        }
-    )
+    payload = {
+        "source": SCHEDULED_RECURRING_SKILL,
+        "task_id": task.id,
+        "skill_name": task.skill_name,
+        "skill_revision": task.skill_revision,
+        "skill_inputs": dict(task.skill_inputs),
+    }
+    return _run_agent(task, runners, payload)
 
 
 def _record_followed_revision(task: ScheduledTask, revision: str) -> None:

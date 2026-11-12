@@ -547,3 +547,32 @@ class TestRecurringSkillBuilders:
         assert current is not None
         (stored,) = list_tasks(store_path)
         assert stored.skill_revision == skill_revision(current)
+
+    def test_recurring_skill_failure_raises_run_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        task = ScheduledTask(
+            kind=TaskKind.RECURRING_SKILL,
+            cron="0 8 * * 1-5",
+            provider=Provider.SLACK,
+            chat_id="C123",
+            skill_name="delivering-morning-briefings",
+            skill_revision=f"v2:{_current_major()}:" + "0" * 64,
+        )
+        crash = RuntimeError("provider 503: secret token leak")
+        reported: list[BaseException] = []
+        monkeypatch.setattr(
+            run_failure_mod, "capture_exception", lambda exc, **_: reported.append(exc)
+        )
+
+        def _raise(_payload: dict[str, object]) -> str:
+            raise crash
+
+        with pytest.raises(run_failure_mod.RunFailure) as raised:
+            tasks_mod.build_message(task, runners_with_agent(_raise))
+
+        assert str(raised.value) == (
+            "The run failed on an unexpected error (RuntimeError) before it had a report."
+        )
+        assert raised.value.kind == "message_build_failed"
+        assert reported == [crash]
