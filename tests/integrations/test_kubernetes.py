@@ -353,3 +353,64 @@ def test_describe_pod_includes_container_command_and_args() -> None:
     described = result["spec"]["containers"][0]
     assert described["command"] == ["sh", "-c", "exit 1"]
     assert described["args"] == []
+
+
+def test_kubernetes_config_allowed_namespaces_defaults_empty() -> None:
+    cfg = KubernetesIntegrationConfig.model_validate({"kubeconfig": _MINIMAL_KUBECONFIG})
+    assert cfg.allowed_namespaces == ()
+
+
+def test_kubernetes_config_parses_comma_separated_allowed_namespaces() -> None:
+    cfg = KubernetesIntegrationConfig.model_validate(
+        {"kubeconfig": _MINIMAL_KUBECONFIG, "allowed_namespaces": " prod, staging,,prod , "}
+    )
+    assert cfg.allowed_namespaces == ("prod", "staging")
+
+
+def test_kubernetes_config_rejects_non_list_allowed_namespaces() -> None:
+    with pytest.raises(ValueError, match="allowed_namespaces"):
+        KubernetesIntegrationConfig.model_validate(
+            {"kubeconfig": _MINIMAL_KUBECONFIG, "allowed_namespaces": 5}
+        )
+
+
+def test_classify_preserves_allowed_namespaces() -> None:
+    cfg, service = classify(
+        {"kubeconfig": _MINIMAL_KUBECONFIG, "allowed_namespaces": ["prod", "staging"]},
+        "rec-1",
+    )
+    assert service == "kubernetes"
+    assert cfg is not None
+    assert cfg.allowed_namespaces == ("prod", "staging")
+
+
+def test_env_loader_reads_allowed_namespaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KUBECONFIG_CONTENT", _MINIMAL_KUBECONFIG)
+    monkeypatch.setenv("KUBECONFIG_NAMESPACE", "prod")
+    monkeypatch.setenv("KUBECONFIG_NAMESPACES", "prod,staging")
+    monkeypatch.delenv("KUBECONFIG", raising=False)
+
+    from integrations._catalog_impl import load_env_integrations
+
+    records = [r for r in load_env_integrations() if r.get("service") == "kubernetes"]
+    assert len(records) == 1
+    creds = records[0].get("credentials", {})
+    assert tuple(creds.get("allowed_namespaces")) == ("prod", "staging")
+
+    cfg, _service = classify(creds, "env")
+    assert cfg is not None
+    assert cfg.allowed_namespaces == ("prod", "staging")
+
+
+def test_env_loader_leaves_allowed_namespaces_empty_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("KUBECONFIG_CONTENT", _MINIMAL_KUBECONFIG)
+    monkeypatch.delenv("KUBECONFIG_NAMESPACES", raising=False)
+    monkeypatch.delenv("KUBECONFIG", raising=False)
+
+    from integrations._catalog_impl import load_env_integrations
+
+    records = [r for r in load_env_integrations() if r.get("service") == "kubernetes"]
+    assert len(records) == 1
+    assert tuple(records[0].get("credentials", {}).get("allowed_namespaces", ())) == ()

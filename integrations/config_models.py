@@ -1192,6 +1192,7 @@ class KubernetesIntegrationConfig(StrictConfigModel):
     kubeconfig_path: str = ""
     context: str = ""
     namespace: str = "default"
+    allowed_namespaces: tuple[str, ...] = ()
     integration_id: str = ""
 
     _normalize_strs = field_validator(
@@ -1200,6 +1201,19 @@ class KubernetesIntegrationConfig(StrictConfigModel):
     _normalize_namespace = field_validator("namespace", mode="before")(
         normalize_with_default("default")
     )
+
+    @field_validator("allowed_namespaces", mode="before")
+    @classmethod
+    def _normalize_allowed_namespaces(cls, value: object) -> tuple[str, ...]:
+        if value is None or value == "":
+            return ()
+        if isinstance(value, str):
+            value = value.split(",")
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("allowed_namespaces must be a list or comma-separated string")
+        return tuple(
+            dict.fromkeys(item.strip() for item in value if isinstance(item, str) and item.strip())
+        )
 
     @property
     def is_configured(self) -> bool:
