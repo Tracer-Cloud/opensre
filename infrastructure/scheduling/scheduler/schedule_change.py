@@ -33,7 +33,9 @@ def obsolete_schedule_tick(
                 return True
             target = datetime.fromisoformat(run_at)
             target = target.replace(tzinfo=UTC) if target.tzinfo is None else target
-            return target.astimezone(UTC) != fired_at.astimezone(UTC)
+            return target.astimezone(UTC).replace(microsecond=0) != fired_at.astimezone(
+                UTC
+            ).replace(microsecond=0)
         trigger = build_cron_trigger(task.cron, task.timezone)
         next_fire = trigger.get_next_fire_time(None, fired_at)
         return next_fire is None or next_fire.astimezone(UTC) != fired_at.astimezone(UTC)

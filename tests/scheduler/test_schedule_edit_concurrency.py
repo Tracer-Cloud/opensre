@@ -481,3 +481,18 @@ def test_work_item_reminder_not_obsolete_when_firing_at_scheduled_time() -> None
     assert obsolete_schedule_tick(task, "2026-11-13T10:30:00Z")
     # Fire time before cutover: obsolete
     assert obsolete_schedule_tick(task, "2026-11-12T09:00:00Z")
+
+    # Fractional-second run_at matches automatic second-precision fire-time key
+    fractional_task = ScheduledTask(
+        id="reminder-fractional",
+        kind=TaskKind.WORK_ITEM_REMINDER,
+        cron="",
+        provider=Provider.SLACK,
+        params={
+            "work_item_id": "WI-456",
+            WORK_ITEM_REMINDER_RUN_AT_PARAM: "2026-11-13T10:00:00.500000+00:00",
+            SCHEDULER_SCHEDULE_CHANGED_AT_PARAM: "2026-11-12T10:00:00+00:00",
+        },
+    )
+    assert not obsolete_schedule_tick(fractional_task, "2026-11-13T10:00:00Z")
+    assert obsolete_schedule_tick(fractional_task, "2026-11-13T10:01:00Z")
