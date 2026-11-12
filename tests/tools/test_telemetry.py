@@ -257,13 +257,41 @@ def _azure_case() -> ToolFailureCase:
     return ToolFailureCase("azure_monitor_logs", patch, invoke, "query_azure_monitor_logs", "azure")
 
 
-def _openobserve_case() -> ToolFailureCase:
+def _openobserve_case(tool_name: str) -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.openobserve.tools import openobserve_logs_tool as mod
+        from integrations.openobserve.tools import _helpers as mod
 
-        mp.setattr(mod, "httpx", SimpleNamespace(post=MagicMock(side_effect=RuntimeError("net"))))
+        mp.setattr(
+            mod,
+            "httpx",
+            SimpleNamespace(
+                post=MagicMock(side_effect=RuntimeError("net")),
+                get=MagicMock(side_effect=RuntimeError("net")),
+            ),
+        )
 
     def invoke() -> dict[str, Any]:
+        if tool_name == "query_openobserve_metrics":
+            from integrations.openobserve.tools.openobserve_metrics_tool import (
+                query_openobserve_metrics,
+            )
+
+            return query_openobserve_metrics(
+                base_url="https://oo.example", promql="up", api_token="t"
+            )
+        if tool_name == "query_openobserve_traces":
+            from integrations.openobserve.tools.openobserve_traces_tool import (
+                query_openobserve_traces,
+            )
+
+            return query_openobserve_traces(base_url="https://oo.example", api_token="t")
+        if tool_name == "list_openobserve_streams":
+            from integrations.openobserve.tools.openobserve_streams_tool import (
+                list_openobserve_streams,
+            )
+
+            return list_openobserve_streams(base_url="https://oo.example", api_token="t")
+
         from integrations.openobserve.tools.openobserve_logs_tool import query_openobserve_logs
 
         return query_openobserve_logs(
@@ -274,9 +302,7 @@ def _openobserve_case() -> ToolFailureCase:
             api_token="t",
         )
 
-    return ToolFailureCase(
-        "openobserve_logs", patch, invoke, "query_openobserve_logs", "openobserve"
-    )
+    return ToolFailureCase(tool_name, patch, invoke, tool_name, "openobserve")
 
 
 def _snowflake_case() -> ToolFailureCase:
@@ -934,7 +960,10 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _ci_repair_demo_case("finish_ci_repair_demo"),
     _probe_github_repair_access_case(),
     _run_ci_repair_demo_case(),
-    _openobserve_case(),
+    _openobserve_case("query_openobserve_logs"),
+    _openobserve_case("query_openobserve_metrics"),
+    _openobserve_case("query_openobserve_traces"),
+    _openobserve_case("list_openobserve_streams"),
     _snowflake_case(),
     _cloudwatch_logs_case(),
     _cloudwatch_batch_case(),
@@ -1130,6 +1159,9 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         # HTTP / cloud sites from #1463
         "query_azure_monitor_logs",
         "query_openobserve_logs",
+        "query_openobserve_metrics",
+        "query_openobserve_traces",
+        "list_openobserve_streams",
         "query_snowflake_history",
         "get_cloudwatch_logs",
         "get_cloudwatch_batch_metrics",

@@ -1715,6 +1715,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "username": openobserve_username,
                     "password": openobserve_password,
                     "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
+                    "trace_stream": os.getenv("OPENOBSERVE_TRACE_STREAM", "").strip(),
                     "max_results": safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
                 },
             )

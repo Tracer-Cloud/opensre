@@ -736,8 +736,9 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `OPENOBSERVE_USERNAME` |  | OpenObserve username |
 | `OPENOBSERVE_PASSWORD` |  | OpenObserve password |
 | `OPENOBSERVE_ORG` | `default` | OpenObserve organization |
-| `OPENOBSERVE_STREAM` |  | OpenObserve stream |
-| `OPENOBSERVE_MAX_RESULTS` | `100` | Max OpenObserve results |
+| `OPENOBSERVE_STREAM` |  | OpenObserve default stream and trace-stream fallback |
+| `OPENOBSERVE_TRACE_STREAM` |  | OpenObserve trace-specific stream; takes precedence over `OPENOBSERVE_STREAM` |
+| `OPENOBSERVE_MAX_RESULTS` | `100` | Max OpenObserve results; tools also enforce a hard cap of 200 |
 | `VICTORIA_LOGS_URL` |  | VictoriaLogs instance URL |
 | `VICTORIA_LOGS_TENANT_ID` |  | VictoriaLogs tenant ID |
 | `CLICKHOUSE_HOST` |  | ClickHouse host |
