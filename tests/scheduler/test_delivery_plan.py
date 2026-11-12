@@ -103,6 +103,29 @@ class TestDeliveryPlan:
         assert plan.targets == ()
         assert "carrier_pigeon" in plan.error
 
+    def test_secondary_channel_does_not_inherit_foreign_primary_chat_id(self) -> None:
+        task = _task(
+            provider=Provider.SLACK,
+            chat_id="C12345",
+            params={LOOP_CHANNELS_PARAM: "slack,discord"},
+        )
+        plan = resolve_delivery_plan(task)
+        destinations = [(t.provider, t.chat_id) for t in plan.targets]
+        assert (Provider.DISCORD, "") in destinations
+        assert (Provider.DISCORD, "C12345") not in destinations
+
+    def test_retry_filter_matches_secondary_channel_destinations(self) -> None:
+        task = _task(
+            provider=Provider.SLACK,
+            chat_id="C12345",
+            params={LOOP_CHANNELS_PARAM: "slack,discord"},
+        )
+        keys = configured_target_keys(task)
+        discord_keys = frozenset([k for k in keys if k[0] == Provider.DISCORD])
+        retry_plan = resolve_delivery_plan(task, only=discord_keys)
+        assert not retry_plan.error
+        assert [(t.provider, t.chat_id) for t in retry_plan.targets] == [(Provider.DISCORD, "")]
+
 
 class TestLoopSlackChannel:
     """Where a loop's Slack channel posts when the primary provider is not Slack."""
