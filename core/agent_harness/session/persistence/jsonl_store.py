@@ -18,7 +18,11 @@ from filelock import FileLock, Timeout
 
 from config.constants.session_store import OPENSRE_SESSION_FILE_LOCK_ENV
 from config.version import get_opensre_version
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, SessionPersistenceSource
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    SessionPersistenceSource,
+    is_chat_message_record,
+)
 from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.observability.operations_log import record_operation
 from infrastructure.observability.trace.decisions import record_decision
@@ -611,7 +615,7 @@ class JsonlSessionStore:
                 )
         if trailing_leaf:
             return
-        if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
+        if session.agent.messages and not any(is_chat_message_record(rec) for rec in records):
             for role, content in session.agent.messages:
                 self.append_message(
                     session.session_id,

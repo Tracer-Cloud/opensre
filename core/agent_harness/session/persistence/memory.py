@@ -6,7 +6,10 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from core.agent_harness.session.persistence.contracts import SessionPersistenceSource
+from core.agent_harness.session.persistence.contracts import (
+    SessionPersistenceSource,
+    is_chat_message_record,
+)
 
 
 def _now() -> str:
@@ -275,7 +278,7 @@ class InMemorySessionStore:
                 records = self._files.get(session.session_id, records)
         if trailing_leaf:
             return
-        if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
+        if session.agent.messages and not any(is_chat_message_record(rec) for rec in records):
             for role, content in session.agent.messages:
                 self._append(
                     session.session_id,

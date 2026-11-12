@@ -49,6 +49,15 @@ CARRIED_MESSAGE_METADATA_KEY = "carried"
 # cover all kinds that produce conversational turns.
 CHAT_KINDS: frozenset[str] = frozenset({"chat", "cli_agent", "follow_up"})
 
+
+def is_chat_message_record(rec: dict[str, Any]) -> bool:
+    """Return True if rec is a conversational message (not a debug trace)."""
+    if rec.get("type") != "message":
+        return False
+    metadata = rec.get("metadata")
+    return not (isinstance(metadata, dict) and metadata.get("debug") == "system_prompt")
+
+
 # A single JSONL entry carrying the goal and task-plan snapshots changed by a
 # durable goal control.  Restore treats it as an atomic pair.
 SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE = "session_goal_control_state"
