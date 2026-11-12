@@ -588,10 +588,13 @@ def test_drop_session_during_active_turn_preserves_lock_serialization(
 
     t1 = threading.Thread(target=first_turn)
     t1.start()
-    entered_first.wait(timeout=1.0)
+    assert entered_first.wait(timeout=2.0), "First turn did not enter in time"
+    original_lock = pool._session_locks[session_id]
 
     # drop_session invoked mid-turn while session has active claims
     pool.drop_session(session_id)
+    # The lock object must be preserved while active claims exist
+    assert pool._session_locks.get(session_id) is original_lock
 
     def second_turn() -> None:
         nonlocal concurrent_entry
