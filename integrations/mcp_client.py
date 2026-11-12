@@ -207,12 +207,19 @@ def tool_result_to_dict(result: types.CallToolResult) -> dict[str, object]:
     }
 
 
-async def list_all_tools_on_session(session: ClientSession) -> list[types.Tool]:
+_MAX_TOOL_PAGES = 100
+
+
+async def list_all_tools_on_session(
+    session: ClientSession, *, max_pages: int = _MAX_TOOL_PAGES
+) -> list[types.Tool]:
     """List all MCP tools from a session, following next_cursor pagination."""
     tools: list[types.Tool] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
-    while True:
+    pages = 0
+    while pages < max_pages:
+        pages += 1
         params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
         result = (
             await session.list_tools(params=params)

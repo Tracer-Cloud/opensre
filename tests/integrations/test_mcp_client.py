@@ -137,14 +137,38 @@ async def test_list_all_tools_stops_on_repeated_cursor() -> None:
 
     class _LoopSession:
         async def list_tools(
-            self, _params: types.PaginatedRequestParams | None = None
+            self, params: types.PaginatedRequestParams | None = None
         ) -> types.ListToolsResult:
+            _ = params
             return page_loop
 
     session = _LoopSession()
     tools = await mcp_client.list_all_tools_on_session(cast(Any, session))
 
     assert [t.name for t in tools] == ["tool_loop", "tool_loop"]
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_stops_at_max_pages() -> None:
+    counter = 0
+
+    class _EndlessSession:
+        async def list_tools(
+            self, params: types.PaginatedRequestParams | None = None
+        ) -> types.ListToolsResult:
+            nonlocal counter
+            _ = params
+            counter += 1
+            return types.ListToolsResult(
+                tools=[types.Tool(name=f"tool_{counter}", input_schema={})],
+                next_cursor=f"cursor_{counter}",
+            )
+
+    session = _EndlessSession()
+    tools = await mcp_client.list_all_tools_on_session(cast(Any, session), max_pages=3)
+
+    assert len(tools) == 3
+    assert counter == 3
 
 
 def test_shared_client_keeps_vendor_timeout_copy_for_chained_timeout() -> None:
