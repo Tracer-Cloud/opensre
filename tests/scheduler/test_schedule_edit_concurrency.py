@@ -11,6 +11,7 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from config.constants.scheduler import SCHEDULER_SCHEDULE_CHANGED_AT_PARAM
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler import executor, loops, runner, tasks
@@ -460,3 +461,23 @@ def test_current_trigger_accepts_both_dst_fold_ticks_and_rejects_old_slot() -> N
     assert not obsolete_schedule_tick(task, "2026-10-25T00:30:00Z")
     assert not obsolete_schedule_tick(task, "2026-10-25T01:30:00Z")
     assert obsolete_schedule_tick(task, "2026-10-25T01:45:00Z")
+
+
+def test_work_item_reminder_not_obsolete_when_firing_at_scheduled_time() -> None:
+    task = ScheduledTask(
+        id="reminder-1",
+        kind=TaskKind.WORK_ITEM_REMINDER,
+        cron="",
+        provider=Provider.SLACK,
+        params={
+            "work_item_id": "WI-123",
+            WORK_ITEM_REMINDER_RUN_AT_PARAM: "2026-11-13T10:00:00+00:00",
+            SCHEDULER_SCHEDULE_CHANGED_AT_PARAM: "2026-11-12T10:00:00+00:00",
+        },
+    )
+    # Matching scheduled time in future: valid, not obsolete
+    assert not obsolete_schedule_tick(task, "2026-11-13T10:00:00Z")
+    # Mismatched fire time in future: obsolete
+    assert obsolete_schedule_tick(task, "2026-11-13T10:30:00Z")
+    # Fire time before cutover: obsolete
+    assert obsolete_schedule_tick(task, "2026-11-12T09:00:00Z")
