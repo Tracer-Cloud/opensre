@@ -6,7 +6,7 @@ from typing import Any
 
 import integrations.kubernetes.tools._shared as _shared
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.kubernetes.tools._namespace_allowlist import (
     effective_allowed_namespaces,
@@ -19,6 +19,8 @@ class KubernetesListPodsTool(BaseTool):
 
     name = "kubernetes_list_pods"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List pods in a Kubernetes namespace. Returns pod phase, container readiness, "
         "restart counts, and node assignment. Use to detect crash-looping or pending pods."

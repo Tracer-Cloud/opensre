@@ -6,7 +6,7 @@ from typing import Any
 
 import integrations.kubernetes.tools._shared as _shared
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 
 
@@ -15,6 +15,8 @@ class KubernetesListNodesTool(BaseTool):
 
     name = "kubernetes_list_nodes"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List all nodes in the Kubernetes cluster with their readiness conditions, "
         "CPU/memory capacity and allocatable resources, and taints. "

@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from core.tool_framework.utils import tool_access_denied
-from integrations.kubernetes.client import _RESOURCE_DISPATCH
+from integrations.kubernetes.resources import RESOURCE_DISPATCH
 
 
 def effective_allowed_namespaces(k8s: dict[str, Any]) -> tuple[str, ...]:
@@ -16,7 +16,7 @@ def effective_allowed_namespaces(k8s: dict[str, Any]) -> tuple[str, ...]:
 
 def is_cluster_scoped(resource_type: str) -> bool:
     key = resource_type.lower()
-    entry = _RESOURCE_DISPATCH.get(key) or _RESOURCE_DISPATCH.get(key.rstrip("s"))
+    entry = RESOURCE_DISPATCH.get(key) or RESOURCE_DISPATCH.get(key.rstrip("s"))
     return bool(entry and entry[2])
 
 

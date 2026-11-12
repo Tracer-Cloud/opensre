@@ -6,7 +6,7 @@ from typing import Any
 
 import integrations.kubernetes.tools._shared as _shared
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.kubernetes.tools._namespace_allowlist import (
     effective_allowed_namespaces,
@@ -19,6 +19,8 @@ class KubernetesDescribePodTool(BaseTool):
 
     name = "kubernetes_describe_pod"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "Fetch the full spec and status for a single pod: containers, images, resource "
         "requests/limits, environment variables (values redacted, keys only), volume "

@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.tool_framework.utils import tool_unavailable
 from integrations.config_models import KubernetesIntegrationConfig
-from integrations.kubernetes.client import _RESOURCE_DISPATCH, KubernetesClient
+from integrations.kubernetes.resources import RESOURCE_DISPATCH
 
-RESOURCE_TYPE_ENUM: list[str] = sorted(_RESOURCE_DISPATCH.keys())
+if TYPE_CHECKING:
+    from integrations.kubernetes.client import KubernetesClient
+
+RESOURCE_TYPE_ENUM: list[str] = sorted(RESOURCE_DISPATCH.keys())
 
 
 def make_client(sources: dict[str, Any]) -> KubernetesClient | None:
@@ -17,6 +20,10 @@ def make_client(sources: dict[str, Any]) -> KubernetesClient | None:
     kubeconfig_path = k8s.get("kubeconfig_path", "")
     if not kubeconfig and not kubeconfig_path:
         return None
+    # The SDK loads with the first client, not with the tool definitions the
+    # registry imports at launch.
+    from integrations.kubernetes.client import KubernetesClient
+
     try:
         cfg = KubernetesIntegrationConfig.model_validate(
             {

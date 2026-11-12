@@ -6,7 +6,7 @@ from typing import Any
 
 import integrations.kubernetes.tools._shared as _shared
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.kubernetes.tools._namespace_allowlist import (
     effective_allowed_namespaces,
@@ -19,6 +19,8 @@ class KubernetesListDaemonSetsTool(BaseTool):
 
     name = "kubernetes_list_daemonsets"
     source = "kubernetes"
+    side_effect_level = SideEffectLevel.READ_ONLY
+    concurrency_safe = True
     description = (
         "List DaemonSets in a Kubernetes namespace with desired, current, ready, "
         "up-to-date, and available counts per node. "
