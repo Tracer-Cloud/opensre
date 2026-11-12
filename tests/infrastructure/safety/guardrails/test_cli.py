@@ -164,8 +164,10 @@ class TestCmdTest:
 
         cmd_test("val=super_secret_token")
         out = capsys.readouterr().out
-        assert "Redacted output: val=[REDACTED:outer]" in out
-        assert "ner_token" not in out
+        redacted_lines = [
+            line.strip() for line in out.splitlines() if line.strip().startswith("Redacted output:")
+        ]
+        assert redacted_lines == ["Redacted output: val=[REDACTED:outer]"]
 
     def test_honors_configured_rule_replacement(
         self,
@@ -195,7 +197,10 @@ class TestCmdTest:
 
         cmd_test("val=secret123")
         out = capsys.readouterr().out
-        assert "Redacted output: val=[CUSTOM_MASK]" in out
+        redacted_lines = [
+            line.strip() for line in out.splitlines() if line.strip().startswith("Redacted output:")
+        ]
+        assert redacted_lines == ["Redacted output: val=[CUSTOM_MASK]"]
 
 
 class TestCmdRules:
