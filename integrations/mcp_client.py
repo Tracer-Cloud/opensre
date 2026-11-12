@@ -207,12 +207,37 @@ def tool_result_to_dict(result: types.CallToolResult) -> dict[str, object]:
     }
 
 
+async def list_all_tools_on_session(session: ClientSession) -> list[types.Tool]:
+    """List all MCP tools from a session, following next_cursor pagination."""
+    tools: list[types.Tool] = []
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    while True:
+        params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
+        result = (
+            await session.list_tools(params=params)
+            if params is not None
+            else await session.list_tools()
+        )
+        tools.extend(result.tools)
+        next_cursor = getattr(result, "next_cursor", None) or getattr(result, "nextCursor", None)
+        if (
+            not isinstance(next_cursor, str)
+            or not next_cursor.strip()
+            or next_cursor in seen_cursors
+        ):
+            break
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    return tools
+
+
 async def _list_tools_async(
     config: McpClientConfig,
     **session_options: Unpack[McpSessionOptions],
 ) -> list[types.Tool]:
     async with open_mcp_session(config, **session_options) as session:
-        return list((await session.list_tools()).tools)
+        return await list_all_tools_on_session(session)
 
 
 def list_mcp_tools(

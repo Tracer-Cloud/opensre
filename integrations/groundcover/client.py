@@ -25,6 +25,7 @@ import mcp_types as types
 
 from infrastructure.observability.errors.service import capture_service_error
 from integrations.groundcover.config import GroundcoverIntegrationConfig
+from integrations.mcp_client import list_all_tools_on_session
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.probes import ProbeResult
 
@@ -199,8 +200,8 @@ class GroundcoverClient:
 
     async def _list_tools_async(self) -> list[str]:
         async def _op(session: ClientSession) -> list[str]:
-            result = await session.list_tools()
-            return [tool.name for tool in result.tools]
+            tools = await list_all_tools_on_session(session)
+            return [tool.name for tool in tools]
 
         return await self._with_connect_retry(_op)
 

@@ -100,6 +100,53 @@ def test_shared_client_normalizes_list_and_tool_results(monkeypatch: pytest.Monk
     }
 
 
+@pytest.mark.asyncio
+async def test_list_all_tools_follows_next_cursor_pagination() -> None:
+    page1 = types.ListToolsResult(
+        tools=[types.Tool(name="tool_1", input_schema={})],
+        next_cursor="page_2",
+    )
+    page2 = types.ListToolsResult(
+        tools=[types.Tool(name="tool_2", input_schema={})],
+        next_cursor=None,
+    )
+    recorded_params: list[types.PaginatedRequestParams | None] = []
+
+    class _PaginatedSession:
+        async def list_tools(
+            self, params: types.PaginatedRequestParams | None = None
+        ) -> types.ListToolsResult:
+            recorded_params.append(params)
+            return page1 if params is None else page2
+
+    session = _PaginatedSession()
+    tools = await mcp_client.list_all_tools_on_session(cast(Any, session))
+
+    assert [t.name for t in tools] == ["tool_1", "tool_2"]
+    assert len(recorded_params) == 2
+    assert recorded_params[0] is None
+    assert recorded_params[1] is not None and recorded_params[1].cursor == "page_2"
+
+
+@pytest.mark.asyncio
+async def test_list_all_tools_stops_on_repeated_cursor() -> None:
+    page_loop = types.ListToolsResult(
+        tools=[types.Tool(name="tool_loop", input_schema={})],
+        next_cursor="same_page",
+    )
+
+    class _LoopSession:
+        async def list_tools(
+            self, _params: types.PaginatedRequestParams | None = None
+        ) -> types.ListToolsResult:
+            return page_loop
+
+    session = _LoopSession()
+    tools = await mcp_client.list_all_tools_on_session(cast(Any, session))
+
+    assert [t.name for t in tools] == ["tool_loop", "tool_loop"]
+
+
 def test_shared_client_keeps_vendor_timeout_copy_for_chained_timeout() -> None:
     outer = RuntimeError("request failed")
     outer.__cause__ = TimeoutError()
