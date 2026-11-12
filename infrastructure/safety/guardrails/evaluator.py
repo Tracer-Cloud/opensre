@@ -164,7 +164,12 @@ class GuardrailEvaluator:
         if result.blocked:
             raise GuardrailBlockedError(result.blocking_rules)
 
-        return self._redact(text, result.matches)
+        return self.redact(text, result.matches)
+
+    def redact(self, text: str, matches: tuple[ScanMatch, ...] | None = None) -> str:
+        """Apply redactions to ``text`` by merging overlapping match intervals."""
+        scan_matches = matches if matches is not None else self.scan(text).matches
+        return self._redact(text, scan_matches)
 
     def _redact(self, text: str, matches: tuple[ScanMatch, ...]) -> str:
         """Apply redactions to ``text`` by merging overlapping match intervals.

@@ -140,6 +140,63 @@ class TestCmdTest:
         cmd_test("nothing sensitive")
         assert "No matches" in capsys.readouterr().out
 
+    def test_redacts_overlapping_matches_without_corrupting_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        config = tmp_path / "guardrails.yml"
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {"name": "outer", "action": "redact", "keywords": ["super_secret_token"]},
+                        {"name": "inner", "action": "redact", "keywords": ["secret_token"]},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "infrastructure.safety.guardrails.cli.get_default_rules_path", lambda: config
+        )
+
+        cmd_test("val=super_secret_token")
+        out = capsys.readouterr().out
+        assert "Redacted output: val=[REDACTED:outer]" in out
+        assert "ner_token" not in out
+
+    def test_honors_configured_rule_replacement(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        config = tmp_path / "guardrails.yml"
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {
+                            "name": "token",
+                            "action": "redact",
+                            "keywords": ["secret123"],
+                            "replacement": "[CUSTOM_MASK]",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "infrastructure.safety.guardrails.cli.get_default_rules_path", lambda: config
+        )
+
+        cmd_test("val=secret123")
+        out = capsys.readouterr().out
+        assert "Redacted output: val=[CUSTOM_MASK]" in out
+
 
 class TestCmdRules:
     def test_lists_configured_rules(
