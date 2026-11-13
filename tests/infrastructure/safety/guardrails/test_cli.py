@@ -218,3 +218,15 @@ class TestCmdAudit:
 
         cmd_audit(limit=10)
         assert "No audit entries" in capsys.readouterr().out
+
+    def test_guardrails_audit_cli_rejects_non_positive_limit(self) -> None:
+        from click.testing import CliRunner
+
+        from surfaces.cli.commands.guardrails import guardrails
+
+        runner = CliRunner()
+        for invalid in ["0", "-1", "-10"]:
+            result = runner.invoke(guardrails, ["audit", "--limit", invalid])
+            assert result.exit_code == 2
+            assert "Invalid value for '--limit' / '-n'" in result.output
+            assert "is not in the range x>=1" in result.output

@@ -49,6 +49,8 @@ class AuditLogger:
 
     def read_entries(self, *, limit: int = 100) -> list[dict[str, Any]]:
         """Read the most recent audit entries."""
+        if limit <= 0:
+            return []
         if not self._path.exists():
             return []
         try:

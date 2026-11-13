@@ -1,53 +1,55 @@
 """OpenSRE process entrypoint.
 
-Prefer the ``opensre`` console script in normal use. This module exists so
-``python main.py`` and ``python -m`` discovery reach the same CLI as
-``surfaces.entrypoint:main``.
+Prefer the ``opensre`` console script. ``python main.py`` and
+``python -m surfaces`` call the same :func:`surfaces.entrypoint.main`.
+``python -m surfaces.cli`` runs the command surface alone, without the shell.
 
-This covers the interactive shell, the landing page, and every one-shot
-subcommand. The gateway daemon is a separate process entry managed via
-``opensre gateway start`` (CLI wires slash ports). Bare ``python -m gateway``
-fails closed — ``gateway`` and ``surfaces`` are peer packages that must not
-import each other.
+A bare ``opensre`` on a terminal opens the interactive shell; otherwise it
+prints the landing page. ``opensre <command>`` runs that one-shot command.
+``opensre gateway start`` is the production gateway entry. This composition
+root supplies the slash ports, and the daemon child is
+``python -m surfaces.gateway_entry`` (or ``opensre gateway start --foreground``
+when this process is the ``opensre`` launcher or a frozen binary). Bare
+``python -m gateway`` exits: that module has no slash-port glue, and
+``gateway`` must not import ``surfaces``.
 
-Shared process setup — environment, error reporting, adapter registration —
-lives in ``infrastructure.process.boot``. Each host picks a profile rather than
-repeating the order: this CLI uses ``CLI_PROFILE`` (via ``surfaces.cli.startup``),
-the gateway ``GATEWAY_PROFILE``, the web app ``WEB_PROFILE``.
+Profiles and step order live in :mod:`infrastructure.process.boot`. The host
+that may import both ``tools`` and ``integrations`` runs them:
+``surfaces.shared.process_boot.configure_process`` for the CLI, shell, and
+embedded sessions, and ``gateway.core.process.boot.configure_process`` for
+the gateway and web app. This CLI passes ``CLI_PROFILE`` from
+``surfaces.cli.startup`` (environment and the skills pull); Sentry and the
+Rich product adapters stay in that module. The gateway passes
+``GATEWAY_PROFILE``. The web app passes ``WEB_PROFILE``.
 
-Driving the agent from Python instead of the CLI::
+Driving the agent from Python::
 
-    from core.agent_harness import AgentSession
-    from infrastructure.process.boot import EMBEDDED_PROFILE
-    from surfaces.shared.process_boot import configure_process
+    from surfaces.embedded import start_embedded_session
 
-    configure_process(EMBEDDED_PROFILE)
-
-    session = AgentSession.start()  # one agent for this logical session
+    session = start_embedded_session()  # EMBEDDED_PROFILE, then one agent
     result = session.chat("why is checkout-api slow?")
-    if result.answered:
-        print(result.primary_response_text)
     follow = session.chat("what should we check next?")  # same agent, next turn
 
-``configure_process`` comes first and is what registers the harness adapters
-tools resolve through; ``AgentSession.start()`` only loads the environment, so
-on its own the agent starts but no tool is available. It cannot self-bootstrap —
-``core`` sits below ``surfaces`` in the layer contract, so the caller wires it.
-``EMBEDDED_PROFILE`` deliberately leaves Sentry and LLM preloading to the host
-process.
+``start_embedded_session`` runs
+``surfaces.shared.process_boot.configure_process(EMBEDDED_PROFILE)`` and then
+``AgentSession.start``. ``start`` opens a session and attaches an agent with
+the standard ports. ``core`` may not import the hosts above it, so the caller
+registers adapters first; without that boot the agent starts and no tool is
+available. ``EMBEDDED_PROFILE`` loads the environment and the harness
+adapters, and leaves error reporting, LLM client preloading, and scheduling
+to the host.
 
-``start()`` opens a session and attaches an agent with the standard ports. Check
-``result.answered`` before trusting the text — on a failed turn (e.g. the LLM
-provider is unreachable) the error message itself lands in
-``primary_response_text``. Surfaces that need their own ports — a live gateway
-sink, a REPL console — build a ``HeadlessAgent`` (or
-``DefaultHeadlessBuild(...).agent(...)``) and call ``attach_agent``, then ``chat``.
+``answered`` means ``primary_response_text`` is non-empty. A failed model
+call still fills that text, with ``action_result.accounting_status``
+``"not_run"`` and ``stop_reason`` ``"error"``. ``cancelled`` is a host stop.
+A caller that needs its own sink builds
+``DefaultHeadlessBuild(...).agent(...)``, then calls ``attach_agent`` and
+``chat``. The gateway and the interactive shell share ``TurnRunner`` and
+``SessionAgentPool``: one ``HeadlessAgent`` per session, ``bind_turn``, then
+``handle``.
 
-Construct **one** agent per logical session (or scheduled loop), then many
-``chat`` turns — do not rebuild every message. Gateway does
-this via ``SessionAgentPool`` + ``bind_turn``. There is no
-``dispatch_message_to_headless_agent`` free function, and no ``AgentHarness``
-alias — ``AgentSession`` is the only name.
+Construct one agent per logical session (or scheduled loop), then many turns.
+``AgentSession`` is the host API (``start`` / ``chat``).
 """
 
 from __future__ import annotations
