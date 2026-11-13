@@ -100,6 +100,136 @@ Store credentials use `base_url` and `api_token` (not `url` / `token`). For user
 | `query_openobserve_traces` | Bounded read-only span retrieval by trace ID or custom SQL |
 | `list_openobserve_streams` | Bounded read-only discovery of log, metric, and trace streams |
 
+## Example integration flow
+
+This walkthrough shows the integration commands you run to confirm OpenObserve is connected, and the tool calls the agent makes once it is.
+
+### Integration commands
+
+```bash
+# List every configured integration and its source (local store or web app)
+opensre integrations list
+
+# Show the stored record for OpenObserve, including credentials shape
+opensre integrations show openobserve
+
+# Confirm the configuration has the required URL and auth before querying
+opensre integrations verify openobserve
+```
+
+Example output of `opensre integrations verify openobserve`:
+
+```
+SERVICE        SOURCE      STATUS   DETAIL
+openobserve    local env   passed   Configured for OpenObserve at https://openobserve.example.com
+```
+
+### Example tool calls
+
+The four tools are invoked by the agent inside a chat session. Credentials injected from the connected integration are omitted below for brevity.
+
+**Discover streams before querying** — `list_openobserve_streams`:
+
+```json
+{
+  "org": "default"
+}
+```
+
+```json
+{
+  "source": "openobserve",
+  "available": true,
+  "org": "default",
+  "total_returned": 2,
+  "effective_limit": 50,
+  "streams": [
+    {"name": "logs", "type": "logs"},
+    {"name": "traces", "type": "traces"}
+  ]
+}
+```
+
+**Query recent error logs** — `query_openobserve_logs`:
+
+```json
+{
+  "org": "default",
+  "stream": "logs",
+  "query": "SELECT * FROM \"logs\" WHERE level = 'error' ORDER BY _timestamp DESC",
+  "time_range_minutes": 15,
+  "max_results": 20
+}
+```
+
+```json
+{
+  "source": "openobserve",
+  "available": true,
+  "org": "default",
+  "stream": "logs",
+  "total_returned": 2,
+  "effective_limit": 20,
+  "records": [
+    {"level": "error", "message": "connection refused", "_timestamp": 1739376000000000},
+    {"level": "error", "message": "timeout exceeded", "_timestamp": 1739375900000000}
+  ]
+}
+```
+
+**Evaluate a metric range** — `query_openobserve_metrics` (PromQL with a 30-second step):
+
+```json
+{
+  "org": "default",
+  "promql": "rate(http_requests_total[5m])",
+  "step_seconds": 30,
+  "time_range_minutes": 60
+}
+```
+
+```json
+{
+  "source": "openobserve",
+  "available": true,
+  "org": "default",
+  "promql": "rate(http_requests_total[5m])",
+  "total_returned": 1,
+  "effective_limit": 50,
+  "records": [
+    {
+      "metric": {"__name__": "http_requests_total"},
+      "values": [[1739375700, "12.5"], [1739375730, "13.1"]]
+    }
+  ]
+}
+```
+
+**Inspect a single trace** — `query_openobserve_traces`:
+
+```json
+{
+  "org": "default",
+  "trace_id": "abc123",
+  "stream": "traces",
+  "max_results": 10
+}
+```
+
+```json
+{
+  "source": "openobserve",
+  "available": true,
+  "org": "default",
+  "trace_id": "abc123",
+  "total_returned": 1,
+  "effective_limit": 10,
+  "records": [
+    {"trace_id": "abc123", "span_id": "span-1", "service_name": "api", "_timestamp": 1739376000000000}
+  ]
+}
+```
+
 ## Verify
 
 ```bash
