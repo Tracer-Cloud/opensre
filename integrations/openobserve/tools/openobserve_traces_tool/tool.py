@@ -39,8 +39,10 @@ def _build_trace_query(trace_id: str, query: str, stream: str) -> str:
     trace_name = trace_id.strip()
     stream_name = stream.strip() or _DEFAULT_TRACE_STREAM
     if trace_name:
+        # 单引号在 SQL 字符串字面量中通过双写转义。
+        escaped_trace_name = trace_name.replace("'", "''")
         return (
-            f"SELECT * FROM \"{stream_name}\" WHERE trace_id = '{trace_name}' "
+            f"SELECT * FROM \"{stream_name}\" WHERE trace_id = '{escaped_trace_name}' "
             f"ORDER BY _timestamp DESC"
         )
     return f'SELECT * FROM "{stream_name}" ORDER BY _timestamp DESC'

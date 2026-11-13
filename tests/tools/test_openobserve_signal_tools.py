@@ -253,6 +253,18 @@ def test_traces_request_payload_response_and_basic_auth(
     assert result["records"] == spans[:2]
 
 
+def test_traces_trace_id_escapes_sql_single_quotes(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = _capture_post(monkeypatch, MockHttpxResponse({"hits": []}))
+    trace_id = "abc' OR '1'='1"
+
+    result = query_openobserve_traces(base_url=BASE_URL, trace_id=trace_id, api_token="token")
+
+    assert captured["payload"]["query"]["sql"] == (
+        "SELECT * FROM \"traces\" WHERE trace_id = 'abc'' OR ''1''=''1' ORDER BY _timestamp DESC"
+    )
+    assert result["trace_id"] == trace_id
+
+
 def test_traces_custom_sql_uses_default_stream(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _capture_post(monkeypatch, MockHttpxResponse({"hits": []}))
     sql = "SELECT * FROM \"custom_traces\" WHERE service_name = 'api'"
