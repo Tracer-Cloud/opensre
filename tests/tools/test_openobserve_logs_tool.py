@@ -126,7 +126,7 @@ def test_extract_params_strips_and_uses_defaults() -> None:
     assert params["password"] == ""
     assert params["time_range_minutes"] == 60  # default
     assert params["limit"] == 50
-    assert params["max_results"] == 100  # _DEFAULT_MAX_RESULTS
+    assert params["max_results"] == 100  # OPENOBSERVE_MAX_RESULTS_DEFAULT
     assert params["integration_id"] == "oo-1"
 
 
@@ -183,9 +183,7 @@ def test_uses_bearer_authorization_when_api_token_present(
         captured["headers"] = headers
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -205,9 +203,7 @@ def test_uses_basic_authorization_when_only_username_password_present(
         captured["headers"] = headers
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -226,9 +222,7 @@ def test_bearer_takes_precedence_over_basic(monkeypatch: pytest.MonkeyPatch) -> 
         captured["headers"] = headers
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -253,9 +247,7 @@ def test_endpoint_uses_default_org_when_blank(monkeypatch: pytest.MonkeyPatch) -
         captured["url"] = url
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid/",  # trailing slash should be stripped
@@ -273,9 +265,7 @@ def test_endpoint_includes_provided_org(monkeypatch: pytest.MonkeyPatch) -> None
         captured["url"] = url
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -293,9 +283,7 @@ def test_default_sql_used_when_query_blank(monkeypatch: pytest.MonkeyPatch) -> N
         captured["payload"] = json
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -314,9 +302,7 @@ def test_provided_query_is_passed_through(monkeypatch: pytest.MonkeyPatch) -> No
         captured["payload"] = json
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -335,9 +321,7 @@ def test_payload_includes_size_and_time_window(monkeypatch: pytest.MonkeyPatch) 
         captured["payload"] = json
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -365,9 +349,7 @@ def test_stream_name_only_included_when_provided(monkeypatch: pytest.MonkeyPatch
         captured.append(json)
         return MockHttpxResponse({"hits": []})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     # Without stream - needs an explicit query since an empty stream can no
     # longer build a default one (see test_no_stream_and_no_query_is_unavailable)
@@ -395,9 +377,7 @@ def test_bounded_limit_caps_caller_request(monkeypatch: pytest.MonkeyPatch) -> N
         captured["size"] = json["size"]
         return MockHttpxResponse({"hits": [{"message": f"m{idx}"} for idx in range(50)]})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -421,9 +401,7 @@ def test_records_from_top_level_hits_list(monkeypatch: pytest.MonkeyPatch) -> No
     def _fake_post(*_args: Any, **_kwargs: Any) -> MockHttpxResponse:
         return MockHttpxResponse({"hits": [{"a": 1}, {"a": 2}]})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -446,9 +424,7 @@ def test_records_from_elastic_style_nested_hits(monkeypatch: pytest.MonkeyPatch)
             }
         )
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -462,9 +438,7 @@ def test_records_from_records_field(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_post(*_args: Any, **_kwargs: Any) -> MockHttpxResponse:
         return MockHttpxResponse({"records": [{"x": 1}, "ignore-me", {"x": 2}]})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -479,9 +453,7 @@ def test_records_from_data_field(monkeypatch: pytest.MonkeyPatch) -> None:
     def _fake_post(*_args: Any, **_kwargs: Any) -> MockHttpxResponse:
         return MockHttpxResponse({"data": [{"y": 9}]})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -495,9 +467,7 @@ def test_records_empty_on_unrecognized_shape(monkeypatch: pytest.MonkeyPatch) ->
     def _fake_post(*_args: Any, **_kwargs: Any) -> MockHttpxResponse:
         return MockHttpxResponse({"unrelated": True})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -520,9 +490,7 @@ def test_returns_unavailable_on_http_error_status(monkeypatch: pytest.MonkeyPatc
             raise_for_status_error=RuntimeError("HTTP 502 from OpenObserve"),
         )
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -538,7 +506,7 @@ def test_returns_unavailable_on_request_exception(monkeypatch: pytest.MonkeyPatc
     def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise ConnectionError("connection refused")
 
-    monkeypatch.setattr("integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _raise)
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _raise)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",
@@ -559,9 +527,7 @@ def test_no_stream_and_no_query_is_unavailable(monkeypatch: pytest.MonkeyPatch) 
     def _fail_if_called(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("httpx.post should not be called without a stream or query")
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fail_if_called
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fail_if_called)
 
     result = query_openobserve_logs(
         base_url="https://oo.example.invalid",

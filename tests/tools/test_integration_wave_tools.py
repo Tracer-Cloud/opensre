@@ -123,9 +123,7 @@ def test_openobserve_tool_caps_size_and_output(monkeypatch: Any) -> None:
         captured["sql"] = json["query"]["sql"]
         return _MockResponse({"hits": [{"message": f"m{idx}"} for idx in range(12)]})
 
-    monkeypatch.setattr(
-        "integrations.openobserve.tools.openobserve_logs_tool.httpx.post", _fake_post
-    )
+    monkeypatch.setattr("integrations.openobserve.tools._helpers.httpx.post", _fake_post)
 
     result = query_openobserve_logs(
         base_url="https://openobserve.example.invalid",

@@ -1,41 +1,37 @@
-"""OpenObserve log search tool with bounded read-only retrieval."""
+"""OpenObserve log 搜索工具——受限的只读检索。"""
 
 from __future__ import annotations
 
-import base64
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import httpx
-
+from config.constants.openobserve import OPENOBSERVE_MAX_RESULTS_DEFAULT
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
+from integrations.openobserve.tools._helpers import (
+    _bounded_limit,
+    _extract_records,
+    _openobserve_available,
+    _openobserve_extract_params,
+    _post_search,
+)
 
-_DEFAULT_MAX_RESULTS = 100
-_MAX_HARD_LIMIT = 200
-
-#: Bound the SQL query text echoed into a report summary -- it can be a long
-#: or multi-line query built by the caller, not just the default form.
+#: 限制回显到报告摘要中的 SQL 查询文本长度——它可能是调用方
+#: 构造的长查询或多行查询，而不只是默认形式。
 _QUERY_SUMMARY_TRUNCATE_LEN = 80
-
-
-def _bounded_limit(limit: int, max_results: int) -> int:
-    safe_max = max(1, min(max_results, _MAX_HARD_LIMIT))
-    return max(1, min(limit, safe_max))
 
 
 def _map_query_openobserve_logs(
     evidence: dict[str, Any], output: dict[str, Any], _tool_input: dict[str, Any]
 ) -> None:
-    """Cite the row count, stream, and a bounded snippet of the query executed.
+    """引用查询返回的行数、stream，以及所执行查询的受限片段。
 
-    ``records`` is truncated to ``effective_limit`` after the query runs, so
-    a returned count at that ceiling may understate how many rows actually
-    matched -- use the "N+" convention.
+    查询运行后 ``records`` 会被截断至 ``effective_limit``，因此当返回
+    的计数恰好等于该上限时，实际命中的行数可能更多——此时应采用
+    "N+" 计数约定。
     """
     if not output.get("available"):
         return
@@ -61,64 +57,6 @@ def _map_query_openobserve_logs(
         label="OpenObserve Logs",
         summary=", ".join(parts),
     )
-
-
-def _openobserve_available(sources: dict[str, dict[str, Any]]) -> bool:
-    oo = sources.get("openobserve", {})
-    has_token = bool(str(oo.get("api_token", "")).strip())
-    has_user_password = bool(
-        str(oo.get("username", "")).strip() and str(oo.get("password", "")).strip()
-    )
-    return bool(
-        oo.get("connection_verified") and oo.get("base_url") and (has_token or has_user_password)
-    )
-
-
-def _openobserve_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    oo = sources["openobserve"]
-    return {
-        "base_url": str(oo.get("base_url", "")).strip(),
-        "org": str(oo.get("org", "default")).strip() or "default",
-        "stream": str(oo.get("stream", "")).strip(),
-        "query": str(oo.get("query", "")).strip(),
-        "api_token": str(oo.get("api_token", "")).strip(),
-        "username": str(oo.get("username", "")).strip(),
-        "password": str(oo.get("password", "")).strip(),
-        "time_range_minutes": int(oo.get("time_range_minutes", 60) or 60),
-        "limit": 50,
-        "max_results": int(oo.get("max_results", _DEFAULT_MAX_RESULTS) or _DEFAULT_MAX_RESULTS),
-        "integration_id": str(oo.get("integration_id", "")).strip(),
-    }
-
-
-def _auth_headers(api_token: str, username: str, password: str) -> dict[str, str]:
-    if api_token:
-        return {"Authorization": f"Bearer {api_token}"}
-    credentials = base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
-    return {"Authorization": f"Basic {credentials}"}
-
-
-def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
-    hits = body.get("hits")
-    if isinstance(hits, dict):
-        hit_docs = hits.get("hits", [])
-        if isinstance(hit_docs, list):
-            records: list[dict[str, Any]] = []
-            for hit in hit_docs:
-                if isinstance(hit, dict):
-                    source = hit.get("_source", {})
-                    if isinstance(source, dict):
-                        records.append(source)
-            return records
-    if isinstance(hits, list):
-        return [item for item in hits if isinstance(item, dict)]
-    raw_records = body.get("records")
-    if isinstance(raw_records, list):
-        return [item for item in raw_records if isinstance(item, dict)]
-    data = body.get("data")
-    if isinstance(data, list):
-        return [item for item in data if isinstance(item, dict)]
-    return []
 
 
 @tool(
@@ -160,12 +98,32 @@ def query_openobserve_logs(
     password: str = "",
     time_range_minutes: int = 60,
     limit: int = 50,
-    max_results: int = _DEFAULT_MAX_RESULTS,
+    max_results: int = OPENOBSERVE_MAX_RESULTS_DEFAULT,
     integration_id: str = "",
     timeout_seconds: float = 20.0,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Fetch bounded evidence from OpenObserve."""
+    """从 OpenObserve 获取受限的只读证据。
+
+    入参：
+        base_url：OpenObserve 实例的基础 URL。
+        org：组织名称，默认 "default"。
+        stream：目标 stream 名称；未显式提供 query 时用于构造
+            默认的 error 级别查询。
+        query：要执行的 SQL 查询；为空时基于 stream 构造默认查询。
+        api_token：API token，优先于 username/password 使用。
+        username：用户名，用于 Basic 认证。
+        password：密码，用于 Basic 认证。
+        time_range_minutes：回溯的时间范围（分钟），默认 60。
+        limit：请求的返回条数上限，默认 50，会被 _bounded_limit 收紧。
+        max_results：配置允许的最大结果数，默认 100。
+        integration_id：集成记录标识，用于错误上报。
+        timeout_seconds：HTTP 请求超时秒数，默认 20.0。
+    返回：
+        结果字典：包含 source、available、org、stream、integration_id、
+        query、total_returned、effective_limit 与 records；缺少必要配置
+        或请求失败时返回 tool_unavailable 的结果。
+    """
     base = base_url.strip().rstrip("/")
     if not base:
         return tool_unavailable("openobserve", "Missing OpenObserve URL.", records=[])
@@ -192,14 +150,13 @@ def query_openobserve_logs(
             f"SELECT * FROM \"{stream_name}\" WHERE level = 'error' ORDER BY _timestamp DESC"
         )
 
-    endpoint = f"{base}/api/{(org or 'default').strip()}/_search"
     payload: dict[str, Any] = {
         "query": {
             "sql": normalized_query,
-            # OpenObserve's _search API takes start_time/end_time in
-            # microseconds since epoch, not milliseconds — a millisecond
-            # value silently matches nothing (no error) rather than raising,
-            # since it resolves to a time range near the Unix epoch.
+            # OpenObserve 的 _search API 采用自 epoch 起的微秒作为
+            # start_time/end_time，而非毫秒——毫秒值会落到
+            # Unix epoch 附近的时间范围，从而静默地匹配不到任何内容
+            # （不报错），而不是抛出异常。
             "start_time": int(start.timestamp() * 1_000_000),
             "end_time": int(now.timestamp() * 1_000_000),
         },
@@ -208,24 +165,20 @@ def query_openobserve_logs(
     if stream_name:
         payload["stream_name"] = stream_name
 
-    headers = {"Content-Type": "application/json"}
-    headers.update(_auth_headers(auth_token, user, secret))
-
     try:
-        response = httpx.post(
-            endpoint, headers=headers, json=payload, timeout=max(1.0, timeout_seconds)
-        )
-        response.raise_for_status()
-        body = response.json()
-    except Exception as err:
-        report_run_error(
-            err,
+        body = _post_search(
+            base_url=base,
+            org=org,
+            payload=payload,
+            api_token=auth_token,
+            username=user,
+            password=secret,
+            timeout_seconds=timeout_seconds,
             tool_name="query_openobserve_logs",
-            source="openobserve",
             component="integrations.openobserve.tools.openobserve_logs_tool",
-            method="httpx.post",
-            extras={"endpoint": endpoint, "integration_id": integration_id},
+            integration_id=integration_id,
         )
+    except Exception as err:
         return tool_unavailable("openobserve", str(err), records=[])
 
     records = _extract_records(body if isinstance(body, dict) else {})[:effective_limit]

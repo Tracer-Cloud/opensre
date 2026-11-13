@@ -260,7 +260,10 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/openobserve/",
         (
+            "tests/integrations/test_openobserve.py",
+            "tests/tools/test_integration_wave_tools.py",
             "tests/tools/test_openobserve_logs_tool.py",
+            "tests/tools/test_openobserve_signal_tools.py",
             "tests/tools/test_telemetry.py",
         ),
     ),
