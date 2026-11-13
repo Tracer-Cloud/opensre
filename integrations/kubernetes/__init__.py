@@ -21,6 +21,7 @@ def classify(
                 "kubeconfig_path": credentials.get("kubeconfig_path", ""),
                 "context": credentials.get("context", ""),
                 "namespace": credentials.get("namespace", "default"),
+                "allowed_namespaces": credentials.get("allowed_namespaces", ()),
                 "integration_id": record_id,
             }
         )

@@ -339,7 +339,13 @@ def _run_spec_setup(
             # switching modes turns the other mode's credentials off.
             values[field.name] = ""
             continue
-        default = str(stored.get(field.name) or "") or field.default
+        stored_value = stored.get(field.name)
+        # A list field (Kubernetes ``allowed_namespaces``, Better Stack
+        # ``sources``) may be stored as a sequence; prefill it comma-joined so
+        # pressing enter keeps it instead of saving its repr.
+        if isinstance(stored_value, (list, tuple)):
+            stored_value = ",".join(str(item) for item in stored_value)
+        default = str(stored_value or "") or field.default
         # A field with a default is never missing — apply_setup substitutes it —
         # so only a defaultless required field can be blank here. Ask again
         # rather than exit: an empty answer at an interactive prompt is not a

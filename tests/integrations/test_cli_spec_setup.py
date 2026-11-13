@@ -41,6 +41,7 @@ import integrations.helm.setup as helm_setup
 import integrations.honeycomb.setup as honeycomb_setup
 import integrations.incident_io.setup as incident_io_setup
 import integrations.jenkins.setup as jenkins_setup
+import integrations.kubernetes.setup as kubernetes_setup
 import integrations.mariadb.setup as mariadb_setup
 import integrations.mongodb.setup as mongodb_setup
 import integrations.mongodb_atlas.setup as mongodb_atlas_setup
@@ -611,6 +612,29 @@ def test_slack_both_mode_stores_all_three(monkeypatch: pytest.MonkeyPatch, run: 
             },
         )
     ]
+
+
+def test_kubernetes_rerun_keeps_a_stored_namespace_list(
+    monkeypatch: pytest.MonkeyPatch, run: _Run
+) -> None:
+    """A list saved in the store is prefilled comma-joined, not as its repr."""
+    _drive_picker(
+        monkeypatch,
+        run,
+        kubernetes_setup,
+        "KUBERNETES_SETUP",
+        cli._setup_kubernetes,
+        mode="path",
+        values={},
+        stored={
+            "kubeconfig_path": "/tmp/kubeconfig",
+            "namespace": "demo",
+            "allowed_namespaces": ["boutique", "payments"],
+        },
+    )
+    assert "boutique,payments" in [default for _label, default, _secret in run.asked]
+    credentials = run.store[0][1]["credentials"]
+    assert credentials["allowed_namespaces"] == "boutique,payments"
 
 
 def test_slack_both_mode_prefills_stored_tokens_on_rerun(
