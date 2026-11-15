@@ -24,6 +24,16 @@ def test_expands_yes_after_roster_want_me_to_offer() -> None:
     assert expanded.strip().endswith(".")
 
 
+def test_expands_yes_that_carries_a_hosts_facts_and_keeps_them() -> None:
+    """A web session's "yes" arrives with "Known context" appended and was read as a new request."""
+    history = [("assistant", "Want me to: open a pull request with the fix?")]
+    facts = "\n\nKnown context:\n- mode: readonly\n- source: webapp-session"
+
+    expanded = expand_affirmative_follow_up(f"yes{facts}", history)
+
+    assert expanded == f"Yes — please open a pull request with the fix.{facts}"
+
+
 def test_expands_dual_or_offer_into_do_both() -> None:
     history = [
         (

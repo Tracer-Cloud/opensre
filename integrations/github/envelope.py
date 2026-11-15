@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
+from config.constants.tool_discovery import TOOL_DISCOVERY_STATE_NO_MATCH, TOOL_FAILURE_STATE_KEY
+from core.tool import ERROR_KIND_NOT_FOUND
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.accessible_repos import accessible_repositories
 from integrations.github.app_connection import github_setup_url
+
+# GitHub's 404 as the REST client and the GitHub MCP server each word it.
+_NOT_FOUND_RE = re.compile(r"GitHub API error 404\b|\b404 Not Found\b", re.IGNORECASE)
+_MAX_REACHABLE_NAMED = 15
 
 
 def _structured_content_or_text_fallback(result: dict[str, Any]) -> Any:
@@ -73,3 +81,43 @@ def missing_token_envelope(instruction: str, *, blocked: str) -> dict[str, Any]:
             "summary": message,
         },
     )
+
+
+def explain_not_found(
+    result: dict[str, Any], *, token: str, owner: object = None, repo: object = None
+) -> dict[str, Any]:
+    """Mark a GitHub 404 as a lookup that found nothing, and say what can be found.
+
+    GitHub answered, so the connection works: the result must not read as an
+    outage, and the caller must not be told to reconnect. When the call named a
+    repository this connection does not reach, the error also lists the ones it
+    does, so the next call can use the right one instead of asking the user.
+    Any other result is returned as it is.
+    """
+    error = result.get("error")
+    if result.get("available") is not False or result.get("error_kind"):
+        return result
+    if not isinstance(error, str) or not _NOT_FOUND_RE.search(error):
+        return result
+    explained = {
+        **result,
+        "error_kind": ERROR_KIND_NOT_FOUND,
+        TOOL_FAILURE_STATE_KEY: TOOL_DISCOVERY_STATE_NO_MATCH,
+    }
+    if not (isinstance(owner, str) and owner and isinstance(repo, str) and repo):
+        return explained
+    reachable = accessible_repositories(token)
+    wanted = f"{owner}/{repo}".lower()
+    if not reachable or any(found.full_name.lower() == wanted for found in reachable):
+        return explained
+    # Originals first: a fork is rarely the repository meant.
+    names = [found.full_name for found in sorted(reachable, key=lambda found: found.fork)]
+    listed = ", ".join(names[:_MAX_REACHABLE_NAMED])
+    unlisted = len(names) - _MAX_REACHABLE_NAMED
+    more = f" and {unlisted} more" if unlisted > 0 else ""
+    explained["error"] = (
+        f"{error} {owner}/{repo} is not a repository this GitHub connection reaches. "
+        f"It reaches: {listed}{more}. If one of these is the repository meant, call the "
+        "tool again with it and say which you used; ask the user only when none fits."
+    )
+    return explained

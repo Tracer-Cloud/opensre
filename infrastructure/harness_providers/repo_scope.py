@@ -53,11 +53,14 @@ class VcsRepoScopeProvider(Protocol):
         text: str,
         role: str,
         env: Mapping[str, str] | None,
+        resolved: Mapping[str, Any] | None = None,
     ) -> tuple[tuple[str, ...], ...]:
         """Return every repository scope explicitly referenced in ``text``.
 
         ``role`` is who wrote ``text``, as in ``conversation_messages``; an
         assistant message also carries the output of the tools it ran.
+        ``resolved`` is the turn's integrations, as in :meth:`infer`, so a
+        provider can tell a real repository from prose of the same shape.
         """
 
     def prewarm(self, resolved: Mapping[str, Any]) -> None:
@@ -99,7 +102,9 @@ def enrich_resolved_with_repo_scopes(
         if remember_scope is not None:
             reference_texts = [*(conversation_messages or ()), ("user", message)]
             for role, text in reference_texts:
-                for referenced_scope in provider.referenced_scopes(text=text, role=role, env=env):
+                for referenced_scope in provider.referenced_scopes(
+                    text=text, role=role, env=env, resolved=resolved
+                ):
                     remember_scope(
                         provider.vendor,
                         provider.repository_key(referenced_scope),

@@ -286,3 +286,74 @@ def test_a_preview_targets_the_turn_s_repository_and_leaves_the_session_alone(
     assert session.active_vcs_repositories == {}
     assert session.vcs_repo_scopes == {}
     assert session.known_vcs_repo_scopes == {}
+
+
+def test_a_session_read_back_from_storage_keeps_the_repository_the_last_turn_worked_on(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A hosted turn runs on a session rebuilt from disk: "its open issues" had no repository."""
+    from core.agent_harness.session.lifecycle import SessionManager
+    from core.agent_harness.session.persistence import paths as storage_paths
+    from core.agent_harness.session.persistence.jsonl_repo import JsonlSessionRepo
+    from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
+    from core.agent_harness.session.session_core import SessionCore
+    from core.agent_harness.turns.conversation_recording import record_conversation_turn
+
+    # Arrange: one turn about a repository, saved as a hosted turn saves it
+    monkeypatch.setattr(storage_paths, "sessions_dir", lambda: tmp_path)
+    store = JsonlSessionStore()
+    first = SessionCore(store=store)
+    store.open_session(first)
+    first.resolved_integrations_cache = {"github": {"connection_verified": True}}
+    build_turn_plan(
+        TurnSnapshot.from_session("Inspect facebook/react", first, surface="gateway"), first
+    )
+    record_conversation_turn(first, "Inspect facebook/react", "It has 3 failing checks.")
+    store.append_turn_detail(
+        first.session_id, "chat", "Inspect facebook/react", response="It has 3 failing checks."
+    )
+    store.flush(first)
+
+    # Act: the next message arrives on a session rebuilt from that file
+    second = SessionCore(store=store)
+    SessionManager().restore_context(second, JsonlSessionRepo().load_session(first.session_id))
+    second.resolved_integrations_cache = {"github": {"connection_verified": True}}
+    plan = build_turn_plan(
+        TurnSnapshot.from_session("Now compare that with last week", second, surface="gateway"),
+        second,
+    )
+
+    # Assert
+    assert second.vcs_repo_scopes == {"github": ("facebook", "react")}
+    assert plan.snapshot.active_vcs_repositories == {"github": "facebook/react"}
+    assert plan.resolved_integrations["github"]["repo"] == "react"
+
+
+def test_facts_a_host_appends_to_a_message_never_name_its_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The web app's "OpenSRE web app session" fact sent every question to the opensre repository."""
+    from infrastructure.harness_providers import with_caller_facts
+    from integrations.github.accessible_repos import AccessibleRepository
+
+    monkeypatch.setattr(
+        "integrations.github.repo_scope.accessible_repositories",
+        lambda _token: (AccessibleRepository("acme/webapp", fork=False),),
+    )
+    facts = {"surface": "Acme webapp session; nothing else is behind it."}
+    session = Session()
+    session.resolved_integrations_cache = {"github": {"connection_verified": True}}
+    session.vcs_repo_scopes = {"github": ("facebook", "react")}
+    session.cli_agent_messages = [
+        ("user", with_caller_facts("Inspect facebook/react", facts)),
+        ("assistant", "It has 3 failing checks."),
+    ]
+
+    plan = build_turn_plan(
+        TurnSnapshot.from_session(
+            with_caller_facts("Why is it slow?", facts), session, surface="gateway"
+        ),
+        session,
+    )
+
+    assert plan.resolved_integrations["github"]["repo"] == "react"

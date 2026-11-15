@@ -27,6 +27,7 @@ from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore, TurnResult
 from core.tool import (
+    ERROR_KIND_NOT_FOUND,
     ERROR_KIND_REFUSED,
     BeforeToolCallResult,
     ToolExecutionHooks,
@@ -466,7 +467,7 @@ class _IntegrationFailures:
         self._vendors: dict[str, None] = {}
 
     def after_tool_call(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
-        if not result.is_error or _refused(result):
+        if not result.is_error or _integration_answered(result):
             return None
         vendor = integration_of_tool(request.tool_call.name)
         if vendor is not None:
@@ -477,10 +478,15 @@ class _IntegrationFailures:
         return tuple(self._vendors)
 
 
-def _refused(result: ToolExecutionResult) -> bool:
-    """A tool that declined on its own rules; the integration behind it is fine."""
+#: Errors the integration itself answered with: the tool declined on its own
+#: rules, or the lookup named something that is not there.
+_ANSWERED_ERROR_KINDS = frozenset({ERROR_KIND_REFUSED, ERROR_KIND_NOT_FOUND})
+
+
+def _integration_answered(result: ToolExecutionResult) -> bool:
+    """An error the integration answered with; the integration behind the tool is fine."""
     details = result.details
-    return isinstance(details, dict) and details.get("error_kind") == ERROR_KIND_REFUSED
+    return isinstance(details, dict) and details.get("error_kind") in _ANSWERED_ERROR_KINDS
 
 
 class _Denial:

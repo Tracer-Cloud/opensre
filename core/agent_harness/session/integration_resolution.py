@@ -13,6 +13,7 @@ logic lives in :mod:`infrastructure.harness_providers` (wired at startup from
 from __future__ import annotations
 
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,8 @@ __all__ = [
     "merge_resolved_integrations",
     "resolve_and_cache_integrations",
     "resolve_integrations",
+    "restore_repository_scopes",
+    "save_repository_scopes",
 ]
 
 
@@ -120,6 +123,78 @@ def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
         if isinstance(state, IntegrationState):
             state.store_stamp = stamp
     return dict(session.resolved_integrations_cache or {})
+
+
+#: Where a session's repository scopes ride in its saved context.
+_REPOSITORY_SCOPES_KEY = "_vcs_repositories"
+
+
+def save_repository_scopes(session: SessionState) -> None:
+    """Keep the session's repository scopes in its saved context.
+
+    A hosted turn runs on a session rebuilt from storage, so without this the
+    repository one message worked on is unknown to the next, and "now check
+    its open issues" has nothing to refer to.
+    """
+    context = getattr(session, "accumulated_context", None)
+    if not isinstance(context, dict):
+        return
+    saved = {
+        "scopes": {vendor: list(scope) for vendor, scope in session.vcs_repo_scopes.items()},
+        "active": dict(session.active_vcs_repositories),
+        "known": {
+            vendor: {repository: list(scope) for repository, scope in scopes.items()}
+            for vendor, scopes in session.known_vcs_repo_scopes.items()
+        },
+    }
+    if any(saved.values()):
+        context[_REPOSITORY_SCOPES_KEY] = saved
+    else:
+        context.pop(_REPOSITORY_SCOPES_KEY, None)
+
+
+def restore_repository_scopes(state: IntegrationState, context: Mapping[str, Any]) -> None:
+    """Give a session rebuilt from storage the repository scopes it was saved with.
+
+    A session that already holds scopes keeps them: they are newer than the
+    saved ones. Anything not shaped as it was saved is left out.
+    """
+    saved = context.get(_REPOSITORY_SCOPES_KEY)
+    if not isinstance(saved, Mapping):
+        return
+    if state.vcs_repo_scopes or state.active_vcs_repositories or state.known_vcs_repo_scopes:
+        return
+    scopes = saved.get("scopes")
+    if isinstance(scopes, Mapping):
+        state.vcs_repo_scopes = {
+            str(vendor): scope
+            for vendor, raw in scopes.items()
+            if (scope := _saved_scope(raw)) is not None
+        }
+    active = saved.get("active")
+    if isinstance(active, Mapping):
+        state.active_vcs_repositories = {
+            str(vendor): repository
+            for vendor, repository in active.items()
+            if isinstance(repository, str) and repository
+        }
+    known = saved.get("known")
+    if isinstance(known, Mapping):
+        state.known_vcs_repo_scopes = {
+            str(vendor): {
+                str(repository): scope
+                for repository, raw in remembered.items()
+                if (scope := _saved_scope(raw)) is not None
+            }
+            for vendor, remembered in known.items()
+            if isinstance(remembered, Mapping)
+        }
+
+
+def _saved_scope(raw: Any) -> tuple[str, ...] | None:
+    if not isinstance(raw, list) or not raw or not all(isinstance(part, str) for part in raw):
+        return None
+    return tuple(raw)
 
 
 def _resolve_for_connection(connection_id: str | None) -> dict[str, Any]:

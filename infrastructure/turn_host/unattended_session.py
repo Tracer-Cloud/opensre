@@ -15,6 +15,7 @@ from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers, question_key
 from core.agent_harness.spi.prompt_chrome import is_literal_command
 from core.agent_harness.spi.session_state import PendingUserChoice
+from infrastructure.harness_providers import with_caller_facts
 
 APPROVE_OPTION = "Approve"
 DENY_OPTION = "Deny"
@@ -118,8 +119,7 @@ def prompt_with_facts(prompt: str, facts: Mapping[str, str]) -> str:
     """
     if not facts or is_literal_command(prompt):
         return prompt
-    lines = "\n".join(f"- {key}: {value}" for key, value in sorted(facts.items()))
-    return f"{prompt}\n\nKnown context:\n{lines}"
+    return with_caller_facts(prompt, facts)
 
 
 def invocation_key(

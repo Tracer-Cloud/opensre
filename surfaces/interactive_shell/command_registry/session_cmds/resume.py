@@ -160,10 +160,12 @@ def _apply_resume_data_unlocked(
         messages=list(messages),
     )
 
-    if context:
+    # Keys starting with ``_`` are the session's own book-keeping, not context.
+    shown = sorted((k, v) for k, v in context.items() if not str(k).startswith("_"))
+    if shown:
         console.print(
             f"[{DIM}]accumulated context restored:[/] "
-            + ", ".join(f"{escape(k)}={escape(str(v))}" for k, v in sorted(context.items()))
+            + ", ".join(f"{escape(k)}={escape(str(v))}" for k, v in shown)
         )
 
     recovery_note = format_recovery_note(data.get("dangling_tool_intents") or [])
