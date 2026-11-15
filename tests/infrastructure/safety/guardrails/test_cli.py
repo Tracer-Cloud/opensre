@@ -140,6 +140,74 @@ class TestCmdTest:
         cmd_test("nothing sensitive")
         assert "No matches" in capsys.readouterr().out
 
+    def test_overlapping_redactions_merge_without_corrupting_output(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Nested redact matches must collapse to one span, not slice a prior tag."""
+        config = tmp_path / "guardrails.yml"
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {
+                            "name": "full_token",
+                            "action": "redact",
+                            "keywords": ["super_secret_token"],
+                        },
+                        {
+                            "name": "inner_token",
+                            "action": "redact",
+                            "keywords": ["secret_token"],
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "infrastructure.safety.guardrails.cli.get_default_rules_path", lambda: config
+        )
+
+        cmd_test("pass super_secret_token here")
+        out = capsys.readouterr().out
+        assert "Redacted output: pass [REDACTED:full_token] here" in out
+        assert "ner_token]" not in out
+        assert "super_" not in out.split("Redacted output:", 1)[1]
+
+    def test_uses_configured_rule_replacement(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        config = tmp_path / "guardrails.yml"
+        config.write_text(
+            yaml.dump(
+                {
+                    "rules": [
+                        {
+                            "name": "cc",
+                            "action": "redact",
+                            "patterns": [r"\d{16}"],
+                            "replacement": "[CC_MASKED]",
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "infrastructure.safety.guardrails.cli.get_default_rules_path", lambda: config
+        )
+
+        cmd_test("card 4111111111111111")
+        out = capsys.readouterr().out
+        assert "Redacted output: card [CC_MASKED]" in out
+        assert "[REDACTED:cc]" not in out
+
 
 class TestCmdRules:
     def test_lists_configured_rules(
