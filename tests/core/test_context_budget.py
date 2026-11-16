@@ -11,6 +11,7 @@ from core.context_budget import (
     estimate_message_tokens,
     strip_internal_message_markers,
     system_and_tools_overhead,
+    trim_lowest_value_tool_pair,
 )
 
 
@@ -269,3 +270,33 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
         "t1",
         "t2",
     ]
+
+
+def test_enforce_context_budget_terminates_when_tool_use_has_no_result() -> None:
+    messages = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "call_1", "name": "bash", "input": {}}],
+        },
+        {"role": "user", "content": "cancelled by user " * 1000},
+    ]
+
+    total = enforce_context_budget(messages, fixed_overhead_tokens=0, ceiling=100)
+
+    assert total <= 100 + 2000
+    assert messages[1]["content"][0]["type"] == "tool_use"
+
+
+def test_trim_lowest_value_tool_pair_ignores_tool_use_without_result() -> None:
+    messages = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "call_1", "name": "bash", "input": {}}],
+        },
+        {"role": "user", "content": "cancelled by user"},
+    ]
+
+    assert trim_lowest_value_tool_pair(messages) is False
+    assert messages[2] == {"role": "user", "content": "cancelled by user"}

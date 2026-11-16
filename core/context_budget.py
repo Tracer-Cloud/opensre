@@ -110,6 +110,18 @@ def _has_tool_use_block(content: Any) -> bool:
     )
 
 
+def _has_tool_result(message: dict[str, Any]) -> bool:
+    if message.get("role") == "tool":
+        return True
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict) and (block.get("type") == "tool_result" or "toolResult" in block)
+        for block in content
+    )
+
+
 def _candidate_exchange(
     messages: list[dict[str, Any]],
     *,
@@ -175,14 +187,16 @@ def _tool_exchange_candidates(
             continue
 
         if _has_tool_use_block(message.get("content")):
-            _append_candidate(
-                candidates,
-                messages,
-                start=index,
-                end=min(index + 2, len(messages)),
-                message_tokens=message_tokens,
-                evicted=evicted,
-            )
+            end = min(index + 2, len(messages))
+            if end > index + 1 and _has_tool_result(messages[index + 1]):
+                _append_candidate(
+                    candidates,
+                    messages,
+                    start=index,
+                    end=end,
+                    message_tokens=message_tokens,
+                    evicted=evicted,
+                )
             continue
 
         tool_calls = message.get("tool_calls")
@@ -338,13 +352,17 @@ def _trim_lowest_value_tool_pair(
         return None
 
     selected = min(candidates, key=_eviction_priority)
+    stubbed_any = False
     for index in range(selected.start + 1, selected.end):
         stubbed = _stub_tool_result_message(messages[index])
         if stubbed is None:
             continue
+        stubbed_any = True
         messages[index] = stubbed
         if message_tokens is not None:
             message_tokens[index] = _message_token_estimate(stubbed)
+    if not stubbed_any:
+        return None
     return selected.start, selected.end
 
 
