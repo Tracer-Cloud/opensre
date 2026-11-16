@@ -261,8 +261,8 @@ constraint-dependencies = [
     "virtualenv>=21.14.12",
     # GHSA-xmj3-9gf7-h52w.
     "setuptools>=84.1.0",
-    # GHSA-45c3-73f7-pv4m (via pymongo).
-    "dnspython>=2.9.0",
+    # GHSA-45c3-73f7-pv4m, GHSA-vvf4-9x63-8xvv (via pymongo).
+    "dnspython>=2.9.2",
     # GHSA-3jp2-3mrg-2vxc (via kubernetes).
     "oauthlib>=4.0.1",
 ]
