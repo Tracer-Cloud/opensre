@@ -300,3 +300,17 @@ def test_trim_lowest_value_tool_pair_ignores_tool_use_without_result() -> None:
 
     assert trim_lowest_value_tool_pair(messages) is False
     assert messages[2] == {"role": "user", "content": "cancelled by user"}
+
+
+def test_trim_lowest_value_tool_pair_reports_no_progress_when_stub_fails() -> None:
+    messages = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "call_1", "name": "bash", "input": {}}],
+        },
+        {"role": "user", "content": [{"toolResult": "not-a-dict"}]},
+    ]
+
+    assert trim_lowest_value_tool_pair(messages) is False
+    assert messages[2] == {"role": "user", "content": [{"toolResult": "not-a-dict"}]}
