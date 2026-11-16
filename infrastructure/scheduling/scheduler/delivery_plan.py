@@ -191,7 +191,7 @@ def _loop_channels(task: ScheduledTask) -> tuple[tuple[Provider, ...], str]:
 
 def _target_for_provider(task: ScheduledTask, provider: Provider) -> DeliveryTarget:
     """Resolve the destination a loop channel posts to for ``provider``."""
-    chat_id = task.chat_id
+    chat_id = task.chat_id if task.provider == provider else ""
     if provider == Provider.TELEGRAM:
         chat_id = (
             task.params.get(LOOP_TELEGRAM_CHAT_ID_PARAM, "").strip()
