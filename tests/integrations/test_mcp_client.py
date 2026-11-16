@@ -422,3 +422,26 @@ def test_vendor_calls_preserve_timeout_scope(
     assert captured["arguments"] == {"verbose": True}
     options = cast(dict[str, object], captured["options"])
     assert {key: options[key] for key in expected_timeout_options} == expected_timeout_options
+
+
+def test_list_all_tools_on_session_raises_after_page_limit() -> None:
+    class _EndlessSession:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def list_tools(
+            self, params: types.PaginatedRequestParams | None = None
+        ) -> types.ListToolsResult:
+            assert params is None or params.cursor.startswith("cursor-")
+            self.calls += 1
+            return types.ListToolsResult(
+                tools=[types.Tool(name="loop", input_schema={})],
+                next_cursor=f"cursor-{self.calls}",
+            )
+
+    session = _EndlessSession()
+
+    with pytest.raises(RuntimeError, match="did not finish"):
+        asyncio.run(mcp_client.list_all_tools_on_session(cast(Any, session)))
+
+    assert session.calls == mcp_client._MAX_TOOL_LIST_PAGES

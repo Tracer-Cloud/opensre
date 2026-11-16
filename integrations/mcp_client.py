@@ -207,12 +207,15 @@ def tool_result_to_dict(result: types.CallToolResult) -> dict[str, object]:
     }
 
 
+_MAX_TOOL_LIST_PAGES = 100
+
+
 async def list_all_tools_on_session(session: ClientSession) -> list[types.Tool]:
     """List every tool on an MCP session, following ``next_cursor`` pagination."""
     tools: list[types.Tool] = []
     seen_cursors: set[str] = set()
     cursor: str | None = None
-    while True:
+    for _ in range(_MAX_TOOL_LIST_PAGES):
         if cursor is None:
             result = await session.list_tools()
         else:
@@ -223,6 +226,10 @@ async def list_all_tools_on_session(session: ClientSession) -> list[types.Tool]:
             return tools
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+    raise RuntimeError(
+        f"MCP tool listing did not finish within {_MAX_TOOL_LIST_PAGES} pages; "
+        "the server keeps returning new cursors."
+    )
 
 
 async def _list_tools_async(

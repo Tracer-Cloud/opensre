@@ -1037,3 +1037,71 @@ async def test_open_session_accepts_legacy_two_stream_transport(
     async with github_mcp_module._open_github_mcp_session(config) as session:
         assert session is opened[0]
         session.initialize.assert_awaited_once()
+
+
+def test_validate_github_mcp_config_finds_required_tool_on_second_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tools = _minimal_toolset_for_validation()
+    page_one = tools[:3]
+    page_two = tools[3:]
+
+    @asynccontextmanager
+    async def _fake_open(_config: Any):  # type: ignore[return]
+        session = MagicMock()
+        session.initialize = AsyncMock()
+
+        async def _list_tools(params: Any = None) -> Any:
+            cursor = params.cursor if params is not None else None
+            if cursor is None:
+                return mcp_types.ListToolsResult(
+                    tools=[mcp_types.Tool(name=str(t["name"]), input_schema={}) for t in page_one],
+                    next_cursor="page-two",
+                )
+            assert cursor == "page-two"
+            return mcp_types.ListToolsResult(
+                tools=[mcp_types.Tool(name=str(t["name"]), input_schema={}) for t in page_two]
+            )
+
+        session.list_tools = _list_tools
+
+        async def _call_tool(name: str, args: dict) -> Any:
+            if name == "get_me":
+                payload: dict[str, Any] = {
+                    "is_error": False,
+                    "structured_content": {"login": "alice"},
+                    "text": "",
+                }
+            elif name == "list_repositories":
+                payload = {
+                    "is_error": False,
+                    "structured_content": [
+                        {"full_name": "org/one", "private": False, "fork": False}
+                    ],
+                    "text": "",
+                }
+            else:
+                raise AssertionError(f"unexpected tool {name}")
+            return mcp_types.CallToolResult(
+                is_error=payload.get("is_error", False),
+                content=[mcp_types.TextContent(type="text", text=payload.get("text", ""))],
+                structured_content=payload.get("structured_content"),
+            )
+
+        session.call_tool = _call_tool
+        yield session
+
+    monkeypatch.setattr("integrations.github.mcp._open_github_mcp_session", _fake_open)
+
+    cfg = github_mcp_module.build_github_mcp_config(
+        {
+            "url": "https://api.githubcopilot.com/mcp/",
+            "mode": "streamable-http",
+            "auth_token": "ghp_test",
+            "toolsets": ["repos"],
+        }
+    )
+    result = github_mcp_module.validate_github_mcp_config(cfg)
+
+    assert result.ok is True
+    assert "search_code" in result.tool_names
