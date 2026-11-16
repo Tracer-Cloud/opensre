@@ -100,6 +100,66 @@ def test_shared_client_normalizes_list_and_tool_results(monkeypatch: pytest.Monk
     }
 
 
+class _PaginatedSession:
+    def __init__(self) -> None:
+        self.cursors: list[str | None] = []
+
+    async def list_tools(
+        self, params: types.PaginatedRequestParams | None = None
+    ) -> types.ListToolsResult:
+        cursor = params.cursor if params is not None else None
+        self.cursors.append(cursor)
+        if cursor is None:
+            return types.ListToolsResult(
+                tools=[types.Tool(name="page_one", input_schema={})], next_cursor="two"
+            )
+        if cursor == "two":
+            return types.ListToolsResult(
+                tools=[types.Tool(name="page_two", input_schema={})], next_cursor="three"
+            )
+        return types.ListToolsResult(tools=[types.Tool(name="page_three", input_schema={})])
+
+
+def test_list_all_tools_on_session_follows_next_cursor() -> None:
+    session = _PaginatedSession()
+
+    tools = asyncio.run(mcp_client.list_all_tools_on_session(cast(Any, session)))
+
+    assert [tool.name for tool in tools] == ["page_one", "page_two", "page_three"]
+    assert session.cursors == [None, "two", "three"]
+
+
+def test_list_mcp_tools_returns_every_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _PaginatedSession()
+
+    @asynccontextmanager
+    async def _open_paginated(
+        *_args: object, **_kwargs: object
+    ) -> AsyncIterator[_PaginatedSession]:
+        yield session
+
+    monkeypatch.setattr(mcp_client, "open_mcp_session", _open_paginated)
+
+    tools = mcp_client.list_mcp_tools(_Config(), **_session_options())
+
+    assert [tool.name for tool in tools] == ["page_one", "page_two", "page_three"]
+
+
+def test_list_all_tools_on_session_stops_on_repeated_cursor() -> None:
+    class _LoopingSession:
+        async def list_tools(
+            self, params: types.PaginatedRequestParams | None = None
+        ) -> types.ListToolsResult:
+            assert params is None or params.cursor == "same"
+            return types.ListToolsResult(
+                tools=[types.Tool(name="loop", input_schema={})], next_cursor="same"
+            )
+
+    tools = asyncio.run(mcp_client.list_all_tools_on_session(cast(Any, _LoopingSession())))
+
+    assert [tool.name for tool in tools] == ["loop", "loop"]
+
+
 def test_shared_client_keeps_vendor_timeout_copy_for_chained_timeout() -> None:
     outer = RuntimeError("request failed")
     outer.__cause__ = TimeoutError()
