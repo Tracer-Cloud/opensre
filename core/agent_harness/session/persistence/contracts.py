@@ -13,6 +13,7 @@ roles are kept deliberately separate, mirroring a storage-vs-repository split:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -52,6 +53,20 @@ CHAT_KINDS: frozenset[str] = frozenset({"chat", "cli_agent", "follow_up"})
 # A single JSONL entry carrying the goal and task-plan snapshots changed by a
 # durable goal control.  Restore treats it as an atomic pair.
 SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE = "session_goal_control_state"
+
+
+def is_debug_system_prompt_record(record: dict[str, Any]) -> bool:
+    """Whether a ``message`` record is a diagnostic system-prompt capture."""
+    metadata = record.get("metadata")
+    return isinstance(metadata, dict) and metadata.get("debug") == "system_prompt"
+
+
+def has_persisted_conversation_message(records: Iterable[dict[str, Any]]) -> bool:
+    """Whether any record is a conversation message, ignoring debug captures."""
+    return any(
+        record.get("type") == "message" and not is_debug_system_prompt_record(record)
+        for record in records
+    )
 
 
 class SessionPersistenceSource(Protocol):
