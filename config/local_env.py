@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
 
 from config.constants.llm import LLM_PROVIDER_ENV
 from config.constants.paths import OPENSRE_HOME_DIR, PROJECT_ROOT
-from config.env_assignment import env_assignment_key
+from config.env_assignment import load_env_file
+from config.setup_store import load_local_config
 
 OPENSRE_PROJECT_ENV_PATH_ENV = "OPENSRE_PROJECT_ENV_PATH"
 INSTALLED_ENV_PATH = OPENSRE_HOME_DIR / ".env"
-WIZARD_STORE_PATH = OPENSRE_HOME_DIR / "opensre.json"
 
 
 class _BootstrapState:
@@ -48,31 +46,6 @@ def get_project_env_path() -> Path:
     return PROJECT_ROOT / ".env"
 
 
-def _load_env_file(path: Path, *, override: bool = False) -> None:
-    if not path.exists():
-        return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith(("#", ";")):
-            continue
-        key = env_assignment_key(line)
-        if not key:
-            continue
-        value = line.split("=", 1)[1].strip().strip('"').strip("'")
-        if override or key not in os.environ:
-            os.environ[key] = value
-
-
-def _load_wizard_store(path: Path = WIZARD_STORE_PATH) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
 def _set_if_unset(key: str, value: object) -> None:
     text = str(value or "").strip()
     if not key or not text:
@@ -87,10 +60,14 @@ def _should_apply_wizard_store_defaults() -> bool:
 
 
 def apply_wizard_store_env_defaults(*, path: Path | None = None) -> None:
-    """Fill unset non-secret LLM env keys from ``~/.opensre/opensre.json``."""
+    """Fill unset non-secret LLM env keys from the setup store the wizard writes.
+
+    ``path`` defaults to :func:`config.setup_store.get_store_path`, which honours
+    ``OPENSRE_WIZARD_STORE_PATH``.
+    """
     if not _should_apply_wizard_store_defaults():
         return
-    payload = _load_wizard_store(path or WIZARD_STORE_PATH)
+    payload = load_local_config(path)
     targets = payload.get("targets")
     if not isinstance(targets, dict):
         return
@@ -119,7 +96,7 @@ def bootstrap_opensre_env(*, override: bool = False) -> Path:
     path = get_project_env_path()
     if _skip_env_file():
         return path
-    _load_env_file(path, override=override)
+    load_env_file(path, override=override)
     apply_wizard_store_env_defaults()
     return path
 
@@ -137,7 +114,6 @@ __all__ = [
     "INSTALLED_ENV_PATH",
     "OPENSRE_PROJECT_ENV_PATH_ENV",
     "PROJECT_ROOT",
-    "WIZARD_STORE_PATH",
     "apply_wizard_store_env_defaults",
     "bootstrap_opensre_env",
     "bootstrap_opensre_env_once",

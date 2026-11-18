@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from config.constants.runtime_metadata import (
     OPENSRE_ALLOW_NETWORK_ENV,
     OPENSRE_WORKSPACE_REPO_ENV,
+    WORKSPACE_REPO_ENV_KEYS,
 )
 from config.runtime_metadata import build_runtime_metadata
 from config.runtime_metadata.probes import (
@@ -17,6 +20,25 @@ from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
 def test_workspace_repo_from_env(monkeypatch) -> None:
     monkeypatch.setenv(OPENSRE_WORKSPACE_REPO_ENV, "Tracer-Cloud/opensre")
     assert workspace_identity_facts()["workspace_repo"] == "Tracer-Cloud/opensre"
+
+
+def test_workspace_repo_from_a_linked_worktree(tmp_path: Path, monkeypatch) -> None:
+    """A ``git worktree add`` checkout keeps its remotes in the main repository's config."""
+    main_gitdir = tmp_path / "main" / ".git"
+    worktree_gitdir = main_gitdir / "worktrees" / "feature"
+    worktree_gitdir.mkdir(parents=True)
+    (main_gitdir / "config").write_text(
+        '[remote "origin"]\n\turl = git@github.com:acme/widgets.git\n', encoding="utf-8"
+    )
+    (worktree_gitdir / "commondir").write_text("../..\n", encoding="utf-8")
+    worktree = tmp_path / "feature"
+    worktree.mkdir()
+    (worktree / ".git").write_text(f"gitdir: {worktree_gitdir}\n", encoding="utf-8")
+    for key in WORKSPACE_REPO_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(worktree)
+
+    assert workspace_identity_facts() == {"workspace_repo": "acme/widgets"}
 
 
 def test_workspace_repo_normalizes_github_urls(monkeypatch) -> None:

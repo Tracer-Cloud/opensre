@@ -23,6 +23,7 @@ from config.secrets.backend import (
     SecretTier,
 )
 from config.secrets.store import (
+    SecretLookup,
     delete_secret,
     lookup,
     resolve_secret,
@@ -84,6 +85,18 @@ def test_env_wins_over_the_stored_copy(monkeypatch) -> None:
 
     assert found.value == "sk-from-env"
     assert found.tier == "env"
+
+
+def test_a_default_never_hides_the_stored_copy() -> None:
+    """``default`` applies only when no tier holds the secret."""
+    save_secret(_ENV_VAR, "sk-stored")
+
+    assert resolve_secret(_ENV_VAR, default="sk-default") == "sk-stored"
+    assert lookup(_ENV_VAR, default="sk-default").tier == SecretTier.FALLBACK
+
+    delete_secret(_ENV_VAR)
+
+    assert lookup(_ENV_VAR, default="sk-default") == SecretLookup("sk-default", SecretTier.NONE)
 
 
 def test_stored_secret_ignores_the_environment(monkeypatch) -> None:

@@ -59,28 +59,29 @@ def keyring_is_disabled() -> bool:
 
 
 def lookup(env_var: str, *, default: str = "") -> SecretLookup:
-    """Resolve a secret from the environment, then the local file."""
-    env_value = os.getenv(env_var, default).strip()
+    """Resolve a secret from the environment, then the local file, then ``default``.
+
+    ``default`` is reported as :attr:`SecretTier.NONE`: no tier held the secret.
+    """
+    env_value = os.getenv(env_var, "").strip()
     if env_value:
         return SecretLookup(env_value, SecretTier.ENV)
 
     # The disable switch takes the machine out of local persistence entirely,
     # so the file is not consulted and env vars are the only source.
-    if keyring_is_disabled():
-        return SecretLookup("", SecretTier.NONE)
-
-    try:
-        stored_value = local_file.get(env_var)
-    except local_file.LOCAL_STORE_ERRORS:
-        # Contended credential file — miss this call; do not abort startup.
-        return SecretLookup("", SecretTier.NONE)
-    if stored_value:
-        return SecretLookup(stored_value, SecretTier.FALLBACK)
-    return SecretLookup("", SecretTier.NONE)
+    if not keyring_is_disabled():
+        try:
+            stored_value = local_file.get(env_var)
+        except local_file.LOCAL_STORE_ERRORS:
+            # Contended credential file — miss this call; do not abort startup.
+            stored_value = ""
+        if stored_value:
+            return SecretLookup(stored_value, SecretTier.FALLBACK)
+    return SecretLookup(default.strip(), SecretTier.NONE)
 
 
 def resolve_secret(env_var: str, *, default: str = "") -> str:
-    """Resolve a secret, or ``""`` when no tier has it."""
+    """Resolve a secret, or ``default`` when no tier has it."""
     return lookup(env_var, default=default).value
 
 

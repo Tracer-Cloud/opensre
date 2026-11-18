@@ -61,12 +61,13 @@ session = AgentSession.start()
 
 # 3. Query repository trends or metrics (requires GitHub integration configured)
 result = session.chat("what's our GitHub star velocity over the last 7 days?")
-action_ok = (
-    result.action_result.handled
-    and not result.action_result.has_unhandled_clause
-    and result.action_result.accounting_status == "completed"
-)
-if not (result.answered or action_ok) or result.cancelled or not result.primary_response_text:
+action = result.action_result
+if (
+    result.cancelled
+    or action.hit_iteration_cap
+    or action.accounting_status != "completed"
+    or not result.primary_response_text
+):
     raise RuntimeError(f"Turn failed: {result.primary_response_text or 'no response produced'}")
 
 print(result.primary_response_text)
@@ -96,12 +97,23 @@ alert_payload = {
 }
 
 result = session.chat(f"Triage this alert:\n{json.dumps(alert_payload)}")
+action = result.action_result
+if (
+    result.cancelled
+    or action.hit_iteration_cap
+    or action.accounting_status != "completed"
+    or not result.primary_response_text
+):
+    raise RuntimeError(f"Triage failed: {result.primary_response_text or 'no response produced'}")
 print(result.primary_response_text)
 ```
 
 ## One API — `chat`
 
-Every surface goes through the same verb:
+Embedding and one-shot `opensre ask` use `chat`. The gateway and the
+interactive shell do not: they keep one agent per session in
+`SessionAgentPool` and call `handle`. See
+[Hosting the Agent](/guides/hosting-the-agent).
 
 ```python
 from core.agent_harness import AgentSession
@@ -112,12 +124,13 @@ configure_process(EMBEDDED_PROFILE)
 
 session = AgentSession.start()
 result = session.chat("why is checkout-api slow?")
-action_ok = (
-    result.action_result.handled
-    and not result.action_result.has_unhandled_clause
-    and result.action_result.accounting_status == "completed"
-)
-if (result.answered or action_ok) and not result.cancelled:
+action = result.action_result
+if (
+    not result.cancelled
+    and not action.hit_iteration_cap
+    and action.accounting_status == "completed"
+    and result.primary_response_text
+):
     print(result.primary_response_text)
 ```
 
@@ -131,14 +144,14 @@ session = start_embedded_session()
 
 `AgentSession.start()` resolves the environment, opens a session, and attaches
 an agent with the standard ports — the same tools and prompts the interactive
-shell uses. It does **not** register adapters (``core`` may not import
-``surfaces``); call ``configure_process`` first or use
-``start_embedded_session``.
+shell uses. It does **not** register adapters (`core` may not import the
+hosts above it); call `configure_process` first or use
+`start_embedded_session`.
 
-Always verify turn success before trusting chat text:
-- For conversational questions and digests, the agent synthesizes an answer (`result.answered`).
-- For action-only turns (tools handled the request directly without an LLM call), verify `result.action_result.handled` with `not result.action_result.has_unhandled_clause` and `result.action_result.accounting_status == "completed"`.
-- When a turn fails (for example the LLM provider is unreachable) or is cancelled (`result.cancelled`), the failure details land in `result.primary_response_text`.
+`answered` means `primary_response_text` is non-empty. A failed model call
+still fills that text: `action_result.accounting_status` is `"not_run"` and
+`stop_reason` is `"error"`. Trust the text when accounting completed, the
+turn was not cancelled, and it did not hit the iteration cap.
 
 ### Internal seams (not for hosts)
 
@@ -160,12 +173,13 @@ configure_process(EMBEDDED_PROFILE)
 session = AgentSession.start()
 
 result = session.chat("summarize critical alerts and deployment changes from the last 24h")
-action_ok = (
-    result.action_result.handled
-    and not result.action_result.has_unhandled_clause
-    and result.action_result.accounting_status == "completed"
-)
-if not (result.answered or action_ok) or result.cancelled or not result.primary_response_text:
+action = result.action_result
+if (
+    result.cancelled
+    or action.hit_iteration_cap
+    or action.accounting_status != "completed"
+    or not result.primary_response_text
+):
     raise RuntimeError(f"Scheduled digest failed: {result.primary_response_text or 'no response produced'}")
 
 summary = result.primary_response_text
@@ -190,9 +204,10 @@ result = session.chat("which of those affect checkout?")
 To resume an existing session, pass its ID:
 
 ```python
-from core.agent_harness import AgentSession, SessionConfig
+from core.agent_harness import SessionConfig
+from surfaces.embedded import start_embedded_session
 
-session = AgentSession.start(SessionConfig(session_id="abc123"))
+session = start_embedded_session(SessionConfig(session_id="abc123"))
 ```
 
 ## Run until a goal is complete
@@ -228,8 +243,14 @@ outcome = session.chat_until_goal(
 
 print(outcome.goal.status)
 print(outcome.turn_count)
-if outcome.last_result.answered:
-    print(outcome.last_result.primary_response_text)
+last = outcome.last_result
+if (
+    not last.cancelled
+    and not last.action_result.hit_iteration_cap
+    and last.action_result.accounting_status == "completed"
+    and last.primary_response_text
+):
+    print(last.primary_response_text)
 ```
 
 The loop stops when the goal is achieved, paused, cancelled, cleared, or its
@@ -250,7 +271,10 @@ whether the agent may open a menu.
 
 ```python
 from core.agent_harness import AgentSession, SessionConfig
+from infrastructure.process.boot import EMBEDDED_PROFILE
+from surfaces.shared.process_boot import configure_process
 
+configure_process(EMBEDDED_PROFILE)
 session = AgentSession.start(SessionConfig(), surface="headless_cli")
 ```
 
@@ -263,7 +287,8 @@ whose one method is `surface()`. If omitted,
 ## Custom output and ports
 
 `start()` buffers all output. To capture tool progress yourself (for example to
-stream to a websocket), build the agent and pass your own sink:
+stream to a websocket), boot the process first (the snippets above), then
+build the agent and pass your own sink:
 
 ```python
 from core.agent_harness import AgentSession, SessionConfig

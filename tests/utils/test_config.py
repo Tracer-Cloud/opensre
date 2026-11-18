@@ -6,6 +6,7 @@ import pytest
 from config.grafana_cloud import (
     apply_otel_env_defaults,
     configure_grafana_cloud,
+    load_env,
     validate_grafana_cloud_config,
 )
 
@@ -91,3 +92,16 @@ def test_validate_grafana_cloud_config_passes_when_present():
         }
     ):
         assert validate_grafana_cloud_config() is True
+
+
+def test_load_env_reads_export_prefixed_assignments(tmp_path):
+    """``export KEY=value`` sets ``KEY``, the same as the OpenSRE env bootstrap."""
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "export GCLOUD_OTLP_ENDPOINT=https://example.grafana.net/otlp\n", encoding="utf-8"
+    )
+    with temp_env({}):
+        os.environ.pop("GRAFANA_CONFIG_SKIP_ENV_FILE")
+        load_env(env_file)
+        assert os.getenv("GCLOUD_OTLP_ENDPOINT") == "https://example.grafana.net/otlp"
+        assert "export GCLOUD_OTLP_ENDPOINT" not in os.environ
