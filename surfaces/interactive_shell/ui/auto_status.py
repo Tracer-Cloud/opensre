@@ -26,7 +26,7 @@ STATUS_TEXT_INDENT = "    "
 def auto_status_ansi(session: Session, *, quiet: bool = False, max_width: int | None = None) -> str:
     """Model first, with truthful effort and permission copy on one bounded row.
 
-    Permission copy stays visible at every level, including High (the default).
+    Permission copy stays visible at every level, including explicit High.
     The model clips before applied effort and permissions on narrow terminals.
     """
     level = getattr(session.terminal, "auto_level", DEFAULT_AUTO_LEVEL)

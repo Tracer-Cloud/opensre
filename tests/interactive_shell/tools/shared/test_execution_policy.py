@@ -1,9 +1,8 @@
 """Unit tests for the shared REPL execution policy.
 
-Alpha mode: policy helpers resolve to ``allow`` with no confirmation prompt and
-there is no command guardrail. The ``ask`` verdict is retained for
-``trust_mode`` / future opt-in stricter policy, so those paths are covered here
-by exercising :func:`resolve_confirmation` with explicitly-constructed ``ask`` /
+The base policy allows tools; the default Med autonomy level promotes mutating
+tool types to ``ask``. The ``ask`` verdict also supports ``trust_mode`` and the
+other autonomy levels, so those paths are covered with explicit ``ask`` and
 ``deny`` results.
 
 This module is pure (no console, no ``input``, no analytics). The interaction
@@ -15,7 +14,7 @@ lives in ``tools.interactive_shell.shell.policy`` and is covered by
 
 from __future__ import annotations
 
-from config.constants.repl_autonomy import AutoLevel
+from config.constants.repl_autonomy import DEFAULT_AUTO_LEVEL, AutoLevel
 from tools.interactive_shell.shared import (
     ConfirmationOutcome,
     ExecutionPolicyResult,
@@ -143,6 +142,7 @@ def test_auto_med_asks_mutating_tools_and_allows_read_only() -> None:
         assert "Auto (Med)" in (result.reason or "")
     read_only = apply_auto_level(allow_tool("investigation"), AutoLevel.MED)
     assert read_only.verdict == "allow"
+    assert DEFAULT_AUTO_LEVEL == AutoLevel.MED
 
 
 def test_auto_low_asks_mutating_tool_types() -> None:

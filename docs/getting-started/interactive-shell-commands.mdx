@@ -18,8 +18,9 @@ terminals, the highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
-  elevated slash commands. Default `/auto` is **high** (alpha: no tool prompts),
-  except Python execution, which asks before every call at every level. Pick
+  elevated slash commands. Default `/auto` is **med**, so shell and mutating
+  tools ask before running. Python execution asks before every call at every
+  level. Pick
   **Yes, allow for this session** to stop those prompts until `/new` or
   `/resume`; code that asks for network access still prompts each time.
   `/trust on` skips all approval prompts for the rest of the session. Outside a
@@ -105,7 +106,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/cost` | Token usage and LLM call count for the current session |
 | `/context` | What the next model call will contain, and how big each part is |
 | `/effort` | Set or show reasoning effort (`low` … `max`) |
-| `/auto` | Tool-approval autonomy (`off` / `low` / `med` / `high`; default `high`) |
+| `/auto` | Tool-approval autonomy (`off` / `low` / `med` / `high`; default `med`) |
 | `/trust` | Enable or disable trust mode (skip confirmation prompts) |
 | `/verbose` | Toggle verbose logging |
 | `/clear` | Clear the screen and re-render the banner |
@@ -375,8 +376,8 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 
 | Level | Prompts before |
 | --- | --- |
-| `high` (default) | Nothing except Python execution — alpha default; every other tool runs immediately |
-| `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, … |
+| `high` | Nothing except Python execution; use only when you want mutating actions to skip confirmation |
+| `med` (default) | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, … |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |
 
@@ -1379,7 +1380,7 @@ Two controls decide whether the REPL prompts before an action:
 
 | Control | Role |
 | --- | --- |
-| `/auto` | Which **agent tool types** need approval (default **high** = none) |
+| `/auto` | Which **agent tool types** need approval (default **med** asks before mutating tools) |
 | `/trust` | Session override that **skips** approval prompts when `/auto` (or an elevated slash command) would ask |
 
 | Tier | Examples | Confirmation |
@@ -1391,8 +1392,8 @@ Two controls decide whether the REPL prompts before an action:
 Non-TTY: actions that would ask **fail closed** (error message, no side effect).
 
 ```text
-/auto med   # ask before mutating agent tools
-/auto high  # alpha default — no tool prompts
+/auto med   # default — ask before mutating agent tools
+/auto high  # skip mutating-tool prompts
 /trust on   # skip prompts for this session
 /trust off  # restore /auto (and elevated) prompts
 ```

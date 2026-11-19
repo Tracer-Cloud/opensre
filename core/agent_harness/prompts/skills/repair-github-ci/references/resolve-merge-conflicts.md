@@ -38,8 +38,8 @@ Never resolve conflict markers with `code_implement`.
    manifest, never merged by hand. Then it verifies that no conflict marker or
    unmerged path remains and shows the result table.
 4. Asks the shell's approval policy to commit the merge and push the branch to
-   the one it tracks. At `/auto high` (the default) it proceeds; at lower
-   levels the user is asked first; an unattended run proceeds. The remote
+   the one it tracks. At the default `/auto med` level it asks first;
+   `/auto high` proceeds without asking, and an unattended run proceeds. The remote
    branch is never a protected base branch.
 5. Waits for the checks of the open pull request whose head is that branch
    and reports `checks_state` (`passed`, `failed`, `timed_out`, `superseded`,

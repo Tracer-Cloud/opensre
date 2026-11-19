@@ -58,7 +58,7 @@ def test_tool_completion_updates_prompt_from_memory_even_when_save_fails(
         rendered = ANSI(ci_fix_status.prompt_status_ansi(session))
         text = fragment_list_to_text(to_formatted_text(rendered))
         assert "CI fixes (1) ✓" in text
-        assert "Auto (High)" in text
+        assert "Auto (Med)" in text
         assert load_launch_status().ci_fix_count == 1
         ci_fix_tool.fix_github_pr_ci(
             github_connection_origin="webapp",
@@ -78,10 +78,9 @@ def test_chip_gives_way_before_the_autonomy_level_truncates(
     """A visible CI chip must never cost the level its last characters.
 
     The chip-fit budget has to cover the gutter ``auto_status_ansi`` prepends
-    and the ellipsis column ``clip_prompt_text`` reserves. Reserving only
-    ``len("Auto (High)")`` left widths ~29-35 rendering
-    ``Auto (Hi… · CI/CD fixes (0)`` — strictly worse than one column narrower,
-    which drops the chip and shows the level in full.
+    and the ellipsis column ``clip_prompt_text`` reserves. Keep ``Auto (Med)``
+    and the chip together; if both cannot fit, drop the chip and show the level
+    in full.
     """
     from config.constants import CI_FIX_STATUS_LABEL
 
@@ -98,8 +97,8 @@ def test_chip_gives_way_before_the_autonomy_level_truncates(
                 to_formatted_text(ANSI(ci_fix_status.prompt_status_ansi(session)))
             )
             if CI_FIX_STATUS_LABEL in plain:
-                assert "Auto (High)" in plain, f"level truncated beside chip at width {width}"
-                assert "Allow all" in plain
+                assert "Auto (Med)" in plain, f"level truncated beside chip at width {width}"
+                assert "Ask shell + edits" in plain
 
 
 def test_zero_chip_is_dim_and_live_line_fits_narrow_terminals(

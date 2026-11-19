@@ -359,7 +359,7 @@ class TestDispatchSlash:
         console, buf = _capture()
         dispatch_slash("/auto", session, console)
         out = buf.getvalue()
-        assert "Auto (High)" in out
+        assert "Auto (Med)" in out
         assert "default:" in out
         assert "off" in out and "all actions require approval" in out
         assert "/trust on skips approval" in out

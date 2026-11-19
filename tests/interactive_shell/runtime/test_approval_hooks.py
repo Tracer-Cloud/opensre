@@ -1,4 +1,4 @@
-"""Tests for the shell's approval hook: no tool asks at the default auto level."""
+"""Tests for the always-ask hook and its handoff to other tool checks."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _console() -> tuple[Console, io.StringIO]:
     return Console(file=buffer, force_terminal=False), buffer
 
 
-def test_stop_is_not_asked_at_the_default_allow_all_level() -> None:
+def test_stop_is_not_intercepted_by_the_always_ask_hook() -> None:
     # Arrange
     session = Session()
     console, printed = _console()
@@ -57,7 +57,7 @@ def test_stop_is_not_asked_at_the_default_allow_all_level() -> None:
     decision = hooks.before_tool_call(_request("stop_hosted_gateway"))
 
     # Assert
-    assert session.terminal.auto_level == DEFAULT_AUTO_LEVEL == AutoLevel.HIGH
+    assert session.terminal.auto_level == DEFAULT_AUTO_LEVEL == AutoLevel.MED
     assert decision is None
     assert printed.getvalue() == ""
     assert inner_calls == ["stop_hosted_gateway"]

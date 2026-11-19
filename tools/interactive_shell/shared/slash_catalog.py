@@ -84,7 +84,7 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/auto": _mcp(
         "Set Auto autonomy: off (ask before every tool), low, "
-        "med (ask before mutating agent tools), high (ask nothing, alpha default).",
+        "med (the default; ask before mutating agent tools), high (ask nothing).",
         "User asks to change Auto Off/Low/Med/High or how much the agent may run without approval",
         anti_examples=("User asks to enable trust mode (use /trust)",),
     ),

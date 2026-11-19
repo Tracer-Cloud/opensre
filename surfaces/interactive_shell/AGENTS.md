@@ -66,10 +66,12 @@ owning area rather than adding more logic to the caller.
   trigger confirmations or side effects.
 - Send command execution through the central dispatch and execution-policy
   helpers. Do not bypass `execution_policy.py` for new commands.
-- **Alpha allow-all execution policy (current behavior):** the REPL defaults to
-  **`/auto high`** — no tool confirmation. `execution_policy.py` resolves every
-  action to `allow`; `apply_auto_level` promotes to `ask` only when `/auto` is
-  below High. There is **no shell-command safety policy**: the
+- **Alpha execution policy (current behavior):** the REPL defaults to
+  **`/auto med`**, which asks before shell and mutating agent tools run. Read-only
+  tools run without confirmation. `execution_policy.py` resolves available
+  actions to `allow`; `apply_auto_level` promotes mutating tool types to `ask`
+  at Med and Low. `/auto high` remains an explicit opt-in to skip those prompts.
+  There is **no shell-command safety policy**: the
   read-only/mutating/restricted classification and the `deny` floor were removed
   (`shell_policy.py` deleted; parsing/policy/execution live under
   `tools/shell/`). Mutating commands (`rm`/`mv`/`docker`), `restricted` commands
@@ -82,10 +84,9 @@ owning area rather than adding more logic to the caller.
   or deny floor while in alpha — gate stricter policy in `execution_policy.py`
   (the `ask` verdict, confirmation UX, `trust_mode`, and `/auto` are the hooks),
   not via a planner-stage denial.
-- Non-TTY behavior under default-allow: actions no longer fail closed on
-  non-interactive stdin (there is nothing to confirm). The fail-closed path only
-  applies if a verdict is explicitly `ask`, which the default policy does not
-  emit.
+- Non-TTY behavior under default-allow: read-only actions do not need a prompt.
+  Shell and mutating actions receive an `ask` verdict at the default Med level
+  and fail closed when stdin is not a TTY.
 - **CPR / exclusive-stdin registration (required for table-outputting commands):**
   Under `patch_stdout(raw=True)`, the REPL runs dispatch concurrently with the
   next `prompt_async()`. When a command emits Rich table output, prompt_toolkit

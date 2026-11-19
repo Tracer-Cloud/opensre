@@ -75,11 +75,11 @@ The commit and push are one approval, recorded as the shell's `/auto` level:
 
 | `/auto` level | Behaviour |
 | --- | --- |
-| `high` (default) | Commits and pushes without asking |
+| `high` | Commits and pushes without asking |
 | `med`, `low`, `off` | Asks `[y/N]` after showing the side-by-side view; `n` leaves the resolved files in the working tree, uncommitted |
 | Unattended run (scheduled skill, no terminal) | Commits and pushes, like `high` |
 
-Run `/auto med` when you want to review before anything leaves your machine.
+The default `/auto med` level asks before a commit and push.
 After a decline, ask again ("commit and push the merge") once you are happy;
 the coding agent is not run a second time.
 

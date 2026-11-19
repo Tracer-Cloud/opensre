@@ -78,11 +78,11 @@ answered without adding keyword/regex rules. Two complementary mechanisms:
    discretion, emit a read-only discovery action (for example
    `slash_invoke("/integrations", ["list"])` or `["verify"]`) to discover the
    answer instead of deflecting. There is no keyword mapping for this — the LLM
-   decides. Under the alpha allow-all policy every discovery action runs without
-   confirmation (`execution_policy.allow_tool("slash")` returns `allow`); the
-   former `ExecutionTier`/`resolve_slash_execution_tier` classification was
-   removed because it gated nothing. No fail-closed regex rule is involved; the
-   agent decides whether to emit a discovery action.
+   decides. The base policy returns `allow` for discovery actions, while the
+   default `/auto med` level asks before `slash` tool calls, including read-only
+   listings. `/auto high` skips those prompts. The former
+   `ExecutionTier`/`resolve_slash_execution_tier` classification was removed;
+   autonomy gates actions by tool type. No regex rule selects a discovery action.
 
 ### Observe→answer summary loop
 
@@ -149,9 +149,9 @@ also removed from turn scenario fixtures, since the oracle never asserted on
 them; the fixture `policy` block now carries a single `executes_terminal_action`
 `boolean` (true only when a shell action AgentTool is expected to run).
 
-If write/mutating actions are introduced later, gate them with the
-execution-stage confirmation policy (`tools/interactive_shell/shared/execution_policy.py`), **not**
-an action-selection denial.
+Write and mutating actions go through the execution-stage confirmation policy
+(`tools/interactive_shell/shared/execution_policy.py`), **not** an
+action-selection denial.
 
 ### Shell commands during alpha
 
@@ -175,9 +175,9 @@ that needs another directory with `cd path && command`. On POSIX, commands
 use non-interactive `/bin/sh` syntax rather than loading the configured
 interactive shell, its aliases, or its startup files.
 
-The existing confirmation flow remains available to **`/auto`** (Off/Low/Med)
-and `/trust`. At those stricter `/auto` levels, every shell command asks for
-approval, including commands that appear read-only. Plan-only also asks before
+The existing confirmation flow uses **`/auto`** (Off/Low/Med/High) and `/trust`.
+At the default Med level and below, every shell command asks for approval,
+including commands that appear read-only. Plan-only also asks before
 running a shell command; its confirmation distinguishes allowing just that
 command from authorizing the rest of the plan. The shell interprets expansions
 after the approval decision, so OpenSRE does not exempt shell text based on a
@@ -188,13 +188,14 @@ partial parser.
 Addendum — Aug 2026.
 
 **Decision:** the REPL exposes `/auto off|low|med|high` as session-scoped
-tool-approval autonomy. Default is **high** (alpha: no confirmation). Lower
-levels promote a default-`allow` policy result to `ask` based on `tool_type`
-(`config/constants/repl_autonomy.py`), not a shell-command allowlist.
+tool-approval autonomy. Default is **med**; high is an explicit opt-in to skip
+mutating-tool prompts. Autonomy promotes a default-`allow` policy result to
+`ask` based on `tool_type` (`config/constants/repl_autonomy.py`), not a
+shell-command allowlist.
 
 | Level | Asks before |
 | --- | --- |
-| `high` | Nothing |
+| `high` | Python execution only |
 | `med` | Mutating agent tools (`shell`, `code_agent`, `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) |
 | `low` | Same as `med` |
 | `off` | Every tool type |

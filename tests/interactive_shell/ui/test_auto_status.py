@@ -10,12 +10,13 @@ from surfaces.interactive_shell.ui.auto_status import auto_status_ansi
 
 
 def test_high_auto_shows_allow_all_permission() -> None:
-    """High is the default — the bar must still say what High permits."""
+    """Explicit High must still show that it allows all actions."""
     import re
 
     from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 
     session = Session()
+    assert session.terminal.auto_level == AutoLevel.MED
     session.terminal.auto_level = AutoLevel.HIGH
     plain = re.sub(
         r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07",

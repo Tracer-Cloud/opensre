@@ -1,27 +1,13 @@
 """Central execution policy (allow / ask / deny) for interactive REPL tools.
 
-Alpha mode: allow everything
-----------------------------
-OpenSRE is in **alpha**, and the interactive REPL runs with **no command
-guardrails** so developer velocity stays high. Every policy decision below
-resolves to ``allow`` and nothing prompts for confirmation: slash/``opensre``
-commands (any tier), synthetic tests, code-agent launches, LLM
-runtime switches, and shell commands of every kind — read-only, mutating,
-``restricted`` (``sudo``, ``systemctl``, ``kill``, ``dd`` …), shell operators
-(``| && ; > <``), and command substitution (`` ` ``/``$(...)``) — all run
-immediately, in any context (TTY or not, trust mode or not).
+The base policy allows available tools. The REPL defaults to ``/auto med``,
+which asks before shell and other mutating tool types run. ``/auto high`` is an
+explicit opt-in to run those actions without confirmation.
 
-There is intentionally **no shell-command safety policy**: the former
-read-only / mutating / restricted classification and its deny floor were removed
-(see ``docs/interactive-shell-action-policy.md``). The only thing shell
-evaluation still rejects is genuinely empty input (a bare ``!`` or whitespace),
-which is input validation rather than a guardrail.
-
-The ``ask`` verdict is retained so that ``trust_mode``, ``/auto`` (Off/Low/Med),
-and any future opt-in stricter policy still have a hook. ``allow_tool`` still
-returns ``allow``; :func:`apply_auto_level` may promote that to ``ask``. High
-(the default) never does. If a shell-command allowlist is reintroduced after
-alpha, gate it here at the execution stage (not the planner).
+There is no shell-command allowlist or deny floor. Every non-empty shell
+command can run after approval, including restricted commands and shell
+operators; the host shell parses the command after the approval decision.
+Genuinely empty input remains rejected.
 
 This module is intentionally **pure**: it has no terminal I/O, no analytics, and
 no console dependency. The decision is computed by :func:`resolve_confirmation`,
@@ -157,8 +143,8 @@ def apply_auto_level(
 ) -> ExecutionPolicyResult:
     """Promote a default-allow verdict to ``ask`` when ``/auto`` is below High.
 
-    High (alpha default) is a no-op. Lower levels use tool_type, not a shell
-    command allowlist.
+    High skips confirmation. Lower levels use tool_type, not a shell command
+    allowlist.
     """
     if result.verdict != "allow":
         return result

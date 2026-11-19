@@ -1,8 +1,7 @@
 """Auto (Off|Low|Med|High) autonomy levels for the REPL.
 
-Default is High: alpha still allows every action without a prompt. Lower
-levels opt into the existing ``ask`` confirmation hook — they are not a
-shell-command allowlist.
+Default is Med: shell and mutating tools ask before running. High remains an
+explicit opt-in to allow every action without a prompt.
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ class AutoLevel(StrEnum):
     HIGH = "high"
 
 
-DEFAULT_AUTO_LEVEL: Final[AutoLevel] = AutoLevel.HIGH
+DEFAULT_AUTO_LEVEL: Final[AutoLevel] = AutoLevel.MED
 
 AUTO_LEVEL_CAPTIONS: Final[dict[AutoLevel, str]] = {
     AutoLevel.OFF: "all actions require approval",
@@ -29,8 +28,8 @@ AUTO_LEVEL_CAPTIONS: Final[dict[AutoLevel, str]] = {
     AutoLevel.HIGH: "all actions allowed",
 }
 
-# Idle status bar — short permission words. High is the default; hiding the
-# caption made it look like "best / full power" instead of allow-all.
+# Idle status bar — short permission words. Keep High explicit so it reads as
+# an opt-in to allow all actions without confirmation.
 AUTO_LEVEL_BAR_CAPTIONS: Final[dict[AutoLevel, str]] = {
     AutoLevel.OFF: "Ask everything",
     AutoLevel.LOW: "Ask shell + edits",
