@@ -529,3 +529,35 @@ def test_non_mutating_slash_command_skips_the_execution_gate() -> None:
     slash_tool.execute_slash_tool({"command": "/exit"}, ctx)
 
     assert ports.dispatched == ["/exit"]
+
+
+@dataclass
+class _PolicySlashPorts(FakeSlashPorts):
+    """Runs the real execution gate non-interactively, so an ``ask`` blocks."""
+
+    def execution_allowed(self, **kwargs: Any) -> bool:
+        from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
+
+        return execution_allowed(
+            kwargs["policy"],
+            session=kwargs["session"],
+            console=kwargs["console"],
+            action_summary=kwargs["action_summary"],
+            is_tty=False,
+        )
+
+
+@pytest.mark.parametrize(
+    ("turn_message", "runs"),
+    [("/memory delete note-1", True), ("forget note-1", False)],
+)
+def test_default_auto_runs_typed_slash_but_gates_agent_chosen_slash(
+    turn_message: str, runs: bool
+) -> None:
+    """At the default /auto med, the user's typed command is its own approval."""
+    ctx, _buf, _session, ports = _ctx(ports=_PolicySlashPorts())
+    ctx = replace(ctx, turn_user_message=turn_message)
+
+    slash_tool.execute_slash_tool({"command": "/memory", "args": ["delete", "note-1"]}, ctx)
+
+    assert ports.dispatched == (["/memory delete note-1"] if runs else [])

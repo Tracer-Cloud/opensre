@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.constants.repl_autonomy import USER_SLASH_TOOL_TYPE
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.session_state import (
     arm_setup_resume,
@@ -286,7 +287,9 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dic
     if not ctx.slash_ports.command_is_mutating(name):
         return _dispatch_and_translate_exit(stripped, ctx, policy_precleared=True)
 
-    plan = plan_foreground_tool("slash", "slash")
+    # The user's own typed command is its approval; agent-chosen ones ask at Med.
+    tool_type = USER_SLASH_TOOL_TYPE if _user_typed_this_command(ctx, parts) else "slash"
+    plan = plan_foreground_tool(tool_type, "slash")
     if not ctx.slash_ports.execution_allowed(
         policy=plan.policy,
         session=ctx.session,

@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from rich.console import Console
 
+from config.constants.repl_autonomy import USER_SLASH_TOOL_TYPE
 from config.interactive_override import forced_non_interactive
 from core.agent_harness.spi.session_state import pop_turn_outcome_hint, session_terminal
 from surfaces.interactive_shell.command_registry.catalog import SLASH_COMMANDS
@@ -117,7 +118,7 @@ def dispatch_slash(
                     record_slash(ok=True)
                     return _cmd_help(session, console, [])
 
-                gate = allow_tool("slash")
+                gate = allow_tool(USER_SLASH_TOOL_TYPE)
                 if not execution_allowed(
                     gate,
                     session=session,
@@ -179,7 +180,7 @@ def dispatch_slash(
                 result = cmd.handler(session, console, args)
                 slash_recorded |= name == "/sessions"
                 return result
-            policy = allow_tool("slash")
+            policy = allow_tool(USER_SLASH_TOOL_TYPE)
             if not execution_allowed(
                 policy,
                 session=session,

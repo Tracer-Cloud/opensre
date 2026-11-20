@@ -377,9 +377,11 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 | Level | Prompts before |
 | --- | --- |
 | `high` | Nothing except Python execution; use only when you want mutating actions to skip confirmation |
-| `med` (default) | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, … |
+| `med` (default) | Mutating agent tools: shell, code agent, slash/CLI commands the agent chose, synthetic tests, LLM provider switch, Sentry issue fix, … |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |
+
+A slash command you type yourself, or pick from `/help`, counts as your approval and prompts only at `off`. Typed `!` shell commands still follow the table.
 
 `/auto` is **not** a shell-command allowlist: under alpha, shell strings still run when approved (or when High skips the prompt). Lower levels only promote the existing `ask` confirmation hook by `tool_type`.
 

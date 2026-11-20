@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
+from config.constants.repl_autonomy import AutoLevel
 from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY, ActionToolScope
 from core.tool import AgentToolContext, ToolExecutionResult
 from infrastructure.scheduling.task_types import TaskKind, TaskStatus
@@ -314,6 +315,7 @@ def test_run_shell_command_quiet_prints_a_dim_command_line_and_no_stdout(
     )
 
     session = Session()
+    session.terminal.auto_level = AutoLevel.HIGH  # quiet output, not the approval card
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
@@ -353,6 +355,7 @@ def test_run_shell_command_quiet_outputless_success_prints_only_the_command_line
     )
 
     session = Session()
+    session.terminal.auto_level = AutoLevel.HIGH  # quiet output, not the approval card
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 

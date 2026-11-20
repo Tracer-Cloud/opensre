@@ -23,7 +23,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
-from config.constants.repl_autonomy import DEFAULT_AUTO_LEVEL
+from config.constants.repl_autonomy import AutoLevel
 from core.agent_harness.spi.session_state import trust_mode_enabled
 from infrastructure.analytics.capture import capture_repl_execution_policy_decision
 from infrastructure.analytics.provider import Properties
@@ -138,7 +138,9 @@ def execution_allowed(
     trust_mode = trust_mode_enabled(session)
     tty = sys.stdin.isatty() if is_tty is None else is_tty
     confirm = confirm_fn or DEFAULT_CONFIRM_FN
-    auto_level = getattr(getattr(session, "terminal", None), "auto_level", DEFAULT_AUTO_LEVEL)
+    # /auto is REPL terminal state. Headless (gateway) sessions have no terminal,
+    # no /auto command and nobody to confirm, so they keep the pre-/auto behavior.
+    auto_level = getattr(getattr(session, "terminal", None), "auto_level", AutoLevel.HIGH)
     result = apply_auto_level(result, auto_level)
     plan_only_active = bool(getattr(session, "plan_only_until_authorized", False))
     result = apply_plan_only_gate(result, plan_only_active=plan_only_active)

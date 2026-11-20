@@ -70,7 +70,10 @@ owning area rather than adding more logic to the caller.
   **`/auto med`**, which asks before shell and mutating agent tools run. Read-only
   tools run without confirmation. `execution_policy.py` resolves available
   actions to `allow`; `apply_auto_level` promotes mutating tool types to `ask`
-  at Med and Low. `/auto high` remains an explicit opt-in to skip those prompts.
+  at Med and Low. A literal slash the user typed or picked from `/help` uses
+  `USER_SLASH_TOOL_TYPE`, which only Off asks about. Sessions without a
+  terminal (gateway) evaluate as High. `/auto high` remains an explicit opt-in
+  to skip those prompts.
   There is **no shell-command safety policy**: the
   read-only/mutating/restricted classification and the `deny` floor were removed
   (`shell_policy.py` deleted; parsing/policy/execution live under

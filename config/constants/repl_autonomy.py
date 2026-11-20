@@ -65,6 +65,11 @@ _MUTATING_AGENT_TOOL_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
+# A slash command the user typed or picked from /help: the input is the
+# approval, so only Off (ask every tool type) prompts for it. Agent-chosen
+# slash commands keep the mutating ``slash`` tool type.
+USER_SLASH_TOOL_TYPE: Final[str] = "user_slash"
+
 AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
     AutoLevel.HIGH: frozenset(),
     # Read-only tool types run; shell text is not treated as provably read-only.
@@ -117,6 +122,7 @@ __all__ = [
     "AutoLevel",
     "DEFAULT_AUTO_LEVEL",
     "SESSION_APPROVAL_EXCLUDED_ARGUMENTS",
+    "USER_SLASH_TOOL_TYPE",
     "format_auto_status_bar",
     "format_auto_status_plain",
     "parse_auto_level",

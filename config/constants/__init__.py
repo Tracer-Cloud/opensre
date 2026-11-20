@@ -1243,6 +1243,9 @@ if TYPE_CHECKING:
         DEFAULT_AUTO_LEVEL as DEFAULT_AUTO_LEVEL,
     )
     from config.constants.repl_autonomy import (
+        USER_SLASH_TOOL_TYPE as USER_SLASH_TOOL_TYPE,
+    )
+    from config.constants.repl_autonomy import (
         AutoLevel as AutoLevel,
     )
     from config.constants.repl_autonomy import (

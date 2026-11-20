@@ -152,8 +152,8 @@ def test_ci_chip_never_displaces_model_effort_or_permissions(
             to_formatted_text(ANSI(ci_fix_status.prompt_status_ansi(session)))
         )
         assert cell_len(plain) <= width
-        assert "(High) · Allow all" in plain
+        assert "(High) · Ask shell + edits" in plain
         if width == 39:
             assert "CI fixes" not in plain
         else:
-            assert plain == "    codex / gpt-6.1-sol (High) · Allow all · CI fixes (0)"
+            assert plain == "    codex / gpt-6.1-sol (High) · Ask shell + edits · CI fixes (0)"

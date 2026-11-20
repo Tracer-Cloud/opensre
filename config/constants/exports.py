@@ -542,6 +542,7 @@ EXPORTS: dict[str, str] = {
     "AUTO_LEVEL_CAPTIONS": "repl_autonomy",
     "AUTO_LEVEL_TITLES": "repl_autonomy",
     "DEFAULT_AUTO_LEVEL": "repl_autonomy",
+    "USER_SLASH_TOOL_TYPE": "repl_autonomy",
     "AutoLevel": "repl_autonomy",
     "format_auto_status_bar": "repl_autonomy",
     "format_auto_status_plain": "repl_autonomy",

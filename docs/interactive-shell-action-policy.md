@@ -196,9 +196,13 @@ shell-command allowlist.
 | Level | Asks before |
 | --- | --- |
 | `high` | Python execution only |
-| `med` | Mutating agent tools (`shell`, `code_agent`, `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) |
+| `med` | Mutating agent tools (`shell`, `code_agent`, agent-chosen `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) |
 | `low` | Same as `med` |
 | `off` | Every tool type |
+
+**Typed slash commands:** a literal `/slash` the user typed, or picked from
+`/help`, runs as tool type `user_slash`: the input is the approval, so only
+`off` asks. Headless (gateway) sessions have no `/auto` and keep High.
 
 **Interaction with `/trust`:** `trust_mode` still short-circuits `ask` to allow
 (skip the prompt). Non-TTY `ask` remains fail-closed.

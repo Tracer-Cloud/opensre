@@ -34,6 +34,7 @@ def _ask_result() -> ExecutionPolicyResult:
 
 def test_allow_verdict_runs_without_prompt() -> None:
     session = Session()
+    session.terminal.auto_level = AutoLevel.HIGH
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
@@ -55,6 +56,7 @@ def test_allow_verdict_runs_without_prompt() -> None:
 def test_non_tty_allows_default_policy() -> None:
     """Default-allow no longer fails closed on non-interactive stdin."""
     session = Session()
+    session.terminal.auto_level = AutoLevel.HIGH
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
     r = allow_tool("slash")
