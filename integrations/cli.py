@@ -425,6 +425,12 @@ def _setup_sentry_mcp() -> None:
     _run_spec_setup(SENTRY_MCP_SETUP)
 
 
+def _setup_mcp_server() -> None:
+    from integrations.mcp_servers.setup import MCP_SERVERS_SETUP
+
+    _run_spec_setup(MCP_SERVERS_SETUP)
+
+
 def _setup_postgresql() -> None:
     from integrations.postgresql.setup import POSTGRESQL_SETUP
 
@@ -531,6 +537,7 @@ _HANDLERS: dict[str, Any] = {
     "twilio": _setup_twilio,
     "posthog_mcp": _setup_posthog_mcp,
     "sentry_mcp": _setup_sentry_mcp,
+    "mcp": _setup_mcp_server,
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
     "redis": _setup_redis,

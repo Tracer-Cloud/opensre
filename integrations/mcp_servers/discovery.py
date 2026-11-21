@@ -76,7 +76,8 @@ def _read_only_hint(tool: Any) -> bool:
     return hint is True
 
 
-def _list_server(server: str, config: McpServerConfig) -> tuple[McpServerTool, ...]:
+def list_server_tools(server: str, config: McpServerConfig) -> tuple[McpServerTool, ...]:
+    """List the tools ``server`` exposes under ``config`` (uncached; raises on failure)."""
     listed = list_mcp_tools(
         config, timeout_entire_operation=True, **session_options(server, config)
     )
@@ -131,7 +132,7 @@ def discover_tools(
     executor = ThreadPoolExecutor(max_workers=min(8, len(pending)), thread_name_prefix="mcp-list")
     try:
         futures = {
-            key: executor.submit(_list_server, server, config)
+            key: executor.submit(list_server_tools, server, config)
             for key, (server, config) in pending.items()
         }
         deadline = time.monotonic() + _DISCOVERY_WAIT_SECONDS
@@ -164,4 +165,10 @@ def clear_discovery_cache() -> None:
         _cache.clear()
 
 
-__all__ = ["McpServerTool", "clear_discovery_cache", "discover_tools", "session_options"]
+__all__ = [
+    "McpServerTool",
+    "clear_discovery_cache",
+    "discover_tools",
+    "list_server_tools",
+    "session_options",
+]

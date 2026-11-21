@@ -860,7 +860,9 @@ class TestMcpCommand:
             m, "run_cli_command", lambda _, args, **_kw: (captured.append(args), True)[1]
         )
         dispatch_slash("/mcp connect", Session(), Console())
-        assert captured == [["integrations", "setup"]]
+        dispatch_slash("/mcp connect github", Session(), Console())
+        # Bare connect adds an MCP server; a named service is set up as before.
+        assert captured == [["integrations", "setup", "mcp"], ["integrations", "setup", "github"]]
 
     def test_disconnect_uses_native_store_removal(self, monkeypatch: object) -> None:
         import infrastructure.analytics.capture as analytics_cli

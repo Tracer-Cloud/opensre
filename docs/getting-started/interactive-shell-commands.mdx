@@ -628,12 +628,13 @@ Connections without a result are checked automatically in the background, up to 
 
 <Accordion title="/mcp">
 
-MCP-capable integrations only (subset of the full integration catalog).
+MCP servers you added with `/mcp connect`, plus the GitHub, Sentry MCP, and PostHog MCP integrations.
 
 `/mcp list` opens the same searchable browser and automatically checks connections without a result in the background. It shows **Checking…** until results arrive, or this session’s last check result with its timestamp. Click a row or use **↑↓/Tab** to browse, **Enter** to check again, **F2** to reconfigure, **F3** to disconnect with confirmation, **F4** to connect, and **Esc** to close. Explicit subcommands remain available below.
 
 ```text
 /mcp list
+/mcp connect
 /mcp connect github
 /mcp disconnect github
 ```
@@ -641,6 +642,7 @@ MCP-capable integrations only (subset of the full integration catalog).
 | Subcommand | Maps to |
 | --- | --- |
 | `list` | Browse configured MCP servers in a TTY; render a verified table otherwise |
+| `connect` | `opensre integrations setup mcp` — add any MCP server (see [MCP servers](/integrations/mcp-servers)) |
 | `connect &lt;server&gt;` | `opensre integrations setup &lt;server&gt;` |
 | `disconnect &lt;server&gt;` | `opensre integrations remove &lt;server&gt;` |
 

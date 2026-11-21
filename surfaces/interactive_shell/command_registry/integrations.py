@@ -378,7 +378,8 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if sub == "connect":
-        return _run_integrations_setup(session, console, ["setup", *args[1:]])
+        # Bare ``/mcp connect`` adds an MCP server; a named service still works.
+        return _run_integrations_setup(session, console, ["setup", *(args[1:] or ["mcp"])])
 
     if sub == "disconnect":
         return _handle_remove(session, console, args[1] if len(args) > 1 else None)
@@ -402,7 +403,7 @@ _INTEGRATIONS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
 
 _MCP_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "list connected MCP servers"),
-    ("connect", "add an MCP server via opensre integrations setup"),
+    ("connect", "add an MCP server (opensre integrations setup mcp)"),
     ("disconnect", "remove an MCP server"),
 )
 
