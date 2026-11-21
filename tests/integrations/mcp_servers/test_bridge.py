@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 import time
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from rich.console import Console
 
 from config.constants.repl_autonomy import AutoLevel
@@ -21,12 +23,16 @@ from infrastructure.harness_providers.integration_resolution import resolve_inte
 from integrations.mcp_servers import (
     McpServerConfig,
     bridged_tool_name,
+    build_bridged_tool,
     clear_discovery_cache,
+    configured_servers,
     mcp_server_tools,
 )
+from integrations.mcp_servers.discovery import McpServerTool
 from surfaces.interactive_shell.runtime.approval_hooks import with_shell_approval
 from surfaces.interactive_shell.session import Session
 
+_PROVIDER_TOOL_NAME = re.compile(r"[a-zA-Z0-9_-]{1,64}")
 _OPS_SERVER = Path(__file__).resolve().parents[2] / "fixtures" / "mcp" / "ops_server.py"
 
 
@@ -164,6 +170,71 @@ def test_bridged_names_are_provider_safe_and_stay_distinct_when_capped() -> None
     long_a = bridged_tool_name("grafana.cloud", "x" * 80 + "a")
     long_b = bridged_tool_name("grafana.cloud", "x" * 80 + "b")
 
-    assert bridged_tool_name("my server", "get-logs") == "mcp__my_server__get-logs"
+    assert bridged_tool_name("ops", "query_range") == "mcp__ops__query_range"
     assert len(long_a) == len(long_b) == 64
     assert long_a != long_b
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (("ops", "get.logs"), ("ops", "get_logs")),
+        (("prod__east", "read"), ("prod", "east__read")),
+        (("prod_", "x"), ("prod", "_x")),
+        (("my server", "read"), ("my_server", "read")),
+    ],
+)
+def test_distinct_server_tool_pairs_never_share_a_bridged_name(
+    first: tuple[str, str], second: tuple[str, str]
+) -> None:
+    names = {bridged_tool_name(*first), bridged_tool_name(*second)}
+
+    assert len(names) == 2
+    assert all(_PROVIDER_TOOL_NAME.fullmatch(name) for name in names)
+
+
+def test_a_second_server_reusing_a_name_is_skipped(tmp_path: Path) -> None:
+    first = McpServerConfig(mode="stdio", command=sys.executable, args=(str(_OPS_SERVER),))
+    second = McpServerConfig(mode="stdio", command=str(tmp_path / "other-server"))
+    resolved = {
+        "_all_mcp_instances": [
+            {"name": "ops", "config": first},
+            {"name": "ops", "config": second},
+        ]
+    }
+
+    servers = configured_servers(resolved)
+    tools = mcp_server_tools(resolved)
+
+    assert servers == [("ops", first)]
+    assert {tool.name for tool in tools} == {"mcp__ops__query_range", "mcp__ops__silence_alert"}
+
+
+def test_a_malformed_allowlist_is_rejected_not_widened_to_every_tool() -> None:
+    with pytest.raises(ValidationError):
+        McpServerConfig(url="http://x", allowed_tools={"query_range": True})
+
+
+def test_a_server_that_stalls_during_startup_cannot_hang_a_call(tmp_path: Path) -> None:
+    # Arrange: discovery once succeeded, but the server now never answers initialize.
+    stalled = tmp_path / "stalled_server.py"
+    stalled.write_text("import time\ntime.sleep(120)\n")
+    config = McpServerConfig(
+        mode="stdio", command=sys.executable, args=(str(stalled),), timeout_seconds=1
+    )
+    tool = build_bridged_tool(
+        "slow",
+        config,
+        McpServerTool(
+            server="slow", name="read", description="read", input_schema={}, read_only_hint=True
+        ),
+    )
+
+    # Act
+    started = time.monotonic()
+    result = tool.run()
+    elapsed = time.monotonic() - started
+
+    # Assert
+    assert elapsed < 15
+    assert result.get("available") is False

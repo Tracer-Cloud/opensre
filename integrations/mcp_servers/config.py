@@ -24,8 +24,11 @@ DEFAULT_MCP_SERVER_TIMEOUT_SECONDS = 20.0
 
 
 def _non_blank(value: object) -> tuple[str, ...]:
-    if not isinstance(value, (list, tuple, set)):
+    if value is None:
         return ()
+    if not isinstance(value, (list, tuple, set)):
+        # An allowlist that silently became empty would expose every tool.
+        raise ValueError("Expected a string or a list of strings.")
     return tuple(str(item).strip() for item in value if str(item).strip())
 
 

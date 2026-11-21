@@ -29,18 +29,32 @@ logger = logging.getLogger(__name__)
 #: Provider tool names must match ``^[a-zA-Z0-9_-]{1,64}$`` (OpenAI-compatible subset).
 _MAX_TOOL_NAME_LENGTH = 64
 _INVALID_NAME_CHARS = re.compile(r"[^a-zA-Z0-9_-]+")
+#: A server name that ends at the first ``__`` after the prefix, so it cannot be misread.
+_UNAMBIGUOUS_SERVER = re.compile(r"[a-zA-Z0-9-]+(?:_[a-zA-Z0-9-]+)*")
+_DIGEST_LENGTH = 8
 _MAX_DESCRIPTION_LENGTH = 1024
 _EMPTY_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
 
 def bridged_tool_name(server: str, tool: str) -> str:
-    """``mcp__<server>__<tool>``, sanitized and capped; a hash keeps long names unique."""
-    name = f"{MCP_SERVER_TOOL_PREFIX}{_INVALID_NAME_CHARS.sub('_', server)}__"
-    name += _INVALID_NAME_CHARS.sub("_", tool)
-    if len(name) <= _MAX_TOOL_NAME_LENGTH:
+    """``mcp__<server>__<tool>``, provider-safe and unique per ``(server, tool)``.
+
+    A hash suffix is added whenever the plain name could be shared by another
+    pair: sanitizing changed a character, the server name could run into the
+    tool name (``a__b`` + ``c`` vs ``a`` + ``b__c``), or the name was capped.
+    """
+    safe_server = _INVALID_NAME_CHARS.sub("_", server)
+    safe_tool = _INVALID_NAME_CHARS.sub("_", tool)
+    name = f"{MCP_SERVER_TOOL_PREFIX}{safe_server}__{safe_tool}"
+    lossless = (
+        safe_server == server
+        and safe_tool == tool
+        and _UNAMBIGUOUS_SERVER.fullmatch(server) is not None
+    )
+    if lossless and len(name) <= _MAX_TOOL_NAME_LENGTH:
         return name
-    digest = hashlib.sha256(f"{server}\0{tool}".encode()).hexdigest()[:8]
-    return f"{name[: _MAX_TOOL_NAME_LENGTH - 9]}_{digest}"
+    digest = hashlib.sha256(f"{server}\0{tool}".encode()).hexdigest()[:_DIGEST_LENGTH]
+    return f"{name[: _MAX_TOOL_NAME_LENGTH - _DIGEST_LENGTH - 1]}_{digest}"
 
 
 def _input_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
@@ -66,6 +80,8 @@ def _runner(server: str, config: McpServerConfig, tool_name: str, name: str) -> 
                 tool_name,
                 dict(arguments),
                 timeout_call=True,
+                # Each call opens a fresh session; bound its startup too.
+                timeout_entire_operation=True,
                 **session_options(server, config),
             )
         except Exception as exc:
@@ -129,12 +145,23 @@ def _server_config(raw: object) -> McpServerConfig | None:
 def configured_servers(
     resolved_integrations: Mapping[str, Any],
 ) -> list[tuple[str, McpServerConfig]]:
-    """Every configured MCP server as ``(name, config)``, in configuration order."""
+    """Every configured MCP server as ``(name, config)``, in configuration order.
+
+    Names key discovery and tool names, so a later server reusing a name is
+    skipped rather than allowed to pair its tools with the first one's config.
+    """
     servers: list[tuple[str, McpServerConfig]] = []
+    names: set[str] = set()
     for instance in get_instances(dict(resolved_integrations), MCP_SERVERS_SERVICE):
         config = _server_config(instance.get("config"))
-        if config is not None:
-            servers.append((str(instance.get("name") or "default"), config))
+        if config is None:
+            continue
+        name = str(instance.get("name") or "default")
+        if name in names:
+            logger.warning("[mcp] skipping a second MCP server named %s", name)
+            continue
+        names.add(name)
+        servers.append((name, config))
     return servers
 
 
