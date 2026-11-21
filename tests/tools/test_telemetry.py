@@ -303,7 +303,7 @@ def _snowflake_case() -> ToolFailureCase:
 
 def _cloudwatch_logs_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.cloudwatch.tools import cloudwatch_logs_tool as mod
+        from integrations.cloudwatch.tools.cloudwatch_logs_tool import tool as mod
 
         mp.setattr(mod, "make_boto3_client", MagicMock(side_effect=RuntimeError("aws")))
 
