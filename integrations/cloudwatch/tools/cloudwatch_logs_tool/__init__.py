@@ -5,10 +5,9 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import boto3
-
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
+from integrations.aws.env import make_boto3_client
 
 
 def _cloudwatch_logs_available(sources: dict[str, dict]) -> bool:
@@ -82,7 +81,11 @@ def get_cloudwatch_logs(
         return {"error": "log_group is required"}
 
     try:
-        client = boto3.client("logs")
+        # The shared AWS client honours AWS_REGION like every other AWS tool; a bare
+        # boto3 client would only read AWS_DEFAULT_REGION or the profile.
+        client = make_boto3_client("logs")
+        if client is None:
+            return {"error": "boto3 not available", "log_group": log_group}
 
         if filter_pattern:
             response = client.filter_log_events(
@@ -147,7 +150,7 @@ def get_cloudwatch_logs(
             tool_name="get_cloudwatch_logs",
             source="cloudwatch",
             component="integrations.cloudwatch.tools.cloudwatch_logs_tool",
-            method="boto3.client('logs')",
+            method="make_boto3_client('logs')",
             extras={
                 "log_group": log_group,
                 "log_stream": log_stream,

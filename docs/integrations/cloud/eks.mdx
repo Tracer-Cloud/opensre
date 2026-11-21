@@ -36,7 +36,7 @@ AWS_REGION=us-east-1
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | One of role or static keys | — | Static keys, used when no role is set |
 | `AWS_REGION` | Optional | `us-east-1` | Region of the EKS cluster |
 
-The EKS tools become available once the AWS connection is verified and the investigation names a cluster (`cluster_name`). Deployment and pod tools also need a `deployment` or `pod_name`; `namespace` defaults to every namespace where a tool allows it.
+The EKS tools become available once the AWS connection is verified and the investigation names a cluster (`cluster_name`). Deployment and pod tools also need a `deployment` or `pod_name`. Workload lists default `namespace` to `all`; events default to `default`, so set `namespace` to `all` to read warnings across the cluster. Pod logs and deployment status need the resource's namespace.
 
 ## Credentials
 

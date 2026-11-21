@@ -34,7 +34,7 @@ AWS_REGION=us-east-1
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `AWS_REGION` | boto3 default region | Region the log groups and metrics live in |
+| `AWS_REGION` | `us-east-1` | Region the log groups and metrics live in. Both tools read it; `AWS_DEFAULT_REGION` and profile regions are not used. |
 
 ## Credentials
 
@@ -67,7 +67,7 @@ The AWS managed `ReadOnlyAccess` policy includes all of these.
 | Tool | AWS API calls | What it returns |
 | --- | --- | --- |
 | `get_cloudwatch_logs` | `logs:DescribeLogStreams`, `logs:GetLogEvents`, `logs:FilterLogEvents` | Up to `limit` (default 100) recent events from one log group. With a filter pattern it searches every stream in the group; without one it reads a single stream (the given one, or the newest). |
-| `get_cloudwatch_batch_metrics` | `cloudwatch:GetMetricStatistics` | Average and maximum `CPUUtilization` or `MemoryUtilization` for an AWS Batch job queue (`AWS/Batch` namespace). |
+| `get_cloudwatch_batch_metrics` | `cloudwatch:GetMetricStatistics` | Average and maximum `CPUUtilization` or `MemoryUtilization` for an AWS Batch job queue (`AWS/Batch` namespace) over the **last hour**, in 5-minute points. |
 
 ### Use cases
 
@@ -78,7 +78,7 @@ The AWS managed `ReadOnlyAccess` policy includes all of these.
 ### Gotchas
 
 - `log_group` must be the **absolute** name, starting with `/`. Short names are not resolved.
-- Filtered searches only look at the **last 2 hours** of events. For older incidents, give the stream name instead of a filter pattern.
+- Filtered searches only look at the **last 2 hours** of events, and Batch metrics cover only the **last hour**. For older incidents, give the stream name instead of a filter pattern.
 - For Kubernetes pod logs use [EKS](/integrations/cloud/eks) or [Kubernetes](/integrations/cloud/kubernetes), not CloudWatch, unless you ship container logs to CloudWatch with Container Insights or Fluent Bit.
 - For Lambda functions, prefer the dedicated [Lambda tools](/integrations/cloud/aws_lambda), which derive the log group from the function name.
 
@@ -98,7 +98,7 @@ CloudWatch shares the AWS credential check; there is no separate `cloudwatch` ve
 | **`No log events found matching pattern`** | The pattern matched nothing in the last 2 hours; widen the pattern or read a specific stream |
 | **`No log streams found in log group`** | The group exists but is empty, or the name is wrong; check the region too |
 | **AccessDenied** | Attach the `logs:*` / `cloudwatch:GetMetricStatistics` actions above to the identity OpenSRE runs as |
-| **Wrong region** | Set `AWS_REGION` to the region that owns the log group |
+| **Wrong region, or `You must specify a region`** | Set `AWS_REGION` to the region that owns the log group or job queue. `AWS_DEFAULT_REGION` alone is not read. |
 
 ## Security
 
