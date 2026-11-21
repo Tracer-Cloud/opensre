@@ -376,11 +376,11 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 | Level | Prompts before |
 | --- | --- |
 | `high` (default) | Nothing except Python execution — alpha default; every other tool runs immediately |
-| `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, … |
+| `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, …; and tools that act on an outside system: sending Slack, Telegram, Rocket.Chat, Buzz, or SMS messages, creating Jira issues or comments, creating Google Docs, prompting a hosted gateway, and calling tools on connected MCP servers (Pipedream, Sentry MCP, PostHog MCP) |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |
 
-`/auto` is **not** a shell-command allowlist: under alpha, shell strings still run when approved (or when High skips the prompt). Lower levels only promote the existing `ask` confirmation hook by `tool_type`.
+`/auto` is **not** a shell-command allowlist: under alpha, shell strings still run when approved (or when High skips the prompt). Lower levels only promote the existing `ask` confirmation hook by `tool_type`, or by the tool's declared side effect for tools that act on an outside system. Read-only tools such as log, metric, and listing tools never prompt.
 
 **With `/trust`:** `/trust on` skips approval prompts even when `/auto` would ask. Turn trust off to restore `/auto` prompts.
 

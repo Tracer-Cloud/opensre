@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from integrations.twilio.delivery import send_twilio_sms_report
 
@@ -18,6 +18,7 @@ class TwilioNotifyTool(BaseTool):
     """Send a short SMS notification via the configured Twilio integration."""
 
     name = "twilio_notify"
+    side_effect_level = SideEffectLevel.EXTERNAL
     source = "twilio"
     description = (
         "Send a short SMS notification via the configured Twilio integration. "

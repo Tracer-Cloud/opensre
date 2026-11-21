@@ -466,6 +466,10 @@ REGISTERED_TOOL_ATTR = "__opensre_registered_tool__"
 #: ``error_kind`` of a result whose tool refused the request on its own rules.
 #: The integration behind such a tool is healthy; its credential needs no change.
 ERROR_KIND_REFUSED = "refused"
+#: ``error_kind`` of a result whose lookup named something the service does not
+#: have (a repository, a file, a run). The service answered, so the integration
+#: behind the tool is healthy too.
+ERROR_KIND_NOT_FOUND = "not_found"
 #: Result ``details`` key a tool sets when one call did less than its declared
 #: ``side_effect_level`` (a read through a tool declared mutating); the value is
 #: a :class:`SideEffectLevel` value.
@@ -907,6 +911,7 @@ __all__ = [
     "AgentToolExecutor",
     "BaseTool",
     "CALL_SIDE_EFFECT_LEVEL_KEY",
+    "ERROR_KIND_NOT_FOUND",
     "ERROR_KIND_REFUSED",
     "EvidenceType",
     "REGISTERED_TOOL_ATTR",

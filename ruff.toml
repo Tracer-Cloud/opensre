@@ -45,13 +45,10 @@ ignore = [
 
 # stderr/stdout buffers outlive the function — closed in a watcher thread's `finally`,
 # so a `with` block at the call site would close them before the subprocess runs.
-"tools/interactive_shell/synthetic/runner.py" = ["SIM115"]
 "surfaces/interactive_shell/runtime/subprocess_runner/background_task_executor.py" = ["SIM115"]
 
-# tools/<vendor>_tools/__init__.py files are concatenations of multiple tool modules.
-# Imports appear in each section rather than all at the top (E402).
-"tools/*_tools/__init__.py" = ["E402", "F811"]
-# Same layout after vendor tools migrate to integrations/<vendor>/tools/.
+# integrations/<vendor>/tools/__init__.py files are concatenations of multiple tool
+# modules. Imports appear in each section rather than all at the top (E402).
 "integrations/*/tools/__init__.py" = ["E402", "F811"]
 
 [lint.isort]

@@ -38,11 +38,12 @@ KUBECONFIG_CONTENT="$(cat ~/.kube/config)"
 # Optional overrides
 KUBECONFIG_CONTEXT=my-context
 KUBECONFIG_NAMESPACE=production
+KUBECONFIG_NAMESPACES=production,staging
 ```
 
 ### Option 3: Persistent store
 
-Store an active `kubernetes` record in `~/.opensre/integrations.json` with kubeconfig content (or path resolved into content by setup), plus optional context and namespace.
+Store an active `kubernetes` record in `~/.opensre/integrations.json` with kubeconfig content (or path resolved into content by setup), plus optional context, namespace, and `allowed_namespaces` list.
 
 ## Credentials
 
@@ -51,6 +52,17 @@ Store an active `kubernetes` record in `~/.opensre/integrations.json` with kubec
 | `kubeconfig` | `KUBECONFIG_CONTENT` or read from `KUBECONFIG` | — | Raw kubeconfig YAML (required) |
 | `context` | `KUBECONFIG_CONTEXT` | current context | Kubeconfig context to activate |
 | `namespace` | `KUBECONFIG_NAMESPACE` | `default` | Default namespace for tool queries |
+| `allowed_namespaces` | `KUBECONFIG_NAMESPACES` | only `namespace` | Comma-separated extra namespaces the agent may target; `namespace` is always allowed |
+
+### Namespace allowlist
+
+Namespace-scoped tools accept a `namespace` argument, so the agent can move between namespaces during an investigation. Which namespaces it can reach is set by the operator:
+
+- With `KUBECONFIG_NAMESPACES` unset, the agent can only reach `KUBECONFIG_NAMESPACE`, the same as before.
+- With `KUBECONFIG_NAMESPACES=production,staging`, the agent can target either namespace. `KUBECONFIG_NAMESPACE` is always allowed, and calls that omit a namespace still use it.
+- Any other namespace is refused before the cluster is contacted, with `namespace "<name>" is not in the configured allowlist (allowed: ...)`.
+
+The allowlist is enforced by OpenSRE on top of RBAC and is not a substitute for it. A service account with cluster-wide read access is still limited to the listed namespaces. Cluster-scoped lookups (`kubernetes_list_nodes`, and `kubernetes_get_resource` for nodes) are not affected.
 
 The kubeconfig's service account or user needs these Kubernetes RBAC permissions:
 
@@ -299,6 +311,7 @@ Inside the REPL: `/integrations verify kubernetes` or `/verify kubernetes`.
 | **Status: missing** | Run `opensre integrations setup kubernetes` or set `KUBECONFIG` / `KUBECONFIG_CONTENT` |
 | **Unauthorized / Forbidden** | Confirm the kubeconfig user/service account has the RBAC verbs listed under Credentials |
 | **Wrong cluster or namespace** | Set `KUBECONFIG_CONTEXT` and `KUBECONFIG_NAMESPACE`, or re-run setup |
+| **`namespace "..." is not in the configured allowlist`** | Configuration, not RBAC: add the namespace to `KUBECONFIG_NAMESPACES` |
 | **Cannot reach API server** | Check VPN / network path to the cluster endpoint in the kubeconfig |
 
 ## Security

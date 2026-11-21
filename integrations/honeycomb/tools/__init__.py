@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 from integrations.honeycomb.client import HoneycombClient
@@ -75,6 +75,7 @@ class HoneycombTracesTool(BaseTool):
     """Query Honeycomb for trace/span groups related to an incident."""
 
     name = "query_honeycomb_traces"
+    side_effect_level = SideEffectLevel.READ_ONLY
     source = "honeycomb"
     evidence_mapper = _map_query_honeycomb_traces
     description = "Query Honeycomb for trace/span groups related to an incident."

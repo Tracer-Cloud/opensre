@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import (
     build_mcp_tool_listing,
@@ -293,6 +293,7 @@ def _normalize_tool_result(result: PostHogMCPToolCallResult) -> PostHogMCPRespon
 
 @tool(
     name="list_posthog_tools",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="posthog_mcp",
     description=(
         "List the tools exposed by the configured PostHog MCP server. The server "
@@ -420,6 +421,7 @@ def list_posthog_tools(
 
 @tool(
     name="call_posthog_tool",
+    side_effect_level=SideEffectLevel.EXTERNAL,
     source="posthog_mcp",
     description=(
         "Call a named tool exposed by the configured PostHog MCP server "

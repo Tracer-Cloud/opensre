@@ -20,6 +20,7 @@ from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 from tools.interactive_shell.action_names import TOOL_KIND_TO_NAME
+from tools.registry import clear_tool_registry_cache, get_registered_tools
 
 
 def _action_tools(
@@ -68,18 +69,19 @@ def test_tool_specs_include_required_fields() -> None:
         assert "input_schema" in spec
 
 
-def test_action_tools_classify_side_effects() -> None:
-    """Every tool that opts into the action surface declares its side effect.
+def test_every_registered_tool_classifies_side_effects() -> None:
+    """Every registered tool declares its side effect, whatever its surface.
 
-    The execution gate branches on ``side_effect_level``; an unclassified
-    action tool would silently fail closed on every invocation. Chat-surface
-    knowledge tools are exempt here (an unset level already fails closed).
+    ``opensre ask`` and scheduled ticks treat an unset level as unsafe, so an
+    undeclared read is wrongly gated there; the shell's ``/auto`` approval
+    treats it as safe, so an undeclared write runs without asking. The shell
+    loads chat-surface tools too, so no surface is exempt.
     """
-    tools = _action_tools(Session())
+    clear_tool_registry_cache()
     unclassified = sorted(
         tool.name
-        for tool in tools
-        if ToolSurface.ACTION in tool.surfaces and getattr(tool, "side_effect_level", None) is None
+        for tool in get_registered_tools()
+        if getattr(tool, "side_effect_level", None) is None
     )
 
     assert unclassified == []

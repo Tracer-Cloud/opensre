@@ -356,6 +356,7 @@ EXPORTS: dict[str, str] = {
     "KUBECONFIG_CONTENT_ENV": "kubernetes",
     "KUBECONFIG_CONTEXT_ENV": "kubernetes",
     "KUBECONFIG_NAMESPACE_ENV": "kubernetes",
+    "KUBECONFIG_NAMESPACES_ENV": "kubernetes",
     "KUBECONFIG_PATH_ENV": "kubernetes",
     # llm
     "ANTHROPIC_DEFER_LOADING_KEY": "llm",
@@ -540,6 +541,7 @@ EXPORTS: dict[str, str] = {
     "REDIS_SSL_ENV": "redis",
     "REDIS_USERNAME_ENV": "redis",
     # repl_autonomy
+    "ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS": "repl_autonomy",
     "AUTO_LEVEL_ASK_TOOL_TYPES": "repl_autonomy",
     "AUTO_LEVEL_BAR_CAPTIONS": "repl_autonomy",
     "AUTO_LEVEL_CAPTIONS": "repl_autonomy",

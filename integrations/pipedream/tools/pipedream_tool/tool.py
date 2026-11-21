@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import build_mcp_tool_listing, unavailable_response
 from integrations.pipedream import PipedreamApp, parse_apps, select_app
@@ -80,6 +80,7 @@ def _result_text(result: dict[str, object]) -> str:
 
 @tool(
     name="list_pipedream_tools",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="pipedream",
     description=(
         "List tools for an app connected through Pipedream: the workspace's "
@@ -179,6 +180,7 @@ def list_pipedream_tools(
 
 @tool(
     name="call_pipedream_tool",
+    side_effect_level=SideEffectLevel.EXTERNAL,
     source="pipedream",
     description=(
         "Call a tool on an app connected through Pipedream, including apps "

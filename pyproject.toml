@@ -18,7 +18,7 @@ dependencies = [
     "anthropic>=0.77.1",
     "mcp>=1.28.1",
     "openai>=2.0.0",
-    "litellm>=1.106.2,<1.107.0",
+    "litellm>=1.106.2,<1.110.0",
     # Data validation
     "pydantic>=2.12.5,<3",
     "pydantic-settings>=2.12.0,<3",
@@ -199,7 +199,7 @@ ignore_decorators = [
   "@register*",
 ]
 ignore_names = [
-  "shell_complete", "format_help", "show",        # Click overrides
+  "format_help", "show",                          # Click overrides
   "__getattr__", "__dir__",                        # PEP 562 lazy exports
   "_normalize_*",                                  # Pydantic field validators
   "_require_*",                                    # Pydantic model validators
@@ -210,10 +210,6 @@ ignore_names = [
   "describe_llm_*", "llm_provider_*", "has_credentials_*",
   "get_account_*",
   "configure_grafana_cloud", "apply_otel_env_defaults", "validate_grafana_cloud_config",
-  "on_thread_*", "on_assistant_*", "on_cron_*",
-  "discord_interactions", "health_check",
-  "version_check", "deep_health_check",
-  "investigate_stream",
   "clean_env", "empty_store",                      # pytest fixtures
   "_isolated_*", "_reset_*", "_harness_*", "_no_*", # pytest fixtures / autouse hooks
   "_metering_*", "metering_on",
@@ -229,7 +225,7 @@ ignore_names = [
   "signoz_is_available",
   "load_remote_url", "save_named_remote", "delete_named_remote", "save_remote_ops_config",
   "is_cancelling", "idle_hint_ansi",
-  "is_held", "holder", "holder_pid", "rate_per_minute",
+  "holder",
   "should_block", "to_state",
   "RichGroup",
 ]
@@ -261,8 +257,8 @@ constraint-dependencies = [
     "virtualenv>=21.14.12",
     # GHSA-xmj3-9gf7-h52w.
     "setuptools>=84.1.0",
-    # GHSA-45c3-73f7-pv4m (via pymongo).
-    "dnspython>=2.9.0",
+    # GHSA-45c3-73f7-pv4m, GHSA-vvf4-9x63-8xvv (via pymongo).
+    "dnspython>=2.9.2",
     # GHSA-3jp2-3mrg-2vxc (via kubernetes).
     "oauthlib>=4.0.1",
 ]

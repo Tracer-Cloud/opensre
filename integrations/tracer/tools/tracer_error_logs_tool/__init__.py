@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from infrastructure.evidence.log_compaction import build_error_taxonomy, deduplicate_logs
 from integrations.tracer import get_tracer_web_client
@@ -24,6 +25,7 @@ def _error_logs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="get_error_logs",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="error logs",
     source="tracer_web",
     description="Get logs from OpenSearch, optionally filtered for errors.",

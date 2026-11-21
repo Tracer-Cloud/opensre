@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.tracer import get_tracer_web_client
 from integrations.tracer.tools.tracer_failed_jobs_tool import _tracer_available, _tracer_trace_id
@@ -12,6 +13,7 @@ from integrations.tracer.tools.tracer_failed_jobs_tool import _tracer_available,
 
 @tool(
     name="get_failed_tools",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="tool results",
     source="tracer_web",
     description="Get tools that failed during a pipeline execution.",

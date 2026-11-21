@@ -367,6 +367,49 @@ def test_a_failing_integration_tool_is_named_on_the_settled_job() -> None:
     assert job.view()["failed_integrations"] == ["github"]
 
 
+def test_a_lookup_that_found_nothing_is_not_a_failed_integration() -> None:
+    """A 404 for a repository that does not exist told the user GitHub could not be reached."""
+    from core.llm.types import ToolCall
+    from core.tool import ERROR_KIND_NOT_FOUND, ToolExecutionRequest, ToolExecutionResult
+    from tools.registry import clear_tool_registry_cache, get_registered_tool_map
+
+    # Arrange: GitHub answers that the repository is not there
+    clear_tool_registry_cache()
+    registered = get_registered_tool_map()
+    handler = _Handler(answer="that repository does not exist")
+
+    def run_with_a_missing_repository(
+        _text: str, _session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
+        request = ToolExecutionRequest(
+            tool_call=ToolCall(id="c", name="github_cli", input={}),
+            tool=registered["github_cli"],
+            arguments={},
+            source="test",
+            resolved_integrations={},
+        )
+        missing = ToolExecutionResult(
+            content="GitHub API error 404: Not Found",
+            details={"available": False, "error": "404", "error_kind": ERROR_KIND_NOT_FOUND},
+            is_error=True,
+        )
+        output.tool_hooks.after_tool_call(request, missing)
+        output.finalize(handler.answer)
+        return handler.result
+
+    handler.run = run_with_a_missing_repository  # type: ignore[method-assign, assignment]
+    worker, queue = _worker(handler)
+    job = queue.submit("why is ci failing in acme/gone", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert
+    assert job.state is PromptState.DONE
+    assert job.failed_integrations == ()
+
+
 def test_a_tool_refusal_is_not_a_failed_integration() -> None:
     """A tool declining on its own rules must not send the user to the credential checklist."""
     from core.llm.types import ToolCall

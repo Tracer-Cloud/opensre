@@ -13,11 +13,13 @@ from pydantic import BaseModel
 
 from config.constants.runtime_metadata import WORKSPACE_REPO_ENV_KEYS
 from core.domain.repositories import (
+    RepositoryPreferences,
     load_repository_preferences,
     preferred_repository_for_name,
 )
 from integrations.github.accessible_repos import (
     accessible_repositories,
+    confirmed_repository,
     could_name_repository,
     repository_named_in,
 )
@@ -63,6 +65,37 @@ def split_repo_full_name(value: str) -> tuple[str, str]:
     return owner.strip(), repo.strip().removesuffix(".git")
 
 
+def _reference_matches(text: str, *, include_bare: bool) -> list[tuple[tuple[str, str], bool]]:
+    """Each owner/repo written in ``text``, in order, with whether it was written explicitly.
+
+    Explicit is a github.com URL, git remote or ``repo:`` qualifier; the rest
+    are bare ``owner/repo``. A repository written both ways is explicit.
+    """
+    if not text.strip():
+        return []
+    found: list[tuple[int, tuple[str, str], bool]] = []
+    patterns = _ALL_REFERENCE_PATTERNS if include_bare else _EXPLICIT_REFERENCE_PATTERNS
+    for pattern in patterns:
+        explicit = pattern is not _BARE_REPO_RE
+        for match in pattern.finditer(text):
+            owner = match.group("owner").strip()
+            repo = match.group("repo").strip().removesuffix(".git")
+            if owner and repo and not _is_placeholder(owner, repo):
+                found.append((match.start(), (owner, repo), explicit))
+    explicit_scopes = {scope for _position, scope, explicit in found if explicit}
+    return [(scope, scope in explicit_scopes) for _position, scope, _explicit in sorted(found)]
+
+
+def _by_recency(scopes: Sequence[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+    """``scopes`` without repeats, each kept at its last position."""
+    references: list[tuple[str, str]] = []
+    for scope in scopes:
+        if scope in references:
+            references.remove(scope)
+        references.append(scope)
+    return tuple(references)
+
+
 def find_github_repository_references(
     text: str, *, include_bare: bool = True
 ) -> tuple[tuple[str, str], ...]:
@@ -72,22 +105,29 @@ def find_github_repository_references(
     ``owner/repo`` only with ``include_bare``. Leave it off for text that carries
     tool output, where file paths and words like ``AI/Agent`` look the same.
     """
-    if not text.strip():
-        return ()
+    return _by_recency(
+        [scope for scope, _explicit in _reference_matches(text, include_bare=include_bare)]
+    )
 
-    matches: list[tuple[int, tuple[str, str]]] = []
-    for pattern in _ALL_REFERENCE_PATTERNS if include_bare else _EXPLICIT_REFERENCE_PATTERNS:
-        for match in pattern.finditer(text):
-            owner = match.group("owner").strip()
-            repo = match.group("repo").strip().removesuffix(".git")
-            if owner and repo and not _is_placeholder(owner, repo):
-                matches.append((match.start(), (owner, repo)))
-    references: list[tuple[str, str]] = []
-    for _position, scope in sorted(matches):
-        if scope in references:
-            references.remove(scope)
-        references.append(scope)
-    return tuple(references)
+
+def _named_repositories(
+    text: str, *, include_bare: bool, token: str
+) -> tuple[tuple[str, str], ...]:
+    """Every repository ``text`` names, in textual recency order.
+
+    An explicit reference names one as written. A bare ``owner/repo`` names one
+    only when it is a real repository (:func:`confirmed_repository`): "why is
+    my CI/CD failing" is not about a repository called ``CI/CD``.
+    """
+    named: list[tuple[str, str]] = []
+    for scope, explicit in _reference_matches(text, include_bare=include_bare):
+        if explicit:
+            named.append(scope)
+            continue
+        confirmed = confirmed_repository(f"{scope[0]}/{scope[1]}", token)
+        if confirmed:
+            named.append(split_repo_full_name(confirmed))
+    return _by_recency(named)
 
 
 def parse_github_repository_reference(
@@ -98,16 +138,49 @@ def parse_github_repository_reference(
     return references[-1] if references else None
 
 
+def _repository_in_user_text(
+    text: str, *, token: str, preferences: RepositoryPreferences
+) -> tuple[str, str] | None:
+    """The repository one message from the user names, by full name or by short name.
+
+    "fix the opensre repo" names the organization's own repository, never one
+    of its forks: a short name resolves to the matching primary. With no
+    preference saved it is the one reachable original of that name, which the
+    connection knows, so nobody is asked.
+    """
+    named = _named_repositories(text, include_bare=True, token=token)
+    if named:
+        return named[-1]
+    preferred = preferred_repository_for_name(text, preferences)
+    if preferred:
+        return split_repo_full_name(preferred)
+    if could_name_repository(text):
+        reachable = repository_named_in(text, accessible_repositories(token))
+        if reachable:
+            return split_repo_full_name(reachable)
+    return None
+
+
 def _scope_from_history(
     conversation_messages: Sequence[tuple[str, str]] | None,
+    *,
+    token: str = "",
+    preferences: RepositoryPreferences | None = None,
 ) -> tuple[str, str] | None:
     """The repository named by the newest message that names one.
 
-    An assistant message carries the output of the tools it ran, so a bare
-    ``owner/repo`` counts only in the user's own messages.
+    An assistant message carries the output of the tools it ran, so only an
+    explicit reference counts there. With ``preferences``, a message from the
+    user counts as it did when it was the turn's own message, short names
+    included: "now the opensre repo" two messages ago still decides what "its
+    open issues" means.
     """
     for role, content in reversed(conversation_messages or ()):
-        scope = parse_github_repository_reference(content, include_bare=role == "user")
+        if role == "user" and preferences is not None:
+            scope = _repository_in_user_text(content, token=token, preferences=preferences)
+        else:
+            named = _named_repositories(content, include_bare=role == "user", token=token)
+            scope = named[-1] if named else None
         if scope:
             return scope
     return None
@@ -233,27 +306,14 @@ class _GithubVcsRepoScopeProvider:
         cached: tuple[str, ...] | None,
         resolved: Mapping[str, Any] | None = None,
     ) -> tuple[str, ...] | None:
-        from_message = parse_github_repository_reference(message)
-        if from_message:
-            return from_message
-        # "fix the opensre repo" names the organization's own repository, never
-        # one of its forks: a short name resolves to the matching primary.
+        token = resolved_github_rest_token(resolved or {})
         preferences = load_repository_preferences()
-        named = preferred_repository_for_name(message, preferences)
-        if named:
-            return split_repo_full_name(named)
-        # With no preference saved, "the opensre repo" is the one reachable
-        # original of that name: the connection knows it, so never ask.
-        reachable = (
-            repository_named_in(
-                message, accessible_repositories(resolved_github_rest_token(resolved or {}))
-            )
-            if could_name_repository(message)
-            else None
+        in_message = _repository_in_user_text(message, token=token, preferences=preferences)
+        if in_message:
+            return in_message
+        from_history = _scope_from_history(
+            conversation_messages, token=token, preferences=preferences
         )
-        if reachable:
-            return split_repo_full_name(reachable)
-        from_history = _scope_from_history(conversation_messages)
         if from_history:
             return from_history
         if cached:
@@ -261,9 +321,15 @@ class _GithubVcsRepoScopeProvider:
         workspace_scope = _infer_workspace_repo_scope(env=env, cwd=cwd)
         if workspace_scope is None and preferences.primary:
             workspace_scope = split_repo_full_name(preferences.primary[0])
-        if not workspace_scope:
+        if workspace_scope:
+            return (*workspace_scope, _PUBLIC_WORKSPACE_SCOPE_MARKER)
+        # A connection that reaches one repository of its own leaves nothing to
+        # ask: "why is CI failing" is about that one. A text that could not name
+        # a repository (a bare ``/command``) never waits on the listing for it.
+        if not could_name_repository(message):
             return None
-        return (*workspace_scope, _PUBLIC_WORKSPACE_SCOPE_MARKER)
+        originals = [found.full_name for found in accessible_repositories(token) if not found.fork]
+        return split_repo_full_name(originals[0]) if len(originals) == 1 else None
 
     def apply(self, resolved: dict[str, Any], scope: tuple[str, ...]) -> dict[str, Any]:
         owner, repo = scope[0], scope[1]
@@ -288,10 +354,15 @@ class _GithubVcsRepoScopeProvider:
         text: str,
         role: str,
         env: Mapping[str, str] | None,
+        resolved: Mapping[str, Any] | None = None,
     ) -> tuple[tuple[str, ...], ...]:
         """Return all GitHub repositories named in ``text``; a bare one only from the user."""
         _ = env
-        return find_github_repository_references(text, include_bare=role == "user")
+        return _named_repositories(
+            text,
+            include_bare=role == "user",
+            token=resolved_github_rest_token(resolved or {}),
+        )
 
     def prewarm(self, resolved: Mapping[str, Any]) -> None:
         """List the repositories the connection reaches, which short names resolve against."""

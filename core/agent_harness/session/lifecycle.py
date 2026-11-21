@@ -35,6 +35,10 @@ import logging
 from datetime import datetime
 from typing import Any, TypeVar
 
+from core.agent_harness.session.integration_resolution import (
+    IntegrationState,
+    restore_repository_scopes,
+)
 from core.agent_harness.session.persistence.contracts import (
     CARRIED_MESSAGE_METADATA_KEY,
     TURN_EVIDENCE_CUSTOM_TYPE,
@@ -339,6 +343,8 @@ class SessionManager:
                 and isinstance(saved_connection, str)
             ):
                 integrations.github_connection_id = saved_connection
+            if isinstance(integrations, IntegrationState):
+                restore_repository_scopes(integrations, context)
         goal_state = data.get(RestoreContextKey.SESSION_GOAL_STATE)
         if isinstance(goal_state, dict):
             from core.agent_harness.session_goal.persist import (

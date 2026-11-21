@@ -148,7 +148,9 @@ from surfaces.embedded import start_embedded_session
 
 session = start_embedded_session()
 result = session.chat("why is checkout-api slow?")
-if result.answered:
+# ``answered`` is true for any reply text, including a failed model call.
+# That failure sets accounting_status to "not_run" and stop_reason to "error".
+if result.action_result.accounting_status == "completed" and not result.cancelled:
     print(result.primary_response_text)
 ```
 

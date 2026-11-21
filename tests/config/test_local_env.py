@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from config import local_env
+from config.constants.paths import WIZARD_STORE_PATH_ENV
 
 
 def _write_store(path: Path, *, provider: str = "openai", model: str = "gpt-5.5") -> None:
@@ -27,13 +28,14 @@ def _write_store(path: Path, *, provider: str = "openai", model: str = "gpt-5.5"
 
 
 def test_frozen_bootstrap_uses_installed_env_and_wizard_store(tmp_path: Path, monkeypatch) -> None:
+    """Defaults come from the store the wizard writes, including its path override."""
     env_path = tmp_path / ".opensre" / ".env"
     store_path = tmp_path / ".opensre" / "opensre.json"
     _write_store(store_path)
 
     monkeypatch.setattr(local_env.sys, "frozen", True, raising=False)
     monkeypatch.setattr(local_env, "INSTALLED_ENV_PATH", env_path)
-    monkeypatch.setattr(local_env, "WIZARD_STORE_PATH", store_path)
+    monkeypatch.setenv(WIZARD_STORE_PATH_ENV, str(store_path))
     monkeypatch.delenv(local_env.OPENSRE_PROJECT_ENV_PATH_ENV, raising=False)
     for key in ("LLM_PROVIDER", "LLM_AUTH_METHOD", "CODEX_MODEL"):
         monkeypatch.delenv(key, raising=False)
@@ -56,7 +58,7 @@ def test_explicit_env_provider_blocks_mismatched_wizard_store_defaults(
 
     monkeypatch.setattr(local_env.sys, "frozen", True, raising=False)
     monkeypatch.setattr(local_env, "INSTALLED_ENV_PATH", env_path)
-    monkeypatch.setattr(local_env, "WIZARD_STORE_PATH", store_path)
+    monkeypatch.setenv(WIZARD_STORE_PATH_ENV, str(store_path))
     monkeypatch.delenv(local_env.OPENSRE_PROJECT_ENV_PATH_ENV, raising=False)
     monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.delenv("LLM_AUTH_METHOD", raising=False)
@@ -77,7 +79,7 @@ def test_project_env_path_override_does_not_apply_wizard_store_defaults(
     _write_store(store_path)
 
     monkeypatch.setattr(local_env.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(local_env, "WIZARD_STORE_PATH", store_path)
+    monkeypatch.setenv(WIZARD_STORE_PATH_ENV, str(store_path))
     monkeypatch.setenv(local_env.OPENSRE_PROJECT_ENV_PATH_ENV, str(env_path))
     for key in ("LLM_PROVIDER", "LLM_AUTH_METHOD", "CODEX_MODEL"):
         monkeypatch.delenv(key, raising=False)
@@ -118,7 +120,7 @@ def test_skip_env_file_disables_env_and_store_bootstrap(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(local_env.sys, "frozen", True, raising=False)
     monkeypatch.setattr(local_env, "INSTALLED_ENV_PATH", env_path)
-    monkeypatch.setattr(local_env, "WIZARD_STORE_PATH", store_path)
+    monkeypatch.setenv(WIZARD_STORE_PATH_ENV, str(store_path))
     monkeypatch.setenv("GRAFANA_CONFIG_SKIP_ENV_FILE", "1")
     monkeypatch.delenv(local_env.OPENSRE_PROJECT_ENV_PATH_ENV, raising=False)
     for key in ("LLM_PROVIDER", "LLM_AUTH_METHOD", "CODEX_MODEL"):
@@ -141,7 +143,7 @@ def test_blank_env_provider_blocks_env_and_store_defaults(tmp_path: Path, monkey
 
     monkeypatch.setattr(local_env.sys, "frozen", True, raising=False)
     monkeypatch.setattr(local_env, "INSTALLED_ENV_PATH", env_path)
-    monkeypatch.setattr(local_env, "WIZARD_STORE_PATH", store_path)
+    monkeypatch.setenv(WIZARD_STORE_PATH_ENV, str(store_path))
     monkeypatch.delenv(local_env.OPENSRE_PROJECT_ENV_PATH_ENV, raising=False)
     monkeypatch.setenv("LLM_PROVIDER", "")
     monkeypatch.delenv("LLM_AUTH_METHOD", raising=False)

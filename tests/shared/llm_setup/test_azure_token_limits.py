@@ -55,7 +55,7 @@ class _AzureEndpoint:
         }
         if body.get("stream"):
             chunk = {**payload, "object": "chat.completion.chunk"}
-            chunk["choices"] = [{"index": 0, "delta": choice["message"], "finish_reason": None}]
+            chunk["choices"] = [{"index": 0, "delta": choice["message"], "finish_reason": "stop"}]
             return httpx.Response(
                 HTTPStatus.OK,
                 headers={"content-type": "text/event-stream"},

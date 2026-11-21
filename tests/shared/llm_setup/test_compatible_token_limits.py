@@ -66,7 +66,7 @@ def test_opaque_alias_token_limit_is_consistent_and_bounded(
         }
         if body.get("stream"):
             payload["object"] = "chat.completion.chunk"
-            payload["choices"] = [{"index": 0, "delta": {"content": "ok"}, "finish_reason": None}]
+            payload["choices"] = [{"index": 0, "delta": {"content": "ok"}, "finish_reason": "stop"}]
             return httpx.Response(
                 HTTPStatus.OK,
                 headers={"content-type": "text/event-stream"},

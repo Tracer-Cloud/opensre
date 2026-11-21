@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.aws.availability import ec2_available_or_backend
@@ -37,6 +38,7 @@ def _is_available(sources: dict[str, dict]) -> bool:
 
 @tool(
     name="get_elb_target_health",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="ec2",
     description=(
         "Describe ELB v2 target groups and the health of their registered targets. "

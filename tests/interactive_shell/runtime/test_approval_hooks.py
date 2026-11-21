@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from rich.console import Console
 
 from config.constants.repl_autonomy import (
@@ -12,7 +13,12 @@ from config.constants.repl_autonomy import (
     AutoLevel,
 )
 from core.llm.types import ToolCall
-from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
+from core.tool import (
+    BeforeToolCallResult,
+    SideEffectLevel,
+    ToolExecutionHooks,
+    ToolExecutionRequest,
+)
 from surfaces.interactive_shell.runtime.approval_hooks import with_shell_approval
 from surfaces.interactive_shell.session import Session
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
@@ -126,3 +132,67 @@ def test_generated_code_allowed_for_the_session_stops_asking_until_new() -> None
     assert ("allow_session", "Yes, allow for this session") in first_rows
     assert all(answer != "allow_session" for answer, _label in network_rows)
     assert after_new_rows == first_rows
+
+
+@pytest.mark.parametrize("level", [AutoLevel.MED, AutoLevel.LOW, AutoLevel.OFF])
+@pytest.mark.parametrize(("answer", "runs"), [("y", True), ("n", False)])
+def test_external_tool_asks_below_high_and_honours_the_answer(
+    level: AutoLevel, answer: str, runs: bool
+) -> None:
+    # Arrange
+    session = Session()
+    session.terminal.auto_level = level
+    console, _printed = _console()
+    asked: list[str] = []
+
+    def confirm(prompt: str) -> str:
+        asked.append(prompt)
+        return answer
+
+    hooks = with_shell_approval(
+        None, session=session, console=console, confirm_fn=confirm, is_tty=True
+    )
+    assert hooks.before_tool_call is not None
+    request = _request("call_pipedream_tool", {"tool_name": "linear-create-issue"})
+    assert getattr(request.tool, "side_effect_level", None) is SideEffectLevel.EXTERNAL
+
+    # Act
+    decision = hooks.before_tool_call(request)
+
+    # Assert
+    assert len(asked) == 1
+    assert decision is not None
+    assert decision.approved is runs
+    assert decision.blocked is not runs
+
+
+@pytest.mark.parametrize(
+    ("level", "tool_name"),
+    [
+        (AutoLevel.HIGH, "call_pipedream_tool"),
+        (AutoLevel.OFF, "get_cloudwatch_logs"),
+        (AutoLevel.OFF, "list_pipedream_tools"),
+    ],
+)
+def test_reads_and_the_allow_all_level_do_not_ask(level: AutoLevel, tool_name: str) -> None:
+    # Arrange
+    session = Session()
+    session.terminal.auto_level = level
+    console, printed = _console()
+    asked: list[str] = []
+
+    def confirm(prompt: str) -> str:
+        asked.append(prompt)
+        return "n"
+
+    hooks = with_shell_approval(
+        None, session=session, console=console, confirm_fn=confirm, is_tty=True
+    )
+    assert hooks.before_tool_call is not None
+
+    # Act
+    decision = hooks.before_tool_call(_request(tool_name))
+
+    # Assert
+    assert decision is None
+    assert asked == [] and printed.getvalue() == ""

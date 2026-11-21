@@ -66,9 +66,10 @@ def _cmd_status(session: Session, console: Console, _args: list[str]) -> bool:
     table.add_row("trust mode", "on" if trust_mode_enabled(session) else "off")
     table.add_row("reasoning effort", display_reasoning_effort(session.reasoning_effort))
     table.add_row("provider", _status_provider_display())
-    acc = session.accumulated_context
+    # Keys starting with ``_`` are the session's own book-keeping, not context.
+    acc = sorted(key for key in session.accumulated_context if not key.startswith("_"))
     if acc:
-        table.add_row("accumulated context", ", ".join(sorted(acc.keys())))
+        table.add_row("accumulated context", ", ".join(acc))
     print_repl_table(console, table)
     return True
 

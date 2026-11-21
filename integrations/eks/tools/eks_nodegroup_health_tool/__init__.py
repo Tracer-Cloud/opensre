@@ -6,7 +6,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available
@@ -25,6 +25,7 @@ def _nodegroup_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="get_eks_nodegroup_health",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="Get EKS node group health — instance types, scaling config, AMI version, health issues.",
     use_cases=[

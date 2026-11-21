@@ -815,6 +815,9 @@ if TYPE_CHECKING:
         KUBECONFIG_NAMESPACE_ENV as KUBECONFIG_NAMESPACE_ENV,
     )
     from config.constants.kubernetes import (
+        KUBECONFIG_NAMESPACES_ENV as KUBECONFIG_NAMESPACES_ENV,
+    )
+    from config.constants.kubernetes import (
         KUBECONFIG_PATH_ENV as KUBECONFIG_PATH_ENV,
     )
     from config.constants.llm import (
@@ -1232,6 +1235,9 @@ if TYPE_CHECKING:
     )
     from config.constants.redis import (
         REDIS_USERNAME_ENV as REDIS_USERNAME_ENV,
+    )
+    from config.constants.repl_autonomy import (
+        ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS as ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS,
     )
     from config.constants.repl_autonomy import (
         AUTO_LEVEL_ASK_TOOL_TYPES as AUTO_LEVEL_ASK_TOOL_TYPES,

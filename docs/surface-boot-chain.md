@@ -30,6 +30,8 @@ order every time:
 6. **Preload the LLM client modules** — so a long-running process doesn't end
    up mixing old and new versions of those modules after a later code
    change.
+7. **Pull skills** — start a background refresh of the skill catalog. A
+   pulled release applies on a later turn, never mid-turn.
 
 Not every surface needs every step. A profile is just a name for "the subset
 of this checklist a given surface needs" — the CLI needs far less than the
@@ -41,10 +43,10 @@ that's already started is a harmless no-op.
 
 | Profile | What it sets up | Used by |
 | --- | --- | --- |
-| CLI | Environment. | The `opensre` command |
-| Gateway | Environment, error reporting, adapters, capability warnings, LLM preload. | The gateway daemon (chat channels) |
+| CLI | Environment, skills pull. | The `opensre` command |
+| Gateway | Environment, error reporting, adapters, capability warnings, LLM preload, skills pull. | The gateway daemon (chat channels) |
 | Web | Environment, error reporting, adapters. | The gateway's standalone web app |
-| Scheduler worker | Environment, error reporting, adapters, scheduled-delivery adapters. | The `opensre cron start` daemon |
+| Scheduler worker | Environment, error reporting, adapters, scheduled-delivery adapters, skills pull. | The `opensre cron start` daemon |
 | Scheduled command | Environment, adapters, scheduled-delivery adapters. | One-off CLI commands that create, run, or dispatch scheduled work |
 | Embedded | Environment, adapters. | Driving the agent from another Python program |
 
@@ -55,17 +57,17 @@ that's already started is a harmless no-op.
   (tolerant of a missing dependency during `opensre update`), terminal output
   styling, and keyboard-interrupt handling. [`main.py`](https://github.com/Tracer-Cloud/opensre/blob/main/main.py), the
   module-level entry point (`python main.py`), delegates straight into this
-  same CLI path — it does not use the embedded profile. (The embedded
-  profile only appears in `main.py`'s docstring, as an illustrative example
-  for someone embedding the agent in their own script.) The interactive
-  shell runs inside this same already-started CLI process, so it doesn't
-  start up again.
+  same CLI path — it does not use the embedded profile. `python -m surfaces`
+  is that same entry. (The embedded profile only appears in `main.py`'s
+  docstring, as an illustrative example for someone embedding the agent in
+  their own script.) The interactive shell runs inside this same
+  already-started CLI process, so it doesn't start up again.
 - **Interactive shell's saved loops** — when a saved prompt loop needs its
-  own background scheduler, it starts up with the scheduled-command profile
-  in
+  own background scheduler,
   [`surfaces/interactive_shell/runtime/loop_scheduler.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/interactive_shell/runtime/loop_scheduler.py)
-  and
-  [`surfaces/interactive_shell/command_registry/loops_cmds.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/interactive_shell/command_registry/loops_cmds.py).
+  runs the scheduled-command profile. Slash commands in
+  [`loops_cmds.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/interactive_shell/command_registry/loops_cmds.py)
+  reload through that module; they do not boot a second profile themselves.
 - **Gateway daemon** — [`gateway/core/lifecycle/controller.py`](https://github.com/Tracer-Cloud/opensre/blob/main/gateway/core/lifecycle/controller.py)
   sets up its own logging, readiness state, and credentials first, then runs
   the gateway profile before connecting chat channels. When it also hosts the
@@ -85,9 +87,11 @@ that's already started is a harmless no-op.
   profile instead, since it needs its own error reporting and only needs to
   register task runners once, not on every run.
 - **Embedded Python usage** — [`surfaces/embedded.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/embedded.py)
-  runs the embedded profile. This is also the pattern to follow if you're
-  driving the agent from your own Python script: run
-  `configure_process(EMBEDDED_PROFILE)` before your first request.
+  `start_embedded_session()` runs the embedded profile and then
+  `AgentSession.start`. That is the call to use from another Python program.
+  It is `configure_process(EMBEDDED_PROFILE)` followed by `start`; `start`
+  itself does not register adapters, because `core` may not import the hosts
+  above it.
 
 ## Why it works this way
 

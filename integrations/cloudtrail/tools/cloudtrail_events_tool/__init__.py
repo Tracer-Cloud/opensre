@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
@@ -172,6 +173,7 @@ def _shape_event(raw: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     name="lookup_cloudtrail_events",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="CloudTrail",
     source="cloudtrail",
     description=(

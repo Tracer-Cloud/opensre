@@ -15,7 +15,7 @@ from core.agent_harness.session.pending_offer import (
 from core.agent_harness.session.want_me_to import offer_from_assistant_content
 from core.state import MAX_CONVERSATION_TURNS
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
-from infrastructure.harness_providers import strip_message_context_prefix
+from infrastructure.harness_providers import split_caller_facts, strip_message_context_prefix
 
 NO_HISTORY_PLACEHOLDER = "(no prior messages in this CLI thread)"
 _ACTION_FACT_MARKERS = (
@@ -72,6 +72,8 @@ def expand_affirmative_follow_up(
         return raw
 
     prefix, remainder = strip_message_context_prefix(raw)
+    # A host's appended facts are not part of the reply: "yes" stays a yes.
+    remainder, facts = split_caller_facts(remainder)
     if not (_is_affirmative(remainder) or _is_restated_affirmative(remainder)):
         return raw
 
@@ -86,7 +88,7 @@ def expand_affirmative_follow_up(
     offer = _latest_actionable_offer(messages)
     if not offer:
         return raw
-    return f"{prefix}Yes — please {_normalize_offer(offer)}."
+    return f"{prefix}Yes — please {_normalize_offer(offer)}.{facts}"
 
 
 def _is_affirmative(text: str) -> bool:

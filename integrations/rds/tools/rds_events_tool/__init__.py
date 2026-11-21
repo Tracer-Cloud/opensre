@@ -6,6 +6,7 @@ import logging
 from typing import Any, cast
 
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
@@ -46,6 +47,7 @@ def _map_describe_rds_events(
 
 @tool(
     name="describe_rds_events",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="rds",
     description=(
         "Describe recent AWS RDS events for a DB instance — failovers, "

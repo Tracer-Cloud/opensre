@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available_or_backend
@@ -39,6 +39,7 @@ _EKS_POD_LOGS_ANTI = (
 
 @tool(
     name="get_eks_pod_logs",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description=(
         "Fetch recent logs from one EKS pod. Require absolute cluster_name, "

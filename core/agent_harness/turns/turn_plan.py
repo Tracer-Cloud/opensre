@@ -22,9 +22,10 @@ from core.agent_harness.ports import SessionState
 from core.agent_harness.session.integration_resolution import (
     has_resolved_integrations,
     resolve_and_cache_integrations,
+    save_repository_scopes,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
-from infrastructure.harness_providers import enrich_resolved_with_repo_scopes
+from infrastructure.harness_providers import enrich_resolved_with_repo_scopes, split_caller_facts
 
 _MAX_KNOWN_REPOSITORIES_PER_VENDOR = 20
 
@@ -68,6 +69,7 @@ def build_turn_plan(snapshot: TurnSnapshot, session: SessionState) -> TurnPlan:
     session.vcs_repo_scopes = repositories.scopes
     session.active_vcs_repositories = repositories.active
     session.known_vcs_repo_scopes = repositories.known
+    save_repository_scopes(session)
     snapshot = replace(
         snapshot,
         resolved_integrations=repositories.resolved,
@@ -119,10 +121,15 @@ def _resolve_repositories(
         while len(remembered) > _MAX_KNOWN_REPOSITORIES_PER_VENDOR:
             remembered.pop(next(iter(remembered)))
 
+    # Repositories are named by what people wrote, never by facts a host
+    # appended to it: "OpenSRE web app session" is not a request about opensre.
     enriched = enrich_resolved_with_repo_scopes(
         resolved=resolved,
-        message=snapshot.text,
-        conversation_messages=snapshot.conversation_messages,
+        message=split_caller_facts(snapshot.text)[0],
+        conversation_messages=[
+            (role, split_caller_facts(content)[0] if role == "user" else content)
+            for role, content in snapshot.conversation_messages
+        ],
         env=None,
         cwd=snapshot.working_directory,
         cached_scopes=dict(session.vcs_repo_scopes),

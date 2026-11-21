@@ -23,6 +23,7 @@ from config.constants.runtime_metadata import (
     OPENSRE_ALLOW_NETWORK_ENV,
     WORKSPACE_REPO_ENV_KEYS,
 )
+from config.runtime_metadata.build_info import resolve_commondir, resolve_gitdir
 
 # Tools the LLM commonly reflex-shells for. Presence-only surfaces so the agent
 # can answer without invoking ``--version``, which the sandbox blocks.
@@ -257,14 +258,19 @@ def read_git_origin_identity(config_text: str) -> str:
 
 
 def _git_origin_from_config(repo_root: Path) -> str:
-    config = repo_root / ".git" / "config"
-    if not config.is_file():
-        # Worktrees point .git at a file; skip deep resolution for the fact.
+    """Repository identity from the checkout's git config, linked worktrees included.
+
+    A worktree's ``.git`` is a file naming its own gitdir; its remotes live in
+    the ``config`` of the common gitdir it shares with the main checkout.
+    """
+    gitdir = resolve_gitdir(repo_root / ".git")
+    if gitdir is None:
         return ""
     try:
-        return read_git_origin_identity(config.read_text(encoding="utf-8"))
+        config_text = (resolve_commondir(gitdir) / "config").read_text(encoding="utf-8")
     except OSError:
         return ""
+    return read_git_origin_identity(config_text)
 
 
 def workspace_identity_facts() -> dict[str, str]:
@@ -279,7 +285,7 @@ def workspace_identity_facts() -> dict[str, str]:
         value = _normalize_repo_identity(os.environ.get(key, ""))
         if value:
             return {"workspace_repo": value}
-    # Walk up from cwd for a .git directory (dev checkouts).
+    # Walk up from cwd to the enclosing checkout (a .git directory or worktree file).
     here = Path.cwd().resolve()
     for candidate in (here, *here.parents):
         if (candidate / ".git").exists():

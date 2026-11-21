@@ -75,10 +75,13 @@ from infrastructure.harness_providers.integration_selection import (
     current_github_connection_id,
 )
 from infrastructure.harness_providers.message_context import (
+    CALLER_FACTS_HEADER,
     MessageContextPrefixStripper,
     clear_message_context_prefix_strippers,
     register_message_context_prefix_stripper,
+    split_caller_facts,
     strip_message_context_prefix,
+    with_caller_facts,
 )
 from infrastructure.harness_providers.message_context import reset as _reset_message_context
 from infrastructure.harness_providers.prompt_fragments import (
@@ -176,6 +179,7 @@ def reset_harness_providers() -> None:
 
 
 __all__ = [
+    "CALLER_FACTS_HEADER",
     "AccountIntegrationsFetcherFn",
     "AccountIntegrationsGenerationFn",
     "BuildCliClientFn",
@@ -261,5 +265,7 @@ __all__ = [
     "setupable_integration_services",
     "skill_prerequisite_met",
     "skill_prerequisite_verdict",
+    "split_caller_facts",
     "strip_message_context_prefix",
+    "with_caller_facts",
 ]

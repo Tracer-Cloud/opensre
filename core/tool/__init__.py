@@ -2,6 +2,7 @@
 
 from core.tool.contracts import (
     CALL_SIDE_EFFECT_LEVEL_KEY,
+    ERROR_KIND_NOT_FOUND,
     ERROR_KIND_REFUSED,
     REGISTERED_TOOL_ATTR,
     AgentToolContext,
@@ -31,6 +32,7 @@ from core.tool.registry import ToolRegistry, normalize_surfaces
 
 __all__ = [
     "CALL_SIDE_EFFECT_LEVEL_KEY",
+    "ERROR_KIND_NOT_FOUND",
     "ERROR_KIND_REFUSED",
     "REGISTERED_TOOL_ATTR",
     "AgentToolContext",

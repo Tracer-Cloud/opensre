@@ -365,3 +365,56 @@ def test_a_placeholder_in_the_assistant_question_is_not_a_repository() -> None:
     )
 
     assert scope is None
+
+
+_CONNECTED = {
+    "github": {
+        "connection_origin": "webapp",
+        "auth_token": "app-token",
+        "connection_verified": True,
+    }
+}
+
+
+def test_prose_shaped_like_a_repository_never_becomes_the_turns_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ "why is my ci/cd failing" ran every GitHub tool on ``ci/cd``, and each answered 404."""
+    monkeypatch.setattr(
+        "integrations.github.accessible_repos.accessible_repositories", lambda _token: _REACHABLE
+    )
+    monkeypatch.setattr(
+        "integrations.github.repo_scope.accessible_repositories", lambda _token: _REACHABLE
+    )
+    monkeypatch.setattr(
+        "integrations.github.accessible_repos._lookup", lambda _token, _full_name: None
+    )
+
+    def _infer(message: str, history: list[tuple[str, str]]) -> tuple[str, ...] | None:
+        return GITHUB_VCS_REPO_SCOPE_PROVIDER.infer(
+            message=message,
+            conversation_messages=history,
+            env={},
+            cwd="/not/a/repository",
+            cached=("Tracer-Cloud", "opensre"),
+            resolved=_CONNECTED,
+        )
+
+    # The session's repository stays the turn's repository.
+    assert _infer("why is my ci/cd failing", []) == ("Tracer-Cloud", "opensre")
+    # Nor is it remembered from an earlier message, or listed as a named repository.
+    assert _infer("try again", [("user", "is the ci/cd and/or deploy broken?")]) == (
+        "Tracer-Cloud",
+        "opensre",
+    )
+    assert (
+        GITHUB_VCS_REPO_SCOPE_PROVIDER.referenced_scopes(
+            text="why is my ci/cd failing", role="user", env={}, resolved=_CONNECTED
+        )
+        == ()
+    )
+    # A real repository written the same way still wins, in GitHub's spelling.
+    assert _infer("why is CI failing in tracer-cloud/opensre-webapp", []) == (
+        "Tracer-Cloud",
+        "opensre-webapp",
+    )

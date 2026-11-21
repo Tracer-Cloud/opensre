@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Any, cast
 
 from config.constants.github import GITHUB_CONNECTION_ORIGIN_PARAM, GITHUB_CONNECTION_ORIGIN_TAG
-from integrations.github.envelope import missing_token_envelope
+from integrations.github.envelope import explain_not_found, missing_token_envelope
 from integrations.github.rest_token import github_rest_token, has_github_rest_token
 
 
@@ -77,6 +77,11 @@ def require_webapp_github[**P](
             supplied.pop("github_token", None)
         if not accepts_kwargs and "github_connection_id" not in parameters:
             supplied.pop("github_connection_id", None)
-        return cast(Callable[..., dict[str, Any]], function)(*args, **supplied)
+        result = cast(Callable[..., dict[str, Any]], function)(*args, **supplied)
+        if not isinstance(result, dict):
+            return result
+        return explain_not_found(
+            result, token=token, owner=supplied.get("owner"), repo=supplied.get("repo")
+        )
 
     return run

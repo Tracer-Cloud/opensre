@@ -8,6 +8,7 @@ from typing import Any
 from config.constants.openobserve import OPENOBSERVE_MAX_RESULTS_DEFAULT
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
@@ -61,6 +62,7 @@ def _map_query_openobserve_logs(
 
 @tool(
     name="query_openobserve_logs",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     description="Query OpenObserve logs using bounded read-only search.",
     source="openobserve",
     surfaces=(ToolSurface.CHAT,),

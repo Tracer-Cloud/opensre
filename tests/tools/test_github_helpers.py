@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from integrations.github.envelope import normalize_github_tool_result
+from core.tool import ERROR_KIND_NOT_FOUND
+from core.tool_framework.utils import tool_unavailable
+from integrations.github.accessible_repos import AccessibleRepository
+from integrations.github.envelope import explain_not_found, normalize_github_tool_result
 from integrations.github.helpers import (
     github_creds,
     resolve_github_mcp_config,
@@ -137,3 +140,30 @@ def test_normalize_github_tool_result_stays_none_on_non_json_text() -> None:
     }
     payload = normalize_github_tool_result(result)
     assert payload["structured_content"] is None
+
+
+def test_a_404_reads_as_not_found_and_names_the_repositories_that_can_be_reached() -> None:
+    """ "GitHub returns 404 for ci/cd" ended in a question the connection could have answered."""
+    reachable = (
+        AccessibleRepository("vrk7/opensre", fork=True),
+        AccessibleRepository("Tracer-Cloud/opensre", fork=False),
+    )
+    rest = tool_unavailable("github", 'GitHub API error 404: {"message":"Not Found"}', runs=[])
+    mcp = tool_unavailable("github", "failed to list runs: GET /repos/ci/cd: 404 Not Found []")
+    refused = tool_unavailable("github", "GitHub API error 403: Resource not accessible")
+
+    with patch("integrations.github.envelope.accessible_repositories", return_value=reachable):
+        missing_repository = explain_not_found(rest, token="t", owner="ci", repo="cd")
+        missing_file = explain_not_found(mcp, token="t", owner="Tracer-Cloud", repo="OpenSRE")
+        permission = explain_not_found(refused, token="t", owner="ci", repo="cd")
+
+    # The connection answered: not an outage, and the right repository is one call away.
+    assert missing_repository["error_kind"] == ERROR_KIND_NOT_FOUND
+    assert missing_repository["failure_state"] == "no_match"
+    assert missing_repository["runs"] == []
+    assert "It reaches: Tracer-Cloud/opensre, vrk7/opensre." in missing_repository["error"]
+    # Something inside a reachable repository is missing: nothing to suggest.
+    assert missing_file["error_kind"] == ERROR_KIND_NOT_FOUND
+    assert missing_file["error"] == mcp["error"]
+    # A refused credential is still the connection's problem.
+    assert permission == refused

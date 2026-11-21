@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available
@@ -30,6 +31,7 @@ def _deployment_status_extract_params(sources: dict[str, dict]) -> dict[str, Any
 
 @tool(
     name="get_eks_deployment_status",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="Get EKS deployment rollout status — desired vs ready vs unavailable replicas.",
     use_cases=[

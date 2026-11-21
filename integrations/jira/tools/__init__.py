@@ -30,6 +30,7 @@ class JiraAddCommentTool(BaseTool):
     """Add investigation findings as a comment on an existing Jira issue."""
 
     name = "jira_add_comment"
+    side_effect_level = SideEffectLevel.EXTERNAL
     source = "jira"
     description = (
         "Post investigation findings, root cause analysis, or status updates as a comment "
@@ -127,6 +128,7 @@ class JiraCreateIssueTool(BaseTool):
     """Create a Jira issue to track an incident discovered during investigation."""
 
     name = "jira_create_issue"
+    side_effect_level = SideEffectLevel.EXTERNAL
     source = "jira"
     description = (
         "Create a new Jira issue to file an incident ticket with investigation findings, "

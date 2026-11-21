@@ -11,6 +11,7 @@ from config.constants.grafana import (
     GRAFANA_READ_TOKEN_ENV,
     GRAFANA_TEMPO_DATASOURCE_UID_ENV,
 )
+from config.env_assignment import load_env_file
 
 DEFAULT_INSTANCE_URL = "https://tracerbio.grafana.net"
 DEFAULT_LOKI_UID = "grafanacloud-logs"
@@ -28,24 +29,11 @@ def get_env(key: str, default: str = "") -> str:
 
 
 def load_env(env_path: Path | str | None = None, *, override: bool = False) -> None:
+    """Load ``env_path`` (default ``./.env``) unless the env-file skip switch is set."""
     if os.getenv("GRAFANA_CONFIG_SKIP_ENV_FILE") == "1":
         return
-    if env_path is None:
-        env_path = Path.cwd() / ".env"
-    path = Path(env_path)
-    if not path.exists():
-        return
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
-            continue
-        if "=" not in stripped:
-            continue
-        key, value = stripped.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and (override or key not in os.environ):
-            os.environ[key] = value
+    path = Path(env_path) if env_path is not None else Path.cwd() / ".env"
+    load_env_file(path, override=override)
 
 
 def get_account_read_token(account_id: str) -> str:
