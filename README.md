@@ -115,6 +115,8 @@ SWE-bench<sup>1</sup> showed that agents improve fastest with realistic tasks an
 
 Start with the **[CI/CD overview](docs/cicd/overview.mdx)**: analyze a repository's CI reliability, fix failing checks on a PR, or set up an agent that keeps CI green.
 
+**Not just CI/CD.** The same agent investigates production incidents across your stack. Connect the [integrations](#integrations) you run, such as EKS, EC2, CloudWatch, Kubernetes, Grafana (Loki, Mimir/PromQL, Tempo), Alertmanager, Datadog, Slack, and GitHub. Then describe the incident in the interactive shell or route alerts to it. OpenSRE picks the tools that fit, from logs and metrics to pod state and deploy history.
+
 <sup>1</sup> https://arxiv.org/abs/2310.06770
 
 ---
