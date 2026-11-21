@@ -1,5 +1,6 @@
 """CloudWatch client for metrics and logs."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from integrations.aws.env import make_boto3_client, require_aws_credentials
@@ -10,6 +11,10 @@ except ImportError:
 
     class ClientError(Exception):  # type: ignore[no-redef]
         """Stub when botocore is not installed; prevents over-broad except clauses."""
+
+
+#: Metric window used when a caller gives no start time.
+_DEFAULT_WINDOW = timedelta(hours=1)
 
 
 def _get_cloudwatch_client():
@@ -40,8 +45,9 @@ def get_metric_statistics(
         namespace: Metric namespace (e.g., "AWS/Batch", "AWS/ECS")
         metric_name: Name of the metric (e.g., "CPUUtilization", "MemoryUtilization")
         dimensions: List of dimension dicts (e.g., [{"Name": "JobQueue", "Value": "queue-name"}])
-        start_time: Start time in ISO format string (e.g., "2024-01-01T00:00:00Z")
-        end_time: End time in ISO format string (e.g., "2024-01-01T01:00:00Z")
+        start_time: Start time in ISO format string (e.g., "2024-01-01T00:00:00Z");
+            defaults to one hour before ``end_time``
+        end_time: End time in ISO format string (e.g., "2024-01-01T01:00:00Z"); defaults to now
         period: Period in seconds (default 300 = 5 minutes)
         statistics: List of statistics to retrieve (e.g., ["Average", "Maximum", "Minimum"])
 
@@ -57,14 +63,19 @@ def get_metric_statistics(
 
     if statistics is None:
         statistics = ["Average", "Maximum", "Minimum"]
+    # CloudWatch requires both bounds; without them, read the hour up to the end.
+    window_end = datetime.fromisoformat(end_time) if end_time else datetime.now(UTC)
+    window_start = (
+        datetime.fromisoformat(start_time) if start_time else window_end - _DEFAULT_WINDOW
+    )
 
     try:
         response = client.get_metric_statistics(
             Namespace=namespace,
             MetricName=metric_name,
             Dimensions=dimensions or [],
-            StartTime=start_time,
-            EndTime=end_time,
+            StartTime=window_start,
+            EndTime=window_end,
             Period=period,
             Statistics=statistics,
         )
