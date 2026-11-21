@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from config.constants.mcp import MCP_SERVER_TOOL_PREFIX
+
 #: Credentials, destinations, local transports and TLS switches.
 CONFIG_ONLY_TOOL_PARAMS: Final[frozenset[str]] = frozenset(
     {
@@ -68,7 +70,14 @@ MODEL_SUPPLIED_CONFIG_PARAMS: Final[dict[str, frozenset[str]]] = {
 
 
 def config_only_params(tool_name: str, injected_params: tuple[str, ...] = ()) -> frozenset[str]:
-    """Names ``tool_name`` must take from configuration, never from the model."""
+    """Names ``tool_name`` must take from configuration, never from the model.
+
+    A tool bridged from a configured MCP server is exempt: its arguments are the
+    server's own contract and the server holds its credentials, so a name such
+    as ``user`` or ``endpoint`` is a real argument there, not a connection field.
+    """
+    if tool_name.startswith(MCP_SERVER_TOOL_PREFIX):
+        return frozenset(injected_params)
     allowed = MODEL_SUPPLIED_CONFIG_PARAMS.get(tool_name, frozenset())
     return (CONFIG_ONLY_TOOL_PARAMS - allowed) | frozenset(injected_params)
 

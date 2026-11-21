@@ -112,6 +112,7 @@
         "group": "Integrations",
         "pages": [
           "integrations/index",
+          "integrations/mcp-servers",
           {
             "group": "Monitoring",
             "expanded": false,

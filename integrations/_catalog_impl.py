@@ -127,6 +127,7 @@ from config.constants.mariadb import (
     MARIADB_SSL_ENV,
     MARIADB_USERNAME_ENV,
 )
+from config.constants.mcp import MCP_SERVERS_INSTANCES_ENV, MCP_SERVERS_SERVICE
 from config.constants.mongodb import (
     MONGODB_AUTH_SOURCE_ENV,
     MONGODB_CONNECTION_STRING_ENV,
@@ -305,6 +306,7 @@ from integrations.jira import classify as _classify_jira
 from integrations.kubernetes import classify as _classify_kubernetes
 from integrations.mariadb import build_mariadb_config
 from integrations.mariadb import classify as _classify_mariadb
+from integrations.mcp_servers import classify as _classify_mcp_servers
 from integrations.mongodb import build_mongodb_config
 from integrations.mongodb import classify as _classify_mongodb
 from integrations.mongodb_atlas import build_mongodb_atlas_config
@@ -514,6 +516,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "posthog": _classify_posthog,
     "posthog_mcp": _classify_posthog_mcp,
     "sentry_mcp": _classify_sentry_mcp,
+    MCP_SERVERS_SERVICE: _classify_mcp_servers,
     "mysql": _classify_mysql,
     "dagster": _classify_dagster,
     "rabbitmq": _classify_rabbitmq,
@@ -649,6 +652,10 @@ def load_env_integrations() -> list[dict[str, Any]]:
         integrations.append(
             _active_env_record("railway", railway_config.model_dump(exclude={"integration_id"}))
         )
+
+    mcp_servers = _parse_instances_env(MCP_SERVERS_INSTANCES_ENV, MCP_SERVERS_SERVICE)
+    if mcp_servers is not None:
+        integrations.append(mcp_servers)
 
     grafana_multi = _parse_instances_env("GRAFANA_INSTANCES", "grafana")
     if grafana_multi is not None:

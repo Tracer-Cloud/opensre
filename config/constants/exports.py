@@ -383,6 +383,9 @@ EXPORTS: dict[str, str] = {
     "MARIADB_USERNAME_ENV": "mariadb",
     # mcp
     "MCP_NO_COLOR_ENV": "mcp",
+    "MCP_SERVERS_INSTANCES_ENV": "mcp",
+    "MCP_SERVERS_SERVICE": "mcp",
+    "MCP_SERVER_TOOL_PREFIX": "mcp",
     "MCP_TERMINAL_ENV": "mcp",
     "MCP_TERMINAL_DUMB_VALUE": "mcp",
     # conversation history
