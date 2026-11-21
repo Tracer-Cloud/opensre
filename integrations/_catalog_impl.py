@@ -154,6 +154,7 @@ from config.constants.new_relic import (
     NEW_RELIC_BASE_URL_ENV,
     NEW_RELIC_INSTANCES_ENV,
 )
+from config.constants.openobserve import OPENOBSERVE_TRACE_STREAM_ENV
 from config.constants.opensearch import (
     OPENSEARCH_API_KEY_ENV,
     OPENSEARCH_PASSWORD_ENV,
@@ -1716,6 +1717,7 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "username": openobserve_username,
                     "password": openobserve_password,
                     "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
+                    "trace_stream": os.getenv(OPENOBSERVE_TRACE_STREAM_ENV, "").strip(),
                     "max_results": safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
                 },
             )
