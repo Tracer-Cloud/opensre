@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Protocol
 
 from config.env_file import is_sensitive_env_key, sync_env_secret, sync_env_values
-from integrations.store import upsert_integration
+from integrations.store import upsert_instance, upsert_integration
 from integrations.verification import VerifierFn
 from integrations.webapp_vault import push_webapp_org_integration
 
@@ -243,6 +243,16 @@ class IntegrationSetupSpec:
     guide: GuideFn | None = None
     """Optional vendor guide for human hand-offs and discovery before verification."""
 
+    instance_field: str = ""
+    """Field naming a store instance, or ``""`` to save one flat record.
+
+    For a service configured as several named instances (one per MCP server,
+    say), the value of this field names the instance; :func:`apply_setup` saves
+    the other credentials under that name and keeps any other instances. Such a
+    spec declares no ``env_var`` fields (one env var cannot hold several
+    instances) and is not mirrored to the org vault.
+    """
+
     def is_required(self, field: SetupField, mode: str | None) -> bool:
         """Whether *field* must be non-empty: spec-required, or required by *mode*."""
         if field.required:
@@ -378,10 +388,14 @@ def apply_setup(
         # (usually an unwritable .env). Nothing has been persisted at this point.
         return SetupOutcome(ok=False, detail=f"Could not save {spec.service} credentials: {exc}")
 
-    upsert_integration(spec.service, {"credentials": credentials})
-    # Mirror the change up so a silo's edit reaches the org vault. No-op off a
-    # silo, and never fatal: the local store is already the working copy.
-    push_webapp_org_integration(spec.service, credentials)
+    if spec.instance_field:
+        instance = str(credentials.pop(spec.instance_field, None) or "")
+        upsert_instance(spec.service, {"name": instance, "credentials": credentials})
+    else:
+        upsert_integration(spec.service, {"credentials": credentials})
+        # Mirror the change up so a silo's edit reaches the org vault. No-op off a
+        # silo, and never fatal: the local store is already the working copy.
+        push_webapp_org_integration(spec.service, credentials)
 
     if spec.finalize is not None:
         note = spec.finalize(credentials)
