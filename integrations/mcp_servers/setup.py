@@ -7,6 +7,7 @@ store-only (no env mirroring), since one env var cannot hold several servers.
 from __future__ import annotations
 
 import re
+import shlex
 
 from config.constants.mcp import MCP_SERVERS_SERVICE
 from integrations.mcp_servers.verifier import verify_mcp_server
@@ -34,6 +35,14 @@ def _validate_url(value: str) -> str | None:
     if value.strip().startswith(("http://", "https://")):
         return None
     return "Enter the server's http:// or https:// endpoint, e.g. http://localhost:8000/mcp."
+
+
+def _validate_args(value: str) -> str | None:
+    try:
+        shlex.split(value)
+    except ValueError as exc:
+        return f"Could not read the arguments ({exc}); check the quotes."
+    return None
 
 
 def _validate_yes_no(value: str) -> str | None:
@@ -73,7 +82,8 @@ MCP_SERVERS_SETUP = IntegrationSetupSpec(
         SetupField(
             name=ARGS_FIELD,
             label="Arguments",
-            prompt="Arguments, space separated (e.g. mcp-grafana)",
+            prompt="Arguments, space separated; quote any with spaces (e.g. mcp-grafana)",
+            validate=_validate_args,
             required=False,
         ),
         SetupField(

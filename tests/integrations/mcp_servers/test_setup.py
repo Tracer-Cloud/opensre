@@ -139,3 +139,53 @@ def test_server_setup_does_not_need_a_writable_env_file(
     assert outcome.ok, outcome.detail
     assert outcome.env_path is None
     assert [i["name"] for i in (get_integration("mcp") or {})["instances"]] == ["ops"]
+
+
+def test_a_new_server_never_inherits_another_servers_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import dataclasses
+
+    import integrations.cli as cli
+    import integrations.mcp_servers.setup as mcp_setup
+    from integrations.store import upsert_instance
+
+    upsert_instance(
+        "mcp",
+        {"name": "grafana", "credentials": {"url": "https://a/mcp", "auth_token": "secret-a"}},
+    )
+    sent: list[dict[str, object]] = []
+
+    def record_verify(_source: str, config: dict[str, object]) -> dict[str, str]:
+        sent.append(dict(config))
+        return {"status": "passed", "detail": "ok"}
+
+    spec = dataclasses.replace(mcp_setup.MCP_SERVERS_SETUP, verify=record_verify)
+    monkeypatch.setattr(mcp_setup, "MCP_SERVERS_SETUP", spec)
+    monkeypatch.setattr(cli, "_select", lambda *_args, **_kwargs: "http")
+    answers = {"Server name": "other", "Server URL": "https://b/mcp"}
+
+    def answer(label: str, default: str = "", secret: bool = False) -> str:
+        return next((v for k, v in answers.items() if label.startswith(k)), default)
+
+    monkeypatch.setattr(cli, "_p", answer)
+
+    cli._setup_mcp_server()
+
+    assert "auth_token" not in sent[0]
+    instances = {i["name"]: i for i in (get_integration("mcp") or {})["instances"]}
+    assert not instances["other"]["credentials"].get("auth_token")
+
+
+def test_quoted_arguments_with_spaces_reach_the_server(tmp_path: Path) -> None:
+    spaced = tmp_path / "My Servers" / "ops server.py"
+    spaced.parent.mkdir()
+    spaced.write_text(Path(_OPS_SERVER).read_text())
+
+    outcome = apply_setup(
+        MCP_SERVERS_SETUP,
+        {"name": "ops", "command": sys.executable, "args": f'"{spaced}"', "read_only": "no"},
+    )
+
+    assert outcome.ok, outcome.detail
+    assert "2 tool(s)" in outcome.detail

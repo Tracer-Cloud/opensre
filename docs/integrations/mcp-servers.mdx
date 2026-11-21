@@ -39,7 +39,7 @@ In the interactive shell, `/mcp connect` does the same. You choose how OpenSRE r
 | Server URL | For a remote server | — | `http://` or `https://` endpoint |
 | Bearer token | No | — | Sent as `Authorization: Bearer …` |
 | Command | For a local server | — | Executable that starts the server, e.g. `uvx` |
-| Arguments | No | — | Space separated, e.g. `mcp-grafana` |
+| Arguments | No | — | Space separated, e.g. `mcp-grafana`. Quote an argument that contains spaces: `"/path/with spaces/server.py"` |
 | Read-only | No | `no` | `yes` exposes only the tools the server marks read-only |
 | Allowed tools | No | all tools | Comma-separated server tool names |
 

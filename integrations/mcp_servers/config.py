@@ -8,6 +8,7 @@ or the stdio command's own environment, never in tool arguments.
 from __future__ import annotations
 
 import logging
+import shlex
 from typing import Any
 
 from pydantic import Field, field_validator, model_validator
@@ -20,6 +21,12 @@ from integrations.mcp_transport import McpTransportMode
 logger = logging.getLogger(__name__)
 
 DEFAULT_MCP_SERVER_TIMEOUT_SECONDS = 20.0
+
+
+def _non_blank(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple, set)):
+        return ()
+    return tuple(str(item).strip() for item in value if str(item).strip())
 
 
 class McpServerConfig(StrictConfigModel):
@@ -58,14 +65,20 @@ class McpServerConfig(StrictConfigModel):
     def _strip(cls, value: object) -> str:
         return str(value or "").strip()
 
-    @field_validator("args", "allowed_tools", mode="before")
+    @field_validator("args", mode="before")
     @classmethod
-    def _string_tuple(cls, value: object) -> tuple[str, ...]:
+    def _command_args(cls, value: object) -> tuple[str, ...]:
+        """A typed argument string is split like a shell would: quotes keep spaces."""
+        if isinstance(value, str):
+            value = shlex.split(value)
+        return _non_blank(value)
+
+    @field_validator("allowed_tools", mode="before")
+    @classmethod
+    def _tool_names(cls, value: object) -> tuple[str, ...]:
         if isinstance(value, str):
             value = value.replace(",", " ").split()
-        if not isinstance(value, (list, tuple, set)):
-            return ()
-        return tuple(str(item).strip() for item in value if str(item).strip())
+        return _non_blank(value)
 
     @field_validator("read_only", mode="before")
     @classmethod
