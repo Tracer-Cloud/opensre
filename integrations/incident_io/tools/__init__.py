@@ -108,7 +108,7 @@ class IncidentIoIncidentsTool(BaseTool):
     """Read incident.io incident context and optionally append OpenSRE findings."""
 
     name = "incident_io_incidents"
-    side_effect_level = SideEffectLevel.READ_ONLY
+    side_effect_level = SideEffectLevel.EXTERNAL
     source = "incident_io"
     evidence_mapper = _map_incident_io_incidents
     description = (
