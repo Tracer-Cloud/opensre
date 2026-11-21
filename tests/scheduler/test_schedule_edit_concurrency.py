@@ -11,6 +11,7 @@ import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from config.constants.scheduler import SCHEDULER_SCHEDULE_CHANGED_AT_PARAM
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler import executor, loops, runner, tasks
@@ -162,6 +163,38 @@ def test_late_admission_skips_old_tick_but_preserves_new_trigger_tick(
     assert get_latest_run_for_fire_time(task.id, obsolete).status is TaskStatus.SKIPPED
     assert get_latest_run_for_fire_time(task.id, valid).status is TaskStatus.SUCCESS
     assert build.call_count == 1
+
+
+def test_recovery_keeps_only_the_current_reminder_tick_after_schedule_edit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = add_task(
+        ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="",
+            provider=Provider.INTERACTIVE_SHELL,
+            params={
+                "work_item_id": "work-42",
+                WORK_ITEM_REMINDER_RUN_AT_PARAM: "2026-11-13T15:30:00.500000+05:30",
+                SCHEDULER_SCHEDULE_CHANGED_AT_PARAM: "2026-11-12T10:00:00Z",
+            },
+        )
+    )
+    obsolete = "2026-11-13T09:00:00Z"
+    current = "2026-11-13T10:00:00Z"
+    assert try_queue_run(task.id, obsolete)
+    assert try_queue_run(task.id, current)
+    build = Mock(return_value="")
+    monkeypatch.setattr(executor, "build_message", build)
+
+    runner._recover_runs(real_runners())
+
+    skipped = get_latest_run_for_fire_time(task.id, obsolete)
+    assert skipped is not None and skipped.status is TaskStatus.SKIPPED
+    assert skipped.error == "schedule_changed"
+    recovered = get_latest_run_for_fire_time(task.id, current)
+    assert recovered is not None and recovered.status is TaskStatus.SUCCESS
+    build.assert_called_once()
 
 
 def test_stale_callback_rechecks_definition_after_claim(monkeypatch: pytest.MonkeyPatch) -> None:
