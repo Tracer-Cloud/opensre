@@ -8,7 +8,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from infrastructure.evidence.evidence_compaction import compact_logs, summarize_counts
 from integrations.splunk._client import make_client, unavailable
 
@@ -42,6 +42,7 @@ class SplunkSearchTool(BaseTool):
     """Search Splunk logs using SPL for errors, exceptions, and application events."""
 
     name = "query_splunk_logs"
+    side_effect_level = SideEffectLevel.MUTATING
     source = "splunk"
     evidence_mapper = _map_query_splunk_logs
     description = (

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import validate_host_metrics
 from integrations.tracer import get_tracer_web_client
@@ -13,6 +14,7 @@ from integrations.tracer.tools.tracer_failed_jobs_tool import _tracer_available,
 
 @tool(
     name="get_host_metrics",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="cloudwatch",
     description="Get host-level metrics (CPU, memory, disk) for the run.",
     use_cases=[

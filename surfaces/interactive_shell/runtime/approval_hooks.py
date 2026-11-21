@@ -1,4 +1,8 @@
-"""Tool hooks that make the shell ask before an organization-wide tool runs."""
+"""Tool hooks that make the shell ask before a tool runs.
+
+Generated code asks at every ``/auto`` level. Below High, tools that act on an
+external system ask too; at High (the alpha default) nothing else asks.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,9 @@ from rich.console import Console
 
 from config.constants.repl_autonomy import (
     ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES,
+    ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS,
     SESSION_APPROVAL_EXCLUDED_ARGUMENTS,
+    AutoLevel,
 )
 from config.constants.tooling import ToolBlockedBy
 from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
@@ -49,7 +55,7 @@ def with_shell_approval(
 
 @dataclass(frozen=True)
 class _ShellApproval:
-    """Asks the user about always-ask tools, then hands over to the later hook."""
+    """Asks the user about tools that need approval, then hands over to the later hook."""
 
     session: Session
     console: Console
@@ -59,7 +65,7 @@ class _ShellApproval:
 
     def before_tool_call(self, request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         tool_name = request.tool_call.name
-        if tool_name not in ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES:
+        if not self._needs_approval(request):
             return self._later_decision(request)
 
         approved = self._user_approves(request)
@@ -70,6 +76,19 @@ class _ShellApproval:
         if later_decision is not None:
             return later_decision
         return BeforeToolCallResult(approved=True)
+
+    def _needs_approval(self, request: ToolExecutionRequest) -> bool:
+        """Whether the user must approve this call before it runs.
+
+        Below High, a tool whose declared side effect reaches an external system
+        asks; an undeclared level never does, so declare one on every tool.
+        """
+        if request.tool_call.name in ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES:
+            return True
+        if self.session.terminal.auto_level is AutoLevel.HIGH:
+            return False
+        level = getattr(request.tool, "side_effect_level", None)
+        return level in ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS
 
     def _later_decision(self, request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         if self.later_hook is None:

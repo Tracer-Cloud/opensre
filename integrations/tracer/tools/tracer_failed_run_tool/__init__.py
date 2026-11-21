@@ -7,6 +7,7 @@ from typing import Any
 
 from config.tracer_urls import get_tracer_base_url
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.tracer import (
     PipelineRunSummary,
@@ -50,6 +51,7 @@ def _find_failed_run(client: Any, pipeline_names: Iterable[str]) -> PipelineRunS
 
 @tool(
     name="fetch_failed_run",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="tracer_web",
     description="Fetch context (metadata) about a failed run from the Tracer Web App.",
     use_cases=[

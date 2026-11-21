@@ -7,7 +7,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 @tool(
     name="list_eks_clusters",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="List EKS clusters in the AWS account.",
     use_cases=[

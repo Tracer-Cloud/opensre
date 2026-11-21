@@ -18,6 +18,7 @@ from typing import Any, cast
 
 from core.domain.types.evidence import CATALOG_ENTRIES_KEY, record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
@@ -132,6 +133,7 @@ def _map_get_sqs_queue_attributes(
 
 @tool(
     name="get_sqs_queue_attributes",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="SQS queues",
     source="sqs",
     description=(

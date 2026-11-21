@@ -7,7 +7,7 @@ from typing import Any
 
 import boto3
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 
 
@@ -34,6 +34,7 @@ _CW_LOGS_ANTI_EXAMPLES = (
 
 @tool(
     name="get_cloudwatch_logs",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="CloudWatch",
     source="cloudwatch",
     description=(

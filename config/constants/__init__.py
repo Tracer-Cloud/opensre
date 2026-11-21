@@ -1228,6 +1228,9 @@ if TYPE_CHECKING:
         REDIS_USERNAME_ENV as REDIS_USERNAME_ENV,
     )
     from config.constants.repl_autonomy import (
+        ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS as ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS,
+    )
+    from config.constants.repl_autonomy import (
         AUTO_LEVEL_ASK_TOOL_TYPES as AUTO_LEVEL_ASK_TOOL_TYPES,
     )
     from config.constants.repl_autonomy import (

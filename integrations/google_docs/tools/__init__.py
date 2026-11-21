@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from integrations.config_models import GoogleDocsIntegrationConfig
 from integrations.google_docs.client import GoogleDocsClient
@@ -28,6 +28,7 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="create_google_docs_incident_report",
+    side_effect_level=SideEffectLevel.EXTERNAL,
     source="google_docs",
     description="Create a structured incident postmortem report in Google Docs with investigation findings.",
     use_cases=[

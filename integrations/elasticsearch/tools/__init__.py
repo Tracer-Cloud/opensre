@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from infrastructure.evidence.evidence_compaction import compact_logs, summarize_counts
 from integrations.elasticsearch._client import make_client
 from integrations.elasticsearch.search_failures import not_configured, search_failed
@@ -49,6 +49,7 @@ class ElasticsearchLogsTool(BaseTool):
     """Search Elasticsearch logs for errors, exceptions, and application events."""
 
     name = "query_elasticsearch_logs"
+    side_effect_level = SideEffectLevel.READ_ONLY
     evidence_mapper = _map_elasticsearch_logs
     source = "elasticsearch"
     # The configured cluster receives the configured credentials; never a model-chosen URL.
