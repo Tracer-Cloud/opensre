@@ -305,11 +305,7 @@ def _cloudwatch_logs_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.cloudwatch.tools import cloudwatch_logs_tool as mod
 
-        mp.setattr(
-            mod,
-            "boto3",
-            SimpleNamespace(client=MagicMock(side_effect=RuntimeError("aws"))),
-        )
+        mp.setattr(mod, "make_boto3_client", MagicMock(side_effect=RuntimeError("aws")))
 
     def invoke() -> dict[str, Any]:
         from integrations.cloudwatch.tools.cloudwatch_logs_tool import get_cloudwatch_logs
