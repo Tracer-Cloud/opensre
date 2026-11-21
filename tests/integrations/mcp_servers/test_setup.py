@@ -10,7 +10,7 @@ import pytest
 from infrastructure.harness_providers.integration_resolution import resolve_integrations
 from integrations.mcp_servers import McpServerConfig, clear_discovery_cache, mcp_server_tools
 from integrations.mcp_servers.setup import MCP_SERVERS_SETUP
-from integrations.setup_flow import apply_setup
+from integrations.setup_flow import IntegrationSetupSpec, apply_setup
 from integrations.store import get_integration
 
 _OPS_SERVER = str(Path(__file__).resolve().parents[2] / "fixtures" / "mcp" / "ops_server.py")
@@ -222,3 +222,79 @@ def test_quoted_arguments_with_spaces_reach_the_server(tmp_path: Path) -> None:
 
     assert outcome.ok, outcome.detail
     assert "2 tool(s)" in outcome.detail
+
+
+def _capturing_spec(seen: list[dict[str, object]]) -> IntegrationSetupSpec:
+    import dataclasses
+
+    def verify(_source: str, config: dict[str, object]) -> dict[str, str]:
+        seen.append(dict(config))
+        return {"status": "passed", "detail": "ok"}
+
+    return dataclasses.replace(MCP_SERVERS_SETUP, verify=verify)
+
+
+def test_updating_a_server_keeps_settings_the_form_does_not_edit() -> None:
+    # Arrange: a hand-tuned SSE server with a custom header and a long timeout.
+    from integrations.store import upsert_instance
+
+    upsert_instance(
+        "mcp",
+        {
+            "name": "grafana",
+            "credentials": {
+                "url": "https://old.example/sse",
+                "mode": "sse",
+                "headers": {"X-Api-Key": "k-1", "Authorization": "Bearer old"},
+                "timeout_seconds": 90,
+            },
+        },
+    )
+    seen: list[dict[str, object]] = []
+
+    # Act: re-run setup with a new URL and a new token.
+    outcome = apply_setup(
+        _capturing_spec(seen),
+        {"name": "grafana", "url": "https://new.example/sse", "auth_token": "new"},
+    )
+
+    # Assert: the check and the saved server both keep the untouched settings.
+    assert outcome.ok, outcome.detail
+    [instance] = (get_integration("mcp") or {})["instances"]
+    for config in (seen[0], instance["credentials"]):
+        assert config["headers"] == {"X-Api-Key": "k-1"}
+        assert config["timeout_seconds"] == 90
+        assert config["mode"] == "sse"
+    server = McpServerConfig.model_validate(
+        {k: v for k, v in instance["credentials"].items() if k in McpServerConfig.model_fields}
+    )
+    assert server.request_headers["Authorization"] == "Bearer new"
+
+
+def test_switching_a_server_to_a_local_command_drops_http_only_settings() -> None:
+    from integrations.store import upsert_instance
+
+    upsert_instance(
+        "mcp",
+        {
+            "name": "ops",
+            "credentials": {
+                "url": "https://old.example/sse",
+                "mode": "sse",
+                "headers": {"X-Api-Key": "k-1"},
+                "timeout_seconds": 90,
+            },
+        },
+    )
+    seen: list[dict[str, object]] = []
+
+    outcome = apply_setup(
+        _capturing_spec(seen),
+        {"name": "ops", "command": sys.executable, "args": _OPS_SERVER},
+    )
+
+    assert outcome.ok, outcome.detail
+    [instance] = (get_integration("mcp") or {})["instances"]
+    assert "headers" not in instance["credentials"]
+    assert "mode" not in instance["credentials"]
+    assert instance["credentials"]["timeout_seconds"] == 90

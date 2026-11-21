@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import re
 import shlex
+from collections.abc import Mapping
+from typing import Any
 
 from config.constants.mcp import MCP_SERVERS_SERVICE
 from integrations.mcp_servers.verifier import verify_mcp_server
+from integrations.mcp_transport import McpTransportMode
 from integrations.setup_flow import IntegrationSetupSpec, SetupField, SetupMode
 
 NAME_FIELD = "name"
@@ -23,6 +26,31 @@ ALLOWED_TOOLS_FIELD = "allowed_tools"
 
 _SERVER_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _YES_NO = {"yes", "no", "true", "false", "y", "n"}
+
+
+def _keep_unedited_settings(
+    saved: Mapping[str, Any], collected: Mapping[str, str | None]
+) -> dict[str, Any]:
+    """Settings the form never asks about, kept when a server is updated.
+
+    HTTP-only settings (headers, an ``sse`` transport) are kept only while the
+    server still has a URL; a saved ``Authorization`` header yields to a newly
+    typed bearer token.
+    """
+    kept: dict[str, Any] = {}
+    if saved.get("timeout_seconds"):
+        kept["timeout_seconds"] = saved["timeout_seconds"]
+    if not collected.get(URL_FIELD):
+        return kept
+    if str(saved.get("mode") or "").strip().lower() == McpTransportMode.SSE.value:
+        kept["mode"] = McpTransportMode.SSE.value
+    headers = saved.get("headers")
+    if isinstance(headers, Mapping):
+        if collected.get(AUTH_TOKEN_FIELD):
+            headers = {k: v for k, v in headers.items() if str(k).lower() != "authorization"}
+        if headers:
+            kept["headers"] = dict(headers)
+    return kept
 
 
 def _validate_name(value: str) -> str | None:
@@ -117,6 +145,7 @@ MCP_SERVERS_SETUP = IntegrationSetupSpec(
         ),
     ),
     verify=verify_mcp_server,
+    carry_over=_keep_unedited_settings,
 )
 
 __all__ = ["MCP_SERVERS_SETUP"]

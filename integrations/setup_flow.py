@@ -33,10 +33,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from config.env_file import is_sensitive_env_key, sync_env_secret, sync_env_values
-from integrations.store import upsert_instance, upsert_integration
+from integrations.store import get_instance, upsert_instance, upsert_integration
 from integrations.verification import VerifierFn
 from integrations.webapp_vault import push_webapp_org_integration
 
@@ -84,6 +84,11 @@ ResolveFn = Callable[[dict[str, str | None]], ResolvedCredentials]
 # optional note appended to the success detail; it is best-effort by contract —
 # the integration is already saved, so a failure here is surfaced, not unwound.
 FinalizeFn = Callable[[dict[str, str | None]], str]
+
+# For a named-instance spec: given the instance's saved credentials and the
+# newly collected ones, return the saved settings the form does not edit that
+# should be kept (custom headers, a tuned timeout, …).
+CarryOverFn = Callable[[Mapping[str, Any], Mapping[str, str | None]], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -268,6 +273,13 @@ class IntegrationSetupSpec:
     vault. Collection surfaces prefill the other fields from the named instance.
     """
 
+    carry_over: CarryOverFn | None = None
+    """For a named-instance spec, the saved settings to keep on update.
+
+    Saving replaces the whole instance, so a setting the form never asks about
+    would otherwise be dropped. What is kept is verified with the new values.
+    """
+
     def is_required(self, field: SetupField, mode: str | None) -> bool:
         """Whether *field* must be non-empty: spec-required, or required by *mode*."""
         if field.required:
@@ -329,7 +341,7 @@ def _collect_credentials(
     return credentials, ""
 
 
-def _verify(spec: IntegrationSetupSpec, credentials: dict[str, str | None]) -> tuple[bool, str]:
+def _verify(spec: IntegrationSetupSpec, credentials: Mapping[str, Any]) -> tuple[bool, str]:
     """Run the spec's verifier against *credentials*.
 
     An integration with no verifier is treated as verified — the alternative
@@ -369,6 +381,19 @@ def _persist_env(spec: IntegrationSetupSpec, credentials: dict[str, str | None])
     return sync_env_values(env_values)
 
 
+def _carried_over(
+    spec: IntegrationSetupSpec, credentials: Mapping[str, str | None]
+) -> dict[str, Any]:
+    """Saved settings of the named instance that the form does not edit."""
+    if not spec.instance_field or spec.carry_over is None:
+        return {}
+    name = str(credentials.get(spec.instance_field) or "")
+    saved = (get_instance(spec.service, name=name) or {}).get("credentials") or {}
+    declared = {field.name for field in spec.fields}
+    kept = spec.carry_over(saved, credentials)
+    return {key: value for key, value in kept.items() if key not in declared}
+
+
 def apply_setup(
     spec: IntegrationSetupSpec,
     values: Mapping[str, str | None],
@@ -382,7 +407,8 @@ def apply_setup(
     if missing:
         return SetupOutcome(ok=False, detail=missing)
 
-    verified, detail = _verify(spec, credentials)
+    kept = _carried_over(spec, credentials)
+    verified, detail = _verify(spec, {**kept, **credentials})
     if not verified:
         return SetupOutcome(ok=False, detail=detail)
 
@@ -408,7 +434,8 @@ def apply_setup(
 
     if spec.instance_field:
         instance = str(credentials.pop(spec.instance_field, None) or "")
-        upsert_instance(spec.service, {"name": instance, "credentials": credentials})
+        saved = {**kept, **credentials}
+        upsert_instance(spec.service, {"name": instance, "credentials": saved})
     else:
         upsert_integration(spec.service, {"credentials": credentials})
         # Mirror the change up so a silo's edit reaches the org vault. No-op off a
@@ -423,6 +450,7 @@ def apply_setup(
 
 
 __all__ = [
+    "CarryOverFn",
     "FinalizeFn",
     "IntegrationSetupSpec",
     "ResolveFn",

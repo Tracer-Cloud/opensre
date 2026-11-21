@@ -31,7 +31,11 @@ Run this once per server:
 opensre integrations setup mcp
 ```
 
-In the interactive shell, `/mcp connect` does the same. You choose how OpenSRE reaches the server, then answer:
+In the interactive shell, `/mcp connect` does the same.
+
+Re-running setup with an existing server name updates that server, and its saved answers are the defaults. Settings the prompts don't cover are kept: `timeout_seconds` always, and `headers` and an `sse` mode while the server still has a URL. A new bearer token replaces a saved `Authorization` header. Switching the server to a local command drops its headers.
+
+You choose how OpenSRE reaches the server, then answer:
 
 | Prompt | Required | Default | Notes |
 | --- | --- | --- | --- |
