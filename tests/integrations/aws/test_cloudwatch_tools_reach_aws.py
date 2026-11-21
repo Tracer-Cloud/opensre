@@ -7,6 +7,7 @@ resolution, parameter validation and serialization all run as against AWS.
 from __future__ import annotations
 
 import json
+from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 
@@ -36,7 +37,10 @@ def sent(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> list[tuple[str, str,
     ) -> tuple[Any, dict[str, Any]]:
         # Reached only after botocore validated and serialized the parameters.
         calls.append((operation_model.name, request_dict["url"], request_dict["body"]))
-        return SimpleNamespace(status_code=200, headers={}), {"Datapoints": [], "logStreams": []}
+        return SimpleNamespace(status_code=HTTPStatus.OK, headers={}), {
+            "Datapoints": [],
+            "logStreams": [],
+        }
 
     monkeypatch.setattr(botocore.endpoint.Endpoint, "make_request", fake_send)
     return calls
