@@ -16,6 +16,7 @@ from rich.console import Console
 from config.constants.repl_autonomy import AutoLevel
 from core.agent_harness.tools.action_tools import get_action_tools_from_integrations_view
 from core.agent_harness.tools.tool_context import ActionToolScope
+from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
 from core.llm.types import ToolCall
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool.execution import execute_tool_calls
@@ -29,11 +30,13 @@ from integrations.mcp_servers import (
     mcp_server_tools,
 )
 from integrations.mcp_servers.discovery import McpServerTool
+from integrations.mcp_servers.schema import bridged_input_schema
 from surfaces.interactive_shell.runtime.approval_hooks import with_shell_approval
 from surfaces.interactive_shell.session import Session
 
 _PROVIDER_TOOL_NAME = re.compile(r"[a-zA-Z0-9_-]{1,64}")
 _OPS_SERVER = Path(__file__).resolve().parents[2] / "fixtures" / "mcp" / "ops_server.py"
+_PAGED_SERVER = _OPS_SERVER.with_name("paged_server.py")
 
 
 @pytest.fixture(autouse=True)
@@ -238,3 +241,39 @@ def test_a_server_that_stalls_during_startup_cannot_hang_a_call(tmp_path: Path) 
     # Assert
     assert elapsed < 15
     assert result.get("available") is False
+
+
+def test_every_page_of_tools_is_bridged_with_referenced_arguments_intact() -> None:
+    # Arrange: a server that pages tools/list and uses $defs/$ref in a schema.
+    config = McpServerConfig(mode="stdio", command=sys.executable, args=(str(_PAGED_SERVER),))
+    resolved = {"_all_mcp_instances": [{"name": "logs", "config": config}]}
+
+    # Act: bridge, then build the specs the OpenAI and LiteLLM routes send.
+    tools = mcp_server_tools(resolved)
+    specs = {spec["function"]["name"]: spec for spec in build_openai_tool_specs(tools)}
+
+    # Assert
+    assert set(specs) == {"mcp__logs__ping", "mcp__logs__search"}
+    query = specs["mcp__logs__search"]["function"]["parameters"]["properties"]["query"]
+    assert query["required"] == ["text"]
+    assert set(query["properties"]) == {"text", "level"}
+    assert query["properties"]["level"]["enum"] == ["info", "error"]
+
+
+def test_a_recursive_argument_schema_is_inlined_without_looping() -> None:
+    schema = {
+        "type": "object",
+        "properties": {"node": {"$ref": "#/$defs/Node"}},
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": {"child": {"$ref": "#/$defs/Node"}, "name": {"type": "string"}},
+            }
+        },
+    }
+
+    inlined = bridged_input_schema(schema)
+
+    node = inlined["properties"]["node"]
+    assert set(node["properties"]) == {"child", "name"}
+    assert "$ref" not in json.dumps(inlined) and "$defs" not in inlined

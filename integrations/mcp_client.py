@@ -16,6 +16,9 @@ from config.constants.mcp import MCP_NO_COLOR_ENV, MCP_TERMINAL_DUMB_VALUE, MCP_
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.mcp_transport import McpTransportMode
 
+#: Upper bound on ``tools/list`` pages, so a misbehaving server cannot loop forever.
+_MAX_TOOL_LIST_PAGES = 100
+
 if TYPE_CHECKING:
     from mcp.client.session import ClientSession  # type: ignore[import-not-found]
 
@@ -212,7 +215,19 @@ async def _list_tools_async(
     **session_options: Unpack[McpSessionOptions],
 ) -> list[types.Tool]:
     async with open_mcp_session(config, **session_options) as session:
-        return list((await session.list_tools()).tools)
+        tools: list[types.Tool] = []
+        cursor: str | None = None
+        seen: set[str] = set()
+        # Servers may page ``tools/list``; stop on a repeated cursor or the page cap.
+        for _ in range(_MAX_TOOL_LIST_PAGES):
+            params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
+            result = await session.list_tools(params=params)
+            tools.extend(result.tools)
+            cursor = result.next_cursor
+            if not cursor or cursor in seen:
+                break
+            seen.add(cursor)
+        return tools
 
 
 def list_mcp_tools(
