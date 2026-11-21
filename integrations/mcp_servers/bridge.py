@@ -22,6 +22,7 @@ from core.tool_framework.utils import unavailable_response
 from integrations.mcp_client import call_mcp_tool, root_cause_message
 from integrations.mcp_servers.config import McpServerConfig
 from integrations.mcp_servers.discovery import McpServerTool, discover_tools, session_options
+from integrations.mcp_servers.schema import bridged_input_schema
 from integrations.selectors import get_instances
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,6 @@ _INVALID_NAME_CHARS = re.compile(r"[^a-zA-Z0-9_-]+")
 _UNAMBIGUOUS_SERVER = re.compile(r"[a-zA-Z0-9-]+(?:_[a-zA-Z0-9-]+)*")
 _DIGEST_LENGTH = 8
 _MAX_DESCRIPTION_LENGTH = 1024
-_EMPTY_OBJECT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
 
 def bridged_tool_name(server: str, tool: str) -> str:
@@ -55,14 +55,6 @@ def bridged_tool_name(server: str, tool: str) -> str:
         return name
     digest = hashlib.sha256(f"{server}\0{tool}".encode()).hexdigest()[:_DIGEST_LENGTH]
     return f"{name[: _MAX_TOOL_NAME_LENGTH - _DIGEST_LENGTH - 1]}_{digest}"
-
-
-def _input_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
-    if schema.get("type") != "object":
-        return dict(_EMPTY_OBJECT_SCHEMA)
-    normalized = dict(schema)
-    normalized.setdefault("properties", {})
-    return normalized
 
 
 def _description(server: str, tool: McpServerTool) -> str:
@@ -118,7 +110,7 @@ def build_bridged_tool(server: str, config: McpServerConfig, tool: McpServerTool
         name=name,
         description=_description(server, tool),
         display_name=f"{server}: {tool.name}",
-        input_schema=_input_schema(tool.input_schema),
+        input_schema=bridged_input_schema(tool.input_schema),
         source=MCP_SERVERS_SERVICE,
         source_id=server,
         side_effect_level=SideEffectLevel.READ_ONLY if read_only else SideEffectLevel.EXTERNAL,
