@@ -1,0 +1,107 @@
+---
+title: "Amazon CloudWatch"
+description: "Read CloudWatch Logs and AWS Batch metrics during an investigation"
+---
+
+## Overview
+
+OpenSRE reads Amazon CloudWatch Logs to pull error tracebacks and correlated log lines from Lambda, ECS, Batch, or any other log group, and reads CloudWatch metrics for AWS Batch job queues. CloudWatch alarms also work as an alert source: OpenSRE takes the incident start time from the alarm's `StateUpdatedTimestamp`, including when the alarm arrives wrapped in SNS or EventBridge.
+
+All CloudWatch calls are read-only.
+
+## Prerequisites
+
+- AWS credentials configured per the [AWS integration](/integrations/cloud/aws)
+- The absolute name of the log group you want inspected (for example `/aws/lambda/checkout` or `/ecs/payments-api`)
+- IAM permissions listed in [IAM permissions](#iam-permissions)
+
+## Setup
+
+CloudWatch has no separate setup target. Configure the [AWS integration](/integrations/cloud/aws). The CloudWatch tools become available when the investigation context contains a `cloudwatch` source:
+
+| Source field | Required | Used by |
+| --- | --- | --- |
+| `log_group` | Required for logs | `get_cloudwatch_logs` (absolute log group name) |
+| `log_stream` | Optional | `get_cloudwatch_logs` — when omitted, the newest stream in the group is read |
+| `correlation_id` | Optional | `get_cloudwatch_logs` — passed as the CloudWatch filter pattern |
+| `job_queue` | Required for metrics | `get_cloudwatch_batch_metrics` |
+
+### Environment variables
+
+```bash
+AWS_REGION=us-east-1
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AWS_REGION` | boto3 default region | Region the log groups and metrics live in |
+
+## Credentials
+
+CloudWatch tools call AWS through the ambient boto3 credential chain (environment keys, shared credentials profile, or attached instance/task role). They do **not** assume `AWS_ROLE_ARN` for the API call, so grant the permissions below to the identity the OpenSRE process runs as.
+
+### IAM permissions
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogStreams",
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "cloudwatch:GetMetricStatistics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+The AWS managed `ReadOnlyAccess` policy includes all of these.
+
+## Tools
+
+| Tool | AWS API calls | What it returns |
+| --- | --- | --- |
+| `get_cloudwatch_logs` | `logs:DescribeLogStreams`, `logs:GetLogEvents`, `logs:FilterLogEvents` | Up to `limit` (default 100) recent events from one log group. With a filter pattern it searches every stream in the group; without one it reads a single stream (the given one, or the newest). |
+| `get_cloudwatch_batch_metrics` | `cloudwatch:GetMetricStatistics` | Average and maximum `CPUUtilization` or `MemoryUtilization` for an AWS Batch job queue (`AWS/Batch` namespace). |
+
+### Use cases
+
+- Pulling the traceback behind a failing Lambda or ECS task
+- Searching a log group for a correlation ID or `ERROR` pattern
+- Checking whether an AWS Batch queue was CPU- or memory-constrained
+
+### Gotchas
+
+- `log_group` must be the **absolute** name, starting with `/`. Short names are not resolved.
+- Filtered searches only look at the **last 2 hours** of events. For older incidents, give the stream name instead of a filter pattern.
+- For Kubernetes pod logs use [EKS](/integrations/cloud/eks) or [Kubernetes](/integrations/cloud/kubernetes), not CloudWatch, unless you ship container logs to CloudWatch with Container Insights or Fluent Bit.
+- For Lambda functions, prefer the dedicated [Lambda tools](/integrations/cloud/aws_lambda), which derive the log group from the function name.
+
+## Verify
+
+```bash
+opensre integrations verify aws
+```
+
+CloudWatch shares the AWS credential check; there is no separate `cloudwatch` verify target. A passing AWS verify confirms credentials, not log-group permissions, so a missing `logs:*` permission only shows up when a tool runs.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **`get_cloudwatch_logs` never selected** | Make sure the alert or prompt names an absolute `log_group` |
+| **`No log events found matching pattern`** | The pattern matched nothing in the last 2 hours; widen the pattern or read a specific stream |
+| **`No log streams found in log group`** | The group exists but is empty, or the name is wrong; check the region too |
+| **AccessDenied** | Attach the `logs:*` / `cloudwatch:GetMetricStatistics` actions above to the identity OpenSRE runs as |
+| **Wrong region** | Set `AWS_REGION` to the region that owns the log group |
+
+## Security
+
+- All CloudWatch calls are read-only.
+- Log lines can contain secrets or personal data; scope `logs:*` permissions to the log groups OpenSRE needs (`arn:aws:logs:<region>:<account>:log-group:<name>:*`) if that matters in your environment.
+- Store AWS credentials in `.env` or your secret manager, not in source control.
