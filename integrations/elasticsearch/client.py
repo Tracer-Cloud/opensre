@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -30,6 +31,18 @@ import httpx
 from infrastructure.observability.errors.service import capture_service_error
 
 logger = logging.getLogger(__name__)
+
+
+#: Characters no index name or pattern may contain. Each would change which
+#: endpoint a request reaches: ``/`` adds a path segment (``x/_delete_by_query``),
+#: ``?`` and ``#`` cut off the ``/_search`` suffix, ``%`` smuggles an encoded one.
+_UNSAFE_INDEX_PATTERN = re.compile(r"[/\\?#%\"<>|\s]")
+
+
+def _unsafe_index_pattern(pattern: str) -> bool:
+    """True when ``pattern`` is empty or could route the search to another endpoint."""
+    return not pattern or bool(_UNSAFE_INDEX_PATTERN.search(pattern))
+
 
 _DEFAULT_TIMEOUT = 30
 
@@ -193,6 +206,16 @@ class ElasticsearchClient:
             timestamp_field: Timestamp field for range filtering (default "@timestamp")
         """
         pattern = index_pattern or self.config.index_pattern
+        if _unsafe_index_pattern(pattern):
+            # The pattern becomes a URL path segment; refuse anything that is not
+            # a plain index name, wildcard or comma-separated list of them.
+            return {
+                "success": False,
+                "error": (
+                    f"Invalid index pattern {pattern!r}: use index names, '*' wildcards "
+                    "and commas only."
+                ),
+            }
         now = datetime.now(UTC)
         from_ts = now - timedelta(minutes=time_range_minutes)
 

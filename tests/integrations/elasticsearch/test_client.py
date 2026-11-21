@@ -6,6 +6,7 @@ from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from integrations.elasticsearch.tools import query_elasticsearch_logs
 
@@ -484,3 +485,33 @@ def test_elasticsearch_tool_carries_evidence_mapper() -> None:
     tool = get_registered_tool("query_elasticsearch_logs")
     assert tool is not None
     assert tool.evidence_mapper is not None
+
+
+@pytest.mark.parametrize(
+    "index_pattern",
+    ["approval-probe/_doc#", "x/_delete_by_query?q=*#", "logs/_doc/1?", "a%2F_doc", "a b"],
+)
+def test_search_never_reaches_another_endpoint_through_the_index_pattern(
+    index_pattern: str,
+) -> None:
+    # Arrange: a real client whose transport records every request it would send.
+    sent: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(HTTPStatus.OK, json={"hits": {"hits": []}})
+
+    client = ElasticsearchClient(ElasticsearchConfig(url="http://localhost:9200"))
+    client._client = httpx.Client(
+        base_url="http://localhost:9200", transport=httpx.MockTransport(transport)
+    )
+
+    # Act
+    unsafe = client.search_logs("*", index_pattern=index_pattern)
+    safe = client.search_logs("*", index_pattern="logs-*,remote:metrics-*")
+
+    # Assert: the unsafe pattern sends nothing; a real pattern still searches.
+    assert unsafe["success"] is False
+    assert "Invalid index pattern" in unsafe["error"]
+    assert [(r.method, r.url.path) for r in sent] == [("POST", "/logs-*,remote:metrics-*/_search")]
+    assert safe["success"] is True
