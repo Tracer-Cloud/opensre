@@ -49,10 +49,13 @@ class McpServerConfig(StrictConfigModel):
     @field_validator("args", "allowed_tools", mode="before")
     @classmethod
     def _string_tuple(cls, value: object) -> tuple[str, ...]:
+        if value is None:
+            return ()
         if isinstance(value, str):
             value = value.replace(",", " ").split()
         if not isinstance(value, (list, tuple, set)):
-            return ()
+            # An allowlist that silently became empty would expose every tool.
+            raise ValueError("Expected a string or a list of strings.")
         return tuple(str(item).strip() for item in value if str(item).strip())
 
     @field_validator("headers", mode="before")

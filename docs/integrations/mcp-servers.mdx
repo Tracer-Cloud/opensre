@@ -21,7 +21,7 @@ What a tool may do depends on the server's `readOnlyHint` annotation:
 
 ## Setup
 
-Each server is one instance of the `mcp` integration. The instance name becomes the `<server>` part of the tool names, so give every server a short, distinct name.
+Each server is one instance of the `mcp` integration. The instance name becomes the `<server>` part of the tool names, so give every server a short, distinct name using letters, digits, `-` and single `_`. If two servers share a name, only the first is used. A server or tool name with other characters still works, but its tool name gets a short hash suffix, e.g. `mcp__my_server__read_1a2b3c4d`; use the name shown in the tool list for `--allowed-tool`.
 
 ### Server fields
 
@@ -32,7 +32,7 @@ Each server is one instance of the `mcp` integration. The instance name becomes 
 | `command` | For `stdio` | — | Executable that starts the server |
 | `args` | No | `[]` | Arguments for `command` |
 | `headers` | No | `{}` | HTTP headers sent on every request, e.g. `Authorization` |
-| `allowed_tools` | No | all tools | Only expose these server tool names |
+| `allowed_tools` | No | all tools | Only expose these server tool names: a list, or a comma- or space-separated string. Any other value makes the server's config invalid, so the server is skipped |
 | `read_only` | No | `false` | Expose only the tools the server marks read-only |
 | `timeout_seconds` | No | `20` | Per-request timeout |
 
