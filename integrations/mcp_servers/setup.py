@@ -84,6 +84,7 @@ MCP_SERVERS_SETUP = IntegrationSetupSpec(
             label="Arguments",
             prompt="Arguments, space separated; quote any with spaces (e.g. mcp-grafana)",
             validate=_validate_args,
+            prefill=shlex.join,
             required=False,
         ),
         SetupField(

@@ -122,6 +122,39 @@ def test_rerunning_setup_keeps_a_servers_settings_by_default(
     assert offered["Bearer token (optional, sent as Authorization)"] == "tok-1"
 
 
+def test_rerunning_setup_keeps_a_stored_argument_list_intact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: a hand-configured stdio server whose args list has a path with spaces.
+    import shutil
+
+    import integrations.cli as cli
+    from integrations.store import upsert_instance
+
+    script = tmp_path / "My Servers" / "ops server.py"
+    script.parent.mkdir()
+    shutil.copy(_OPS_SERVER, script)
+    stored_args = [str(script)]
+    upsert_instance(
+        "mcp",
+        {"name": "ops", "credentials": {"command": sys.executable, "args": stored_args}},
+    )
+    monkeypatch.setattr(cli, "_select", lambda *_args, **_kwargs: "stdio")
+    monkeypatch.setattr(
+        cli,
+        "_p",
+        lambda label, default="", **_kwargs: "ops" if label.startswith("Server name") else default,
+    )
+
+    # Act: press Enter at every prompt; the real verifier starts the server.
+    cli._setup_mcp_server()
+
+    # Assert
+    [instance] = (get_integration("mcp") or {})["instances"]
+    config = McpServerConfig.model_validate(instance["credentials"])
+    assert config.args == tuple(stored_args)
+
+
 def test_server_setup_does_not_need_a_writable_env_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

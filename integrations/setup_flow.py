@@ -178,6 +178,20 @@ class SetupField:
     *ARN* belongs.
     """
 
+    prefill: Callable[[list[str] | tuple[str, ...]], str] | None = None
+    """Formats a stored list value as the prompt's default; comma-joined when unset.
+
+    Set it when commas would change the value on re-entry, e.g. command
+    arguments, which are re-parsed like a shell line.
+    """
+
+    def stored_default(self, stored: object) -> str:
+        """The prompt default for a stored value, so pressing enter keeps it."""
+        if isinstance(stored, (list, tuple)):
+            items = [str(item) for item in stored]
+            return self.prefill(items) if self.prefill else ",".join(items)
+        return str(stored or "")
+
     @property
     def question(self) -> str:
         """The text to prompt with."""
