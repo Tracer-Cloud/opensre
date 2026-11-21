@@ -73,3 +73,69 @@ def test_auth_token_becomes_a_bearer_header_unless_one_is_set() -> None:
 
     assert token_only.request_headers == {"Authorization": "Bearer abc"}
     assert explicit.request_headers == {"authorization": "Basic z"}
+
+
+def _passing_verify(_source: str, _config: dict[str, object]) -> dict[str, str]:
+    return {"status": "passed", "detail": "ok"}
+
+
+def test_rerunning_setup_keeps_a_servers_settings_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: a saved read-only server with a token and an allowlist.
+    import dataclasses
+
+    import integrations.cli as cli
+    import integrations.mcp_servers.setup as mcp_setup
+    from integrations.store import upsert_instance
+
+    saved = {
+        "url": "https://mcp.example/mcp",
+        "auth_token": "tok-1",
+        "read_only": "yes",
+        "allowed_tools": "query_range,list_alerts",
+    }
+    # Another server is saved first, so prefill must come from the named one.
+    upsert_instance("mcp", {"name": "ops", "credentials": {"command": "uvx", "read_only": "no"}})
+    upsert_instance("mcp", {"name": "grafana", "credentials": dict(saved)})
+    spec = dataclasses.replace(mcp_setup.MCP_SERVERS_SETUP, verify=_passing_verify)
+    monkeypatch.setattr(mcp_setup, "MCP_SERVERS_SETUP", spec)
+    monkeypatch.setattr(cli, "_select", lambda *_args, **_kwargs: "http")
+    offered: dict[str, str] = {}
+
+    def press_enter(label: str, default: str = "", secret: bool = False) -> str:
+        # A required field re-asks while blank; fail instead of looping forever.
+        assert label not in offered, f"re-asked {label!r}: no usable default"
+        offered[label] = default
+        return "grafana" if label.startswith("Server name") else default
+
+    monkeypatch.setattr(cli, "_p", press_enter)
+
+    # Act
+    cli._setup_mcp_server()
+
+    # Assert: every saved value was offered and kept.
+    instances = {i["name"]: i for i in (get_integration("mcp") or {})["instances"]}
+    instance = instances["grafana"]
+    assert instances["ops"]["credentials"] == {"command": "uvx", "read_only": "no"}
+    assert {key: instance["credentials"][key] for key in saved} == saved
+    assert offered["Bearer token (optional, sent as Authorization)"] == "tok-1"
+
+
+def test_server_setup_does_not_need_a_writable_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unwritable(*_args: object, **_kwargs: object) -> Path:
+        raise PermissionError("read-only .env")
+
+    monkeypatch.setattr("integrations.setup_flow.sync_env_values", unwritable)
+    monkeypatch.setattr("integrations.setup_flow.sync_env_secret", unwritable)
+
+    outcome = apply_setup(
+        MCP_SERVERS_SETUP,
+        {"name": "ops", "command": sys.executable, "args": _OPS_SERVER, "read_only": "no"},
+    )
+
+    assert outcome.ok, outcome.detail
+    assert outcome.env_path is None
+    assert [i["name"] for i in (get_integration("mcp") or {})["instances"]] == ["ops"]

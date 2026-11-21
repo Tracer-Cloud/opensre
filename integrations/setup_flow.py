@@ -250,7 +250,8 @@ class IntegrationSetupSpec:
     say), the value of this field names the instance; :func:`apply_setup` saves
     the other credentials under that name and keeps any other instances. Such a
     spec declares no ``env_var`` fields (one env var cannot hold several
-    instances) and is not mirrored to the org vault.
+    instances): it never reads or writes ``.env`` and is not mirrored to the org
+    vault. Collection surfaces prefill the other fields from the named instance.
     """
 
     def is_required(self, field: SetupField, mode: str | None) -> bool:
@@ -288,7 +289,8 @@ class SetupOutcome:
     """Renderable sentence for the user — the verifier's message, or why it failed."""
 
     env_path: Path | None = None
-    """The ``.env`` written; always set when *ok*, never set otherwise."""
+    """The ``.env`` written; set when *ok*, except for a named-instance spec
+    (:attr:`IntegrationSetupSpec.instance_field`), which never touches ``.env``."""
 
 
 def _collect_credentials(
@@ -382,7 +384,9 @@ def apply_setup(
     # at all; if the store write failed afterwards, credential resolution still
     # falls back to the environment, so the integration keeps working.
     try:
-        env_path = _persist_env(spec, credentials)
+        # A named-instance spec is store-only, so it must not depend on (or
+        # rewrite) the project .env.
+        env_path = None if spec.instance_field else _persist_env(spec, credentials)
     except (OSError, RuntimeError) as exc:
         # A local CLI/wizard surface, so the detail may name the actual cause
         # (usually an unwritable .env). Nothing has been persisted at this point.

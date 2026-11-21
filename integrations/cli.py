@@ -298,7 +298,7 @@ def _run_spec_setup(
     through the rest of the prompts.
     """
     from integrations.setup_flow import apply_setup
-    from integrations.store import get_integration
+    from integrations.store import get_instance, get_integration
 
     if spec.guide is not None:
         from integrations.setup import run_guided_setup
@@ -328,6 +328,9 @@ def _run_spec_setup(
             mode = on_mode_chosen(mode)
 
     collectable = {field.name for field in spec.collectable_fields(mode)}
+    if spec.instance_field:
+        # Prefill comes from the named instance, known once its name is answered.
+        stored = {}
 
     values: dict[str, str | None] = {}
     for field in spec.fields:
@@ -361,6 +364,9 @@ def _run_spec_setup(
                 continue
             break
         values[field.name] = value
+        if field.name == spec.instance_field:
+            instance = get_instance(spec.service, name=value) or {}
+            stored = dict(instance.get("credentials") or {})
 
     print(f"\n  Validating {spec.service} credentials...")
     outcome = apply_setup(spec, values)
