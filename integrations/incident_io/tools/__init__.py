@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
-from core.tool import BaseTool
+from core.tool import BaseTool, SideEffectLevel
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 from integrations.incident_io.client import make_incident_io_client
@@ -108,6 +108,7 @@ class IncidentIoIncidentsTool(BaseTool):
     """Read incident.io incident context and optionally append OpenSRE findings."""
 
     name = "incident_io_incidents"
+    side_effect_level = SideEffectLevel.EXTERNAL
     source = "incident_io"
     evidence_mapper = _map_incident_io_incidents
     description = (

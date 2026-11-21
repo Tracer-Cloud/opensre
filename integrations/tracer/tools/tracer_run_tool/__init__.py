@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.tracer import TracerRunResult, get_tracer_client
 
 
 @tool(
     name="get_tracer_run",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="tracer_web",
     description="Get the latest pipeline run from the Tracer API.",
     use_cases=[

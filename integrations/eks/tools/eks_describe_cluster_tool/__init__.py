@@ -7,7 +7,7 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available
@@ -28,6 +28,7 @@ def _describe_cluster_extract_params(sources: dict[str, dict]) -> dict[str, Any]
 
 @tool(
     name="describe_eks_cluster",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="Describe an EKS cluster — health, version, status, endpoint, logging config.",
     use_cases=[

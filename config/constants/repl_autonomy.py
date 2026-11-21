@@ -79,6 +79,12 @@ AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
 # content, so it never runs without the user seeing it first.
 ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset({"execute_python_code"})
 
+# Side-effect levels a registered tool asks about while ``/auto`` is below High.
+# These tools act on a system outside the machine (send a message, file a
+# ticket, call a tool on a connected MCP server) and never confirm on their own,
+# so without this the lower levels would not ask before them. High asks nothing.
+ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS: Final[frozenset[str]] = frozenset({"external"})
+
 # The user may allow one of those tools for the rest of the session, but a call
 # that sets one of these arguments still asks: network access lets generated
 # code send data off the machine.
@@ -111,6 +117,7 @@ def format_auto_status_bar(level: AutoLevel) -> str:
 
 __all__ = [
     "ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES",
+    "ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS",
     "AUTO_LEVEL_ASK_TOOL_TYPES",
     "AUTO_LEVEL_BAR_CAPTIONS",
     "AUTO_LEVEL_CAPTIONS",

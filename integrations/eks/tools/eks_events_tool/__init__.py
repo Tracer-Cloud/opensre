@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available_or_backend
@@ -31,6 +31,7 @@ def _events_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="get_eks_events",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="Get Kubernetes Warning events in a namespace.",
     use_cases=[

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available_or_backend
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 @tool(
     name="list_eks_deployments",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="List all deployments in a namespace with replica counts and availability status.",
     use_cases=[

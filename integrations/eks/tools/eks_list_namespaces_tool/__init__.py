@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.eks.availability import eks_available
@@ -26,6 +26,7 @@ def _list_ns_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="list_eks_namespaces",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="eks",
     description="List all namespaces in the EKS cluster with their status.",
     use_cases=[

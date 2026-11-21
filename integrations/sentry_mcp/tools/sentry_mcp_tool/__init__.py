@@ -10,7 +10,7 @@ individual MCP-side tools.
 from __future__ import annotations
 
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import (
     build_mcp_tool_listing,
@@ -112,6 +112,7 @@ def _normalize_tool_result(result: SentryMCPToolCallResult) -> SentryMCPResponse
 
 @tool(
     name="list_sentry_tools",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="sentry_mcp",
     description=(
         "List the tools exposed by the configured Sentry MCP server. Returns a "
@@ -219,6 +220,7 @@ def list_sentry_tools(
 
 @tool(
     name="call_sentry_tool",
+    side_effect_level=SideEffectLevel.EXTERNAL,
     source="sentry_mcp",
     description=(
         "Call a named tool exposed by the configured Sentry MCP server "

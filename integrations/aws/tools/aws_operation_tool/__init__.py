@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 
@@ -54,6 +55,7 @@ def _map_aws_operation(
 
 @tool(
     name="execute_aws_operation",
+    side_effect_level=SideEffectLevel.MUTATING,
     source="aws_sdk",
     evidence_mapper=_map_aws_operation,
     description="Execute any read-only AWS SDK operation for investigation.",

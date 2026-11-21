@@ -8,7 +8,7 @@ import httpx
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 
@@ -109,6 +109,7 @@ def _map_query_snowflake_history(
 
 @tool(
     name="query_snowflake_history",
+    side_effect_level=SideEffectLevel.MUTATING,
     description="Query Snowflake query history using a read-only bounded statement.",
     source="snowflake",
     surfaces=(ToolSurface.CHAT,),

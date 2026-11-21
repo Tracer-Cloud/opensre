@@ -6,6 +6,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.tracer import (
     AWSBatchJobResult,
@@ -38,6 +39,7 @@ def _map_failed_jobs(
 
 @tool(
     name="get_failed_jobs",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="batch jobs",
     source="batch",
     description="Get AWS Batch jobs that failed during a pipeline run.",

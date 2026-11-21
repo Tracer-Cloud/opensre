@@ -195,7 +195,7 @@ levels promote a default-`allow` policy result to `ask` based on `tool_type`
 | Level | Asks before |
 | --- | --- |
 | `high` | Nothing |
-| `med` | Mutating agent tools (`shell`, `code_agent`, `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) |
+| `med` | Mutating agent tools (`shell`, `code_agent`, `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) and registered tools whose `side_effect_level` is `external` |
 | `low` | Same as `med` |
 | `off` | Every tool type |
 
@@ -204,6 +204,15 @@ levels promote a default-`allow` policy result to `ask` based on `tool_type`
 
 **Still true:** there is no shell argv allowlist/deny floor under alpha. `/auto`
 only gates whether the existing confirmation UX runs before a tool launch.
+
+**External-effect tools (Nov 2026):** below High, the shell's approval hook
+(`surfaces/interactive_shell/runtime/approval_hooks.py`) also asks before any
+registered tool whose `side_effect_level` is in
+`ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS` (`external`: messaging sends, Jira, SMS,
+Google Docs, hosted-gateway prompts, MCP `call_*_tool` proxies). These tools do
+not call `execution_allowed` themselves, so `tool_type` never covered them.
+Allow-for-session is per tool name. Every registered tool must declare a
+`side_effect_level`; an undeclared one never asks here.
 
 If a shell-command allowlist is reintroduced after alpha, gate it here at the
 execution stage — never with an action-selection denial in the planner.

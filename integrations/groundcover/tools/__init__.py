@@ -136,6 +136,7 @@ def _query_ref_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 @tool(
     name="get_groundcover_query_reference",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     display_name="groundcover query reference",
     source="groundcover",
     tags=("observability", "reference"),

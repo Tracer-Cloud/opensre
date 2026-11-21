@@ -6,6 +6,7 @@ from typing import Any
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from infrastructure.text.truncation import truncate
 from integrations.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
@@ -71,6 +72,7 @@ def _opensearch_extract_params(sources: dict[str, dict[str, Any]]) -> dict[str, 
 
 @tool(
     name="query_opensearch_analytics",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     description="Query OpenSearch-compatible analytics indices with bounded retrieval.",
     source="opensearch",
     surfaces=(ToolSurface.CHAT,),

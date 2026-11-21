@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.aws.availability import ec2_available_or_backend
@@ -56,6 +57,7 @@ def _summarize_instance(raw: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     name="ec2_instances_by_tag",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     source="ec2",
     description=(
         "List EC2 instances filtered by ``tier`` tag, instance IDs, or VPC. "

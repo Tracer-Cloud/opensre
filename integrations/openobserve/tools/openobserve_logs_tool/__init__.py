@@ -10,7 +10,7 @@ import httpx
 
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
-from core.tool import report_run_error
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
@@ -123,6 +123,7 @@ def _extract_records(body: dict[str, Any]) -> list[dict[str, Any]]:
 
 @tool(
     name="query_openobserve_logs",
+    side_effect_level=SideEffectLevel.READ_ONLY,
     description="Query OpenObserve logs using bounded read-only search.",
     source="openobserve",
     surfaces=(ToolSurface.CHAT,),
