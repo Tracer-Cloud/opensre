@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable
 
+from config.constants.mcp import MCP_SERVER_TOOL_PREFIX
 from config.constants.tooling import ToolBlockedBy
 from core.agent_harness.tools import registered_single_turn_tool_names
 from core.tool import (
@@ -53,9 +54,22 @@ def registered_ask_tool_names() -> frozenset[str]:
 
 
 def unknown_allowed_tools(allowed_tools: Iterable[str]) -> tuple[str, ...]:
-    """Return sorted allowlist entries absent from ask's executable tool surfaces."""
+    """Return sorted allowlist entries absent from ask's executable tool surfaces.
+
+    Tools bridged from configured MCP servers exist only once a turn lists the
+    servers, so any ``mcp__`` name is accepted; an entry only grants approval,
+    so a name no server offers simply never matches.
+    """
     known = registered_ask_tool_names()
-    return tuple(sorted({name for name in allowed_tools if name not in known}))
+    return tuple(
+        sorted(
+            {
+                name
+                for name in allowed_tools
+                if name not in known and not name.startswith(MCP_SERVER_TOOL_PREFIX)
+            }
+        )
+    )
 
 
 def build_approval_hooks(

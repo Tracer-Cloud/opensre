@@ -894,6 +894,15 @@ if TYPE_CHECKING:
         MCP_NO_COLOR_ENV as MCP_NO_COLOR_ENV,
     )
     from config.constants.mcp import (
+        MCP_SERVER_TOOL_PREFIX as MCP_SERVER_TOOL_PREFIX,
+    )
+    from config.constants.mcp import (
+        MCP_SERVERS_INSTANCES_ENV as MCP_SERVERS_INSTANCES_ENV,
+    )
+    from config.constants.mcp import (
+        MCP_SERVERS_SERVICE as MCP_SERVERS_SERVICE,
+    )
+    from config.constants.mcp import (
         MCP_TERMINAL_DUMB_VALUE as MCP_TERMINAL_DUMB_VALUE,
     )
     from config.constants.mcp import (

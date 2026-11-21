@@ -73,7 +73,7 @@ def _slack_connection_resolves(resolved_integrations: Mapping[str, Any]) -> bool
 
 
 def register_harness_adapters() -> None:
-    from infrastructure.harness_providers import IntegrationResolutionAdapters
+    from infrastructure.harness_providers import DynamicToolSource, IntegrationResolutionAdapters
     from integrations.catalog import (
         classify_integrations,
         configured_integration_services,
@@ -83,6 +83,7 @@ def register_harness_adapters() -> None:
     )
     from integrations.github import github_setup_url
     from integrations.github.connections import select_github_connection
+    from integrations.mcp_servers import mcp_server_tools
     from integrations.store import load_integrations, resolve_store_path
 
     IntegrationResolutionAdapters(
@@ -101,6 +102,8 @@ def register_harness_adapters() -> None:
         fetch_account_integrations=_fetch_account_integrations,
         account_integrations_generation=_account_integrations_generation,
     ).install()
+    # Tools a configured MCP server advertises join each turn's tool list.
+    DynamicToolSource(mcp_server_tools).install()
 
     _register_vcs_repo_scope_providers()
     _register_runbook_source_providers()
