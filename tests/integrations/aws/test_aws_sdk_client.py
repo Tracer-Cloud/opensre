@@ -326,3 +326,52 @@ class TestExecuteAwsSdkCallUnexpectedError:
         assert result["success"] is False
         assert "unexpected error" in result["error"].lower()
         assert result["metadata"]["error_type"] == "unexpected"
+
+
+class TestSecretsNeverReachTheModel:
+    @pytest.mark.parametrize(
+        ("service", "operation", "parameters"),
+        [
+            ("secretsmanager", "get_secret_value", {"SecretId": "prod/db"}),
+            ("secretsmanager", "batch_get_secret_value", {"SecretIdList": ["a"]}),
+            ("sts", "get_session_token", None),
+            ("sts", "get_federation_token", {"Name": "x"}),
+            ("ecr", "get_authorization_token", None),
+            ("redshift", "get_cluster_credentials", {"DbUser": "u", "ClusterIdentifier": "c"}),
+            ("ec2", "get_password_data", {"InstanceId": "i-1"}),
+            ("ssm", "get_parameter", {"Name": "/prod/db", "WithDecryption": True}),
+            ("ssm", "get_parameters_by_path", {"Path": "/prod", "WithDecryption": True}),
+        ],
+    )
+    def test_secret_returning_calls_are_refused_before_any_client(
+        self, service: str, operation: str, parameters: dict[str, object] | None
+    ) -> None:
+        with patch("integrations.aws.aws_sdk_client.boto3.client") as client:
+            result = execute_aws_sdk_call(service, operation, parameters=parameters)
+
+        assert result["success"] is False
+        assert result["metadata"]["validation_failed"] is True
+        client.assert_not_called()
+
+    def test_ordinary_reads_stay_allowed(self) -> None:
+        for operation in ("get_role", "get_parameter", "describe_secret", "list_secrets"):
+            assert _is_operation_allowed(operation)[0], operation
+
+    def test_secret_fields_in_a_response_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.describe_instances.return_value = {
+            "Reservations": [
+                {
+                    "Instances": [{"InstanceId": "i-1"}],
+                    "Credentials": {"SecretAccessKey": "abc", "SessionToken": "tok"},
+                }
+            ],
+            "Items": [{"SecretString": "hunter2", "authorizationToken": "Zm9v", "Name": "n"}],
+        }
+
+        result = execute_aws_sdk_call("ec2", "describe_instances")
+
+        text = str(result["data"])
+        assert result["success"] is True
+        assert "abc" not in text and "tok" not in text
+        assert "hunter2" not in text and "Zm9v" not in text
+        assert "i-1" in text and "'Name': 'n'" in text

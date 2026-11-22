@@ -41,6 +41,36 @@ BLOCKED_OPERATION_PATTERNS = [
     r".*disassociate.*",
 ]
 
+# Read operations that return secrets or mint credentials. The allowlist admits
+# them (``get_secret_value``, ``get_session_token``, ...), but their output
+# would put secret material into model context.
+SECRET_OPERATION_PATTERNS = [
+    r".*secret_value.*",
+    r".*credential.*",
+    r".*token.*",
+    r".*password.*",
+    r".*decrypt.*",
+]
+
+# Parameters that make an otherwise allowed read return decrypted secrets.
+SECRET_PARAMETERS = frozenset({"WithDecryption"})
+
+# Response fields whose values are secrets; replaced before reaching the caller.
+REDACTED_RESPONSE_KEYS = frozenset(
+    {
+        "AuthorizationToken",
+        "Credentials",
+        "Password",
+        "PasswordData",
+        "PrivateKey",
+        "SecretAccessKey",
+        "SecretBinary",
+        "SecretString",
+        "SessionToken",
+    }
+)
+REDACTED = "<redacted>"
+
 # Response size limits
 MAX_LIST_ITEMS = 100
 
@@ -62,6 +92,10 @@ def _is_operation_allowed(operation_name: str) -> tuple[bool, str]:
         if re.match(pattern, operation_lower):
             return False, f"Operation '{operation_name}' matches blocked pattern '{pattern}'"
 
+    for pattern in SECRET_OPERATION_PATTERNS:
+        if re.match(pattern, operation_lower):
+            return False, f"Operation '{operation_name}' can return secrets or credentials"
+
     # Check allowlist
     for pattern in ALLOWED_OPERATION_PATTERNS:
         if re.match(pattern, operation_lower):
@@ -78,6 +112,7 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
     - Truncates large collections
     - Handles binary data
     - Prevents excessive nesting
+    - Replaces secret-bearing fields (``REDACTED_RESPONSE_KEYS``) with a placeholder
 
     Args:
         data: Response data to sanitize
@@ -108,6 +143,9 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
         for key, value in data.items():
             # Skip ResponseMetadata (noise)
             if key == "ResponseMetadata":
+                continue
+            if key in REDACTED_RESPONSE_KEYS or key.lower() == "authorizationtoken":
+                sanitized[key] = REDACTED
                 continue
             sanitized[key] = _sanitize_response(value, depth + 1, max_depth)
         return sanitized
@@ -168,6 +206,17 @@ def execute_aws_sdk_call(
         return {
             "success": False,
             "error": f"Operation not allowed: {reason}",
+            "service": service_name,
+            "operation": operation_name,
+            "data": None,
+            "metadata": {"validation_failed": True},
+        }
+
+    secret_params = sorted(name for name in SECRET_PARAMETERS if (parameters or {}).get(name))
+    if secret_params:
+        return {
+            "success": False,
+            "error": f"Operation not allowed: {', '.join(secret_params)} returns decrypted secrets",
             "service": service_name,
             "operation": operation_name,
             "data": None,

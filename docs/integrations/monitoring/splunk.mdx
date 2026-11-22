@@ -261,6 +261,7 @@ Detail: Connected to Splunk 9.x.x
 
 ## Security
 
+- `query_splunk_logs` refuses SPL that uses a command able to write, send or reach beyond search: `collect`, `outputlookup`, `outputcsv`, `outputtext`, `delete`, `sendemail`, `sendalert`, `script`/`run`, `map`, `rest`, `dump`, `tscollect`, `mcollect`, `meventcollect`, `dbxquery` and `dbxoutput`. This includes commands inside `[ ... ]` subsearches. Such searches fail with **Query refused** and are never sent to Splunk. Commands inside search macros are not expanded, so the token's role is still the real boundary
 - Use a **read-only bearer token** — never use an admin token in production.
 - Store `SPLUNK_TOKEN` in `.env` or the credential store, not in source code or CI logs.
 - Prefer a dedicated `opensre` service account with only the `search` capability (plus `read_splunkd_private_settings` for verify).

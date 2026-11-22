@@ -11,6 +11,7 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.snowflake.sql_guard import read_only_sql_problem
 
 _DEFAULT_MAX_RESULTS = 50
 _MAX_HARD_LIMIT = 200
@@ -163,6 +164,10 @@ def query_snowflake_history(
         return tool_unavailable("snowflake", "Missing account identifier.", rows=[])
     if not bearer:
         return tool_unavailable("snowflake", "Missing Snowflake token.", rows=[])
+
+    problem = read_only_sql_problem(query)
+    if problem is not None:
+        return tool_unavailable("snowflake", f"Query refused: {problem}", rows=[])
 
     statement = _ensure_sql_limit(query, effective_limit)
     endpoint = f"https://{account}.snowflakecomputing.com/api/v2/statements"
