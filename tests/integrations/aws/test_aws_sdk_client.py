@@ -489,3 +489,21 @@ class TestSecretsNeverReachTheModel:
         tunnel = result["data"]["VpnConnections"][0]["Options"]["TunnelOptions"][0]
         assert tunnel["PreSharedKey"] == "<redacted>"
         assert tunnel["OutsideIpAddress"] == "1.2.3.4"
+
+    def test_lorawan_device_keys_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.get_wireless_device.return_value = {
+            "Name": "sensor-1",
+            "LoRaWAN": {
+                "DevEui": "0011223344556677",
+                "OtaaV1_1": {"AppKey": "a" * 32, "NwkKey": "b" * 32, "JoinEui": "j"},
+                "AbpV1_0_x": {"DevAddr": "d", "SessionKeys": {"NwkSKey": "c" * 32}},
+            },
+        }
+
+        result = execute_aws_sdk_call(
+            "iotwireless", "get_wireless_device", parameters={"Identifier": "x"}
+        )
+
+        text = str(result["data"])
+        assert "a" * 32 not in text and "b" * 32 not in text and "c" * 32 not in text
+        assert result["data"]["LoRaWAN"]["DevEui"] == "0011223344556677"

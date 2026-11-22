@@ -111,6 +111,9 @@ REDACTED_RESPONSE_KEY_PARTS = (
     "sharedsecret",
     "secretkey",
     "authkey",
+    "sessionkey",  # LoRaWAN ABP SessionKeys
+    "appkey",  # LoRaWAN OTAA root keys (AppKey, NwkKey)
+    "nwkkey",
 )
 
 # Query parameters that mark a string as a presigned AWS URL, wherever it
