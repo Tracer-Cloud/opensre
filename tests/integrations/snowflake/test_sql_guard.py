@@ -67,6 +67,8 @@ def test_write_or_multi_statement_sql_never_reaches_snowflake(
         "SELECT TRUNCATE(total_elapsed_time / 1000, 2) FROM t",
         "SELECT INSERT(query_text, 1, 0, '>') FROM t",
         "SELECT query_text FROM t WHERE query_text ILIKE '%SYSTEM$CANCEL_QUERY%'",
+        "SELECT query_text FROM t WHERE query_text ILIKE '%\"SYSTEM$CANCEL_QUERY\"%'",
+        '-- "SYSTEM$ABORT_SESSION" is only mentioned here\nSELECT 1',
     ],
 )
 def test_read_statements_still_run(query: str, monkeypatch: pytest.MonkeyPatch) -> None:

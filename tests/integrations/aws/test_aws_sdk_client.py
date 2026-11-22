@@ -344,6 +344,8 @@ class TestSecretsNeverReachTheModel:
             ("apigateway", "get_api_key", {"apiKey": "k1", "includeValue": True}),
             ("apigateway", "get_api_keys", {"includeValues": True}),
             ("appsync", "list_api_keys", {"apiId": "a1"}),
+            ("apigateway", "get_usage_plan_key", {"usagePlanId": "p", "keyId": "k"}),
+            ("apigateway", "get_usage_plan_keys", {"usagePlanId": "p"}),
         ],
     )
     def test_secret_returning_calls_are_refused_before_any_client(

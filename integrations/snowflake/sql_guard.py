@@ -48,13 +48,26 @@ _LITERALS_AND_COMMENTS = re.compile(
     r"|/\*.*?\*/",  # block comment
     re.DOTALL,
 )
-_QUOTED_IDENTIFIER = re.compile(r'"((?:[^"]|"")*)"')
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
+
+
+def _blank(match: re.Match[str], quoted_names: list[str]) -> str:
+    """Blank a literal or comment; record a quoted identifier's name first.
+
+    Quoted identifiers are names, not data: ``"SYSTEM$CANCEL_QUERY"`` still
+    calls the function, so its name is kept for inspection.
+    """
+    text = match.group(0)
+    if text.startswith('"'):
+        quoted_names.append(text[1:-1].replace('""', '"'))
+    return " "
 
 
 def read_only_sql_problem(statement: str) -> str | None:
     """Why ``statement`` is not a single read-only statement, or ``None`` if it is."""
-    code = _LITERALS_AND_COMMENTS.sub(" ", statement).strip().rstrip(";").strip()
+    quoted_names: list[str] = []
+    code = _LITERALS_AND_COMMENTS.sub(lambda m: _blank(m, quoted_names), statement)
+    code = code.strip().rstrip(";").strip()
     if not code:
         return None
     if ";" in code:
@@ -72,18 +85,13 @@ def read_only_sql_problem(statement: str) -> str | None:
     blocked = sorted(statement_words & _WRITE_KEYWORDS)
     if blocked:
         return f"Statement contains a write or control keyword: {', '.join(blocked).upper()}."
-    if any(word.startswith("system$") for word in words) or _quoted_system_function(statement):
+    quoted_system = any(name.strip().lower().startswith("system$") for name in quoted_names)
+    if quoted_system or any(word.startswith("system$") for word in words):
         return "SYSTEM$ functions are not allowed."
     if "identifier" in words:
         # IDENTIFIER('...') resolves a name from a string, so it could name any function.
         return "IDENTIFIER() is not allowed."
     return None
-
-
-def _quoted_system_function(statement: str) -> bool:
-    """Whether a quoted identifier names a ``SYSTEM$`` function (``"SYSTEM$CANCEL_QUERY"``)."""
-    names = (match.group(1) for match in _QUOTED_IDENTIFIER.finditer(statement))
-    return any(name.replace('""', '"').strip().lower().startswith("system$") for name in names)
 
 
 __all__ = ["read_only_sql_problem"]

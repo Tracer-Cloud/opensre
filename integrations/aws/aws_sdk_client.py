@@ -53,8 +53,15 @@ SECRET_OPERATION_PATTERNS = [
 ]
 
 # (service, operation) pairs whose ordinary output is a secret, where redacting
-# the field by name would also hide ordinary data (AppSync returns keys as ``id``).
-SECRET_SERVICE_OPERATIONS = frozenset({("appsync", "list_api_keys")})
+# the field by name would also hide ordinary data (keys come back as ``id`` or
+# ``value``).
+SECRET_SERVICE_OPERATIONS = frozenset(
+    {
+        ("appsync", "list_api_keys"),
+        ("apigateway", "get_usage_plan_key"),  # key in ``value``
+        ("apigateway", "get_usage_plan_keys"),  # keys in ``items[].value``
+    }
+)
 
 # Parameters that make an otherwise allowed read return decrypted secrets.
 SECRET_PARAMETERS = frozenset(
