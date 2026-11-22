@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from integrations.mcp_servers.summary import McpServerSummary
 
 
 def load_verified_integrations() -> list[dict[str, str]]:
@@ -17,6 +20,27 @@ def configured_integration_names() -> list[str]:
     from integrations.verify import resolve_effective_integrations
 
     return sorted(resolve_effective_integrations())
+
+
+def mcp_server_summaries() -> list[McpServerSummary]:
+    """Display-safe summaries of the configured MCP servers (no credentials)."""
+    from integrations.mcp_servers import server_summaries
+    from integrations.verify import resolve_effective_integrations
+
+    return list(server_summaries(resolve_effective_integrations()))
+
+
+def mcp_server_names() -> list[str]:
+    """Names of the configured MCP servers, in configuration order."""
+    return [summary.name for summary in mcp_server_summaries()]
+
+
+def verify_service(service: str) -> list[dict[str, str]]:
+    """Verify one service; a multi-instance service returns one row per instance."""
+    from integrations.verify import verify_integrations
+
+    normalized = service.strip().lower()
+    return verify_integrations(normalized) if normalized else []
 
 
 def verify_integration(service: str) -> dict[str, str] | None:
@@ -65,5 +89,8 @@ __all__ = [
     "load_llm_source",
     "load_llm_settings",
     "load_verified_integrations",
+    "mcp_server_names",
+    "mcp_server_summaries",
     "verify_integration",
+    "verify_service",
 ]

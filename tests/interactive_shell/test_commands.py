@@ -690,7 +690,7 @@ class TestIntegrationsCommand:
             "integrations.registry.SUPPORTED_VERIFY_SERVICES",
             ("datadog",),
         )
-        monkeypatch.setattr(repl_data_module, "verify_integration", _verify_one)
+        monkeypatch.setattr(repl_data_module, "verify_service", lambda s: [_verify_one(s)])
         console, buf = _capture()
         dispatch_slash("/verify datadog", Session(), console)
         assert verified == ["datadog"]
@@ -722,7 +722,7 @@ class TestIntegrationsCommand:
                 "detail": "Configured for ServiceNow at https://dev12345.service-now.com.",
             }
 
-        monkeypatch.setattr(repl_data_module, "verify_integration", _verify_one)
+        monkeypatch.setattr(repl_data_module, "verify_service", lambda s: [_verify_one(s)])
         session = Session()
         console, buf = _capture()
         dispatch_slash("/verify servicenow", session, console)
@@ -742,7 +742,7 @@ class TestIntegrationsCommand:
                 "detail": "ok",
             }
 
-        monkeypatch.setattr(repl_data_module, "verify_integration", _verify_one)
+        monkeypatch.setattr(repl_data_module, "verify_service", lambda s: [_verify_one(s)])
         console, buf = _capture()
         dispatch_slash("/integrations verify datadog", Session(), console)
         assert verified == ["datadog"]

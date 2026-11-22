@@ -9,7 +9,9 @@ before any caller looks anything up.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 from rich.markup import escape
@@ -141,6 +143,55 @@ def _verify_one(
         return result(current_service, str(integration.get("source", "-")), "failed", str(exc))
 
 
+def _verify_instance(service: str, source: str, instance: dict[str, Any]) -> dict[str, str]:
+    """Verify one named instance; the row carries its ``instance`` name."""
+    name = str(instance.get("name") or "default")
+    verifier = get_verifier(service)
+    config = {**dict(instance.get("config") or {}), "name": name}
+    try:
+        row = (
+            verifier(source, config)
+            if verifier is not None
+            else result(
+                service, source, "failed", "Verification is not supported for this service."
+            )
+        )
+    except Exception as exc:
+        row = result(service, source, "failed", str(exc))
+    return {**row, "instance": name}
+
+
+def _verification_jobs(
+    services: list[str],
+    effective_integrations: dict[str, dict[str, Any]],
+    *,
+    send_slack_test: bool,
+) -> list[Callable[[], dict[str, str]]]:
+    """One job per result row: per instance for ``verify_each_instance`` services."""
+    jobs: list[Callable[[], dict[str, str]]] = []
+    for current_service in services:
+        spec = INTEGRATION_SPECS_BY_SERVICE.get(current_service)
+        integration = effective_integrations.get(current_service) or {}
+        instances = integration.get("instances")
+        if spec is not None and spec.verify_each_instance and isinstance(instances, list):
+            source = str(integration.get("source", "-"))
+            jobs.extend(
+                partial(_verify_instance, current_service, source, instance)
+                for instance in instances
+                if isinstance(instance, dict)
+            )
+            continue
+        jobs.append(
+            partial(
+                _verify_one,
+                current_service,
+                effective_integrations,
+                send_slack_test=send_slack_test,
+            )
+        )
+    return jobs
+
+
 def verify_integrations(
     service: str | None = None,
     *,
@@ -151,23 +202,18 @@ def verify_integrations(
     Each verifier does blocking network I/O against an independent vendor
     endpoint, so a plain sequential loop pays every verifier's latency in
     series. A thread pool overlaps that I/O; ``executor.map`` still returns
-    results in the original ``services`` order.
+    results in the original order. A ``verify_each_instance`` service yields
+    one row per named instance, each carrying an ``instance`` key.
     """
     effective_integrations = resolve_effective_integrations()
     services = [service] if service else list(SUPPORTED_VERIFY_SERVICES)
+    jobs = _verification_jobs(services, effective_integrations, send_slack_test=send_slack_test)
 
-    if len(services) == 1:
-        return [_verify_one(services[0], effective_integrations, send_slack_test=send_slack_test)]
+    if len(jobs) == 1:
+        return [jobs[0]()]
 
-    with ThreadPoolExecutor(max_workers=min(len(services), _MAX_PARALLEL_VERIFIERS)) as executor:
-        return list(
-            executor.map(
-                lambda current_service: _verify_one(
-                    current_service, effective_integrations, send_slack_test=send_slack_test
-                ),
-                services,
-            )
-        )
+    with ThreadPoolExecutor(max_workers=min(len(jobs), _MAX_PARALLEL_VERIFIERS)) as executor:
+        return list(executor.map(lambda job: job(), jobs))
 
 
 def format_verification_results(results: list[dict[str, str]]) -> str:
@@ -193,8 +239,11 @@ def format_verification_results(results: list[dict[str, str]]) -> str:
             glyph, style = _STATUS_STYLE.get(probe_status, (GLYPH_BULLET, TEXT))
         except ValueError:
             glyph, style = (GLYPH_BULLET, TEXT)
+        service_label = row.get("service", "?")
+        if row.get("instance"):
+            service_label = f"{service_label}/{row['instance']}"
         table.add_row(
-            escape(row.get("service", "?")),
+            escape(service_label),
             escape(row.get("source", "-")),
             f"[{style}]{glyph} {escape(status)}[/]",
             escape(wrap_clauses(row.get("detail", ""))),

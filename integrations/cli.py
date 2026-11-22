@@ -46,6 +46,8 @@ from integrations.setup import (
 from integrations.store import (
     get_integration,
     list_integrations,
+    load_integrations,
+    remove_instance,
     remove_integration,
     resolve_store_path,
 )
@@ -716,13 +718,48 @@ def cmd_show(service: str | None) -> None:
     _json_echo(_mask({**record, "source": "local"}))
 
 
-def cmd_remove(service: str | None) -> None:
+def _remove_instance(service: str, instance: str) -> None:
+    """Remove one named instance of *service*; an unknown name removes nothing."""
+    from infrastructure.process.runtime_flags import is_yes
+
+    name = instance.strip().lower()
+    known = [
+        str(inst.get("name", "")).lower()
+        for record in load_integrations()
+        if record.get("service") == service
+        for inst in record.get("instances") or []
+        if isinstance(inst, dict)
+    ]
+    if name not in known:
+        _die(
+            f"No '{name}' instance of '{service}' in the local store. "
+            f"Saved: {', '.join(known) if known else 'none'}."
+        )
+        return
+    if not is_yes():
+        try:
+            confirmed = _confirm(f"Remove '{service}' instance '{name}'?", default=False)
+        except (EOFError, KeyboardInterrupt):
+            return
+        if not confirmed:
+            print("  Cancelled.")
+            return
+    if remove_instance(service, name):
+        print(f"  {GLYPH_SUCCESS} Removed '{service}' instance '{name}'.")
+    else:
+        _die(f"No '{name}' instance of '{service}' in the local store.")
+
+
+def cmd_remove(service: str | None, *, instance: str | None = None) -> None:
     from infrastructure.process.runtime_flags import is_yes
 
     if not service:
-        _die("Usage: remove <service>")
+        _die("Usage: remove <service> [instance]")
         return
     service = resolve_management_service(service)
+    if instance:
+        _remove_instance(service, instance)
+        return
     if not is_yes():
         try:
             confirmed = _confirm(f"Remove '{service}'?", default=False)

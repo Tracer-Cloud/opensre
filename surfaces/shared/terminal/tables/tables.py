@@ -7,7 +7,7 @@ All rendering is delegated to the REPL TTY helpers in :mod:`rendering`.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
+from config.constants.mcp import MCP_SERVERS_SERVICE
 from infrastructure.terminal.peek import cap_output_for_display
 from infrastructure.terminal.theme import (
     BOLD_BRAND,
@@ -36,6 +37,7 @@ from surfaces.shared.terminal.tables.provider import resolve_provider_models
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 if TYPE_CHECKING:
+    from integrations.mcp_servers.summary import McpServerSummary
     from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 
 # MCP-type services are also rendered under `/mcp list` for focused MCP actions.
@@ -131,8 +133,11 @@ _TOOL_COLS: list[ColumnDef] = [
 
 def _integration_row(r: dict[str, str]) -> tuple[str | Text, ...]:
     st = r.get("status", "?")
+    service = r.get("service", "?")
+    if r.get("instance"):
+        service = f"{service}/{r['instance']}"
     return (
-        r.get("service", "?"),
+        service,
         r.get("source", "?"),
         Text(st, style=status_style(st)),
         r.get("detail", ""),
@@ -161,15 +166,80 @@ def render_integrations_table(console: Console, results: list[dict[str, str]]) -
     render_table(console, "Integrations", _INTEGRATION_COLS, [_integration_row(r) for r in rows])
 
 
-def render_mcp_table(console: Console, results: list[dict[str, str]]) -> None:
-    rows = sorted(
-        (r for r in results if r.get("service") in MCP_INTEGRATION_SERVICES),
-        key=lambda r: r.get("service", ""),
+def _mcp_record(
+    name: str,
+    transport: str,
+    endpoint: str,
+    read_only: str,
+    result: dict[str, str] | None,
+) -> RecordRow:
+    status = (result or {}).get("status", "not checked")
+    detail = (result or {}).get("detail", "")
+    return RecordRow(
+        (
+            Text(name, style="bold"),
+            Text(transport, style=SECONDARY),
+            Text(endpoint, style=SECONDARY),
+            Text(read_only, style=SECONDARY),
+            Text(status, style=status_style(status)),
+        ),
+        details=(Text(detail, style=SECONDARY),) if detail else (),
     )
-    if not rows:
+
+
+def mcp_servers_table(
+    results: Sequence[dict[str, str]],
+    servers: Sequence[McpServerSummary],
+) -> RecordTable:
+    """One row per configured MCP server, then the other MCP-backed integrations.
+
+    Each user-added server is matched to its own verification row by name, so a
+    failing server is never hidden behind a passing one.
+    """
+    by_instance = {
+        str(row.get("instance") or "default"): row
+        for row in results
+        if row.get("service") == MCP_SERVERS_SERVICE
+    }
+    records = [
+        _mcp_record(
+            server.name,
+            server.transport,
+            server.endpoint,
+            "yes" if server.read_only else "no",
+            by_instance.get(server.name),
+        )
+        for server in servers
+    ]
+    records.extend(
+        _mcp_record(str(row.get("service", "?")), "-", "-", "-", row)
+        for row in sorted(results, key=lambda r: r.get("service", ""))
+        if row.get("service") in MCP_INTEGRATION_SERVICES
+        and not (servers and row.get("service") == MCP_SERVERS_SERVICE)
+    )
+    return RecordTable(
+        "MCP servers",
+        (
+            RecordColumn("Server"),
+            RecordColumn("Transport"),
+            RecordColumn("Endpoint"),
+            RecordColumn("Read-only"),
+            RecordColumn("Status"),
+        ),
+        tuple(records),
+    )
+
+
+def render_mcp_table(
+    console: Console,
+    results: list[dict[str, str]],
+    servers: Sequence[McpServerSummary] = (),
+) -> None:
+    table = mcp_servers_table(results, servers)
+    if not table.rows:
         repl_print(console, f"[{DIM}]no MCP servers configured.[/]")
         return
-    render_table(console, "MCP servers", _INTEGRATION_COLS, [_integration_row(r) for r in rows])
+    print_repl_renderable(console, table)
 
 
 def render_models_table(
