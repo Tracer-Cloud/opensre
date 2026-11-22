@@ -107,6 +107,10 @@ REDACTED_RESPONSE_KEY_PARTS = (
     "authtoken",
     "authorizationtoken",
     "streamkey",  # IVS stream keys let anyone holding them broadcast
+    "presharedkey",  # EC2 VPN tunnel PreSharedKey
+    "sharedsecret",
+    "secretkey",
+    "authkey",
 )
 
 # Query parameters that mark a string as a presigned AWS URL, wherever it

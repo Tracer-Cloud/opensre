@@ -471,3 +471,21 @@ class TestSecretsNeverReachTheModel:
         result = execute_aws_sdk_call("ivs", "get_stream_key", parameters={"arn": "arn:aws:ivs:k"})
 
         assert "sk_us-west-2_secret" not in str(result["data"])
+
+    def test_vpn_pre_shared_keys_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.describe_vpn_connections.return_value = {
+            "VpnConnections": [
+                {
+                    "VpnConnectionId": "vpn-1",
+                    "Options": {
+                        "TunnelOptions": [{"OutsideIpAddress": "1.2.3.4", "PreSharedKey": "psk-1"}]
+                    },
+                }
+            ]
+        }
+
+        result = execute_aws_sdk_call("ec2", "describe_vpn_connections")
+
+        tunnel = result["data"]["VpnConnections"][0]["Options"]["TunnelOptions"][0]
+        assert tunnel["PreSharedKey"] == "<redacted>"
+        assert tunnel["OutsideIpAddress"] == "1.2.3.4"
