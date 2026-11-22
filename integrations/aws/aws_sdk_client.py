@@ -65,6 +65,14 @@ SECRET_SERVICE_OPERATIONS = frozenset(
     }
 )
 
+# Fields that hold a presigned URL in an otherwise useful response, by
+# (service, operation): the URL is redacted, the rest of the response is kept.
+PRESIGNED_RESPONSE_FIELDS: dict[tuple[str, str], tuple[tuple[str, ...], ...]] = {
+    ("lambda", "get_function"): (("Code", "Location"),),
+    ("lambda", "get_layer_version"): (("Content", "Location"),),
+    ("lambda", "get_layer_version_by_arn"): (("Content", "Location"),),
+}
+
 # Parameters that make an otherwise allowed read return decrypted secrets.
 SECRET_PARAMETERS = frozenset(
     {
@@ -124,6 +132,17 @@ def _is_operation_allowed(operation_name: str) -> tuple[bool, str]:
             return True, "Operation allowed"
 
     return False, f"Operation '{operation_name}' does not match any allowed patterns"
+
+
+def _redact_presigned_fields(service: str, operation: str, data: Any) -> Any:
+    """Replace the presigned URLs this operation is known to return."""
+    for path in PRESIGNED_RESPONSE_FIELDS.get((service.lower(), operation.lower()), ()):
+        parent = data
+        for key in path[:-1]:
+            parent = parent.get(key) if isinstance(parent, dict) else None
+        if isinstance(parent, dict) and path[-1] in parent:
+            parent[path[-1]] = REDACTED
+    return data
 
 
 def _is_secret_field(key: str) -> bool:
@@ -287,7 +306,9 @@ def execute_aws_sdk_call(
             response = operation()
 
         # Sanitize response
-        sanitized_data = _sanitize_response(response)
+        sanitized_data = _redact_presigned_fields(
+            service_name, operation_name, _sanitize_response(response)
+        )
 
         return {
             "success": True,

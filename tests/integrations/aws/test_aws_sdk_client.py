@@ -421,3 +421,16 @@ class TestSecretsNeverReachTheModel:
         assert result["data"]["SecretArn"].startswith("arn:")
         assert result["data"]["NextToken"] == "page-2"
         assert result["data"]["app"]["appId"] == "d1"
+
+    def test_lambda_package_download_urls_are_redacted(self, mock_boto3_client) -> None:
+        url = "https://awslambda-us-east-1-tasks.s3.amazonaws.com/x?X-Amz-Signature=abc"
+        mock_boto3_client.get_function.return_value = {
+            "Configuration": {"FunctionName": "prod", "Runtime": "python3.13"},
+            "Code": {"RepositoryType": "S3", "Location": url},
+        }
+
+        result = execute_aws_sdk_call("lambda", "get_function", parameters={"FunctionName": "prod"})
+
+        assert result["data"]["Code"]["Location"] == "<redacted>"
+        assert result["data"]["Code"]["RepositoryType"] == "S3"
+        assert result["data"]["Configuration"]["Runtime"] == "python3.13"
