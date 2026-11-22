@@ -137,3 +137,36 @@ def test_repl_mcp_remove_removes_one_named_server(monkeypatch: pytest.MonkeyPatc
 
     assert "no MCP server named" in buffer.getvalue()
     assert _server_names() == ["grafana"]
+
+
+def test_repl_mcp_remove_reaches_a_saved_server_that_no_longer_validates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import infrastructure.analytics.capture as analytics
+    from surfaces.interactive_shell.command_registry import integrations as m
+    from surfaces.interactive_shell.command_registry.dispatch import dispatch_slash
+    from surfaces.interactive_shell.session import Session
+
+    monkeypatch.setattr(m, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(m, "repl_choose_one", lambda **_: "yes")
+    monkeypatch.setattr(analytics, "capture_integration_removed", lambda *_: None)
+    _save("ops", command="uvx")
+    _save("broken", read_only="yes")  # neither url nor command: dropped by the classifier
+
+    dispatch_slash("/mcp remove broken", Session(), Console(file=io.StringIO()))
+
+    assert _server_names() == ["ops"]
+
+
+@pytest.mark.parametrize(
+    ("url", "endpoint"),
+    [
+        ("http://[::1]:8080/mcp?token=x", "http://[::1]:8080/mcp"),
+        ("http://host:notaport/mcp", "<invalid url>"),
+        ("http://[::1/mcp", "<invalid url>"),
+    ],
+)
+def test_summary_endpoint_survives_unusual_saved_urls(url: str, endpoint: str) -> None:
+    effective = {"mcp": {"instances": [{"name": "s", "config": {"url": url}}]}}
+
+    assert [s.endpoint for s in server_summaries(effective)] == [endpoint]

@@ -28,10 +28,16 @@ class McpServerSummary:
 
 
 def _safe_url(url: str) -> str:
-    parts = urlsplit(url.strip())
-    host = parts.hostname or ""
-    if parts.port:
-        host = f"{host}:{parts.port}"
+    """Scheme, host, port and path only; an unparseable URL shows as ``<invalid url>``."""
+    try:
+        parts = urlsplit(url.strip())
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        if parts.port:
+            host = f"{host}:{parts.port}"
+    except ValueError:
+        return "<invalid url>"
     return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 

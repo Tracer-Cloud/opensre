@@ -31,8 +31,11 @@ def mcp_server_summaries() -> list[McpServerSummary]:
 
 
 def mcp_server_names() -> list[str]:
-    """Names of the configured MCP servers, in configuration order."""
-    return [summary.name for summary in mcp_server_summaries()]
+    """Names of the saved MCP servers, including ones whose config no longer validates."""
+    from config.constants.mcp import MCP_SERVERS_SERVICE
+    from integrations.store import get_instances
+
+    return list(dict.fromkeys(inst["name"] for inst in get_instances(MCP_SERVERS_SERVICE)))
 
 
 def verify_service(service: str) -> list[dict[str, str]]:
