@@ -157,7 +157,9 @@
               "integrations/cloud/aws",
               "integrations/cloud/aws_lambda",
               "integrations/cloud/cloudtrail_events",
+              "integrations/cloud/cloudwatch",
               "integrations/cloud/ec2",
+              "integrations/cloud/eks",
               "integrations/cloud/elb",
               "integrations/cloud/helm",
               "integrations/cloud/kubernetes",
@@ -429,6 +431,14 @@
     {
       "source": "/ec2",
       "destination": "/integrations/cloud/ec2"
+    },
+    {
+      "source": "/eks",
+      "destination": "/integrations/cloud/eks"
+    },
+    {
+      "source": "/cloudwatch",
+      "destination": "/integrations/cloud/cloudwatch"
     },
     {
       "source": "/elasticsearch",

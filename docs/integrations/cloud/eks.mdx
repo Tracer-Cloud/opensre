@@ -1,0 +1,133 @@
+---
+title: "Amazon EKS"
+description: "Inspect EKS clusters, node groups, addons, and workloads with your AWS credentials, no kubeconfig needed"
+---
+
+## Overview
+
+OpenSRE investigates Amazon EKS clusters with your AWS credentials. It reads cluster, node group, and addon state from the EKS API, and reads pods, logs, events, deployments, namespaces, and nodes from the cluster's Kubernetes API. It authenticates to Kubernetes with an STS-signed token, the same way `aws eks get-token` does, so no `kubectl` binary or kubeconfig file is needed.
+
+Every call is read-only.
+
+<Note>
+Use this page for EKS clusters reached with AWS credentials. For any cluster reached with a kubeconfig (GKE, AKS, on-prem, kind, or EKS with a kubeconfig you already have), use the [Kubernetes integration](/integrations/cloud/kubernetes).
+</Note>
+
+## Prerequisites
+
+- The [AWS integration](/integrations/cloud/aws) configured and passing `opensre integrations verify aws`
+- An EKS cluster whose Kubernetes API endpoint is reachable from where OpenSRE runs
+- The IAM identity OpenSRE uses mapped to read-only Kubernetes permissions (see [Kubernetes access](#kubernetes-access))
+
+## Setup
+
+EKS has no separate setup target. It uses the AWS integration's credentials:
+
+```bash
+AWS_ROLE_ARN=arn:aws:iam::123456789012:role/OpenSREReadOnly
+AWS_EXTERNAL_ID=your-external-id     # optional
+AWS_REGION=us-east-1
+```
+
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `AWS_ROLE_ARN` | One of role or static keys | — | Role OpenSRE assumes for EKS and Kubernetes API calls |
+| `AWS_EXTERNAL_ID` | Optional | — | External ID for the role assumption |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | One of role or static keys | — | Static keys, used when no role is set |
+| `AWS_REGION` | Optional | `us-east-1` | Region of the EKS cluster |
+
+The EKS tools become available once the AWS connection is verified and the investigation names a cluster (`cluster_name`). Deployment and pod tools also need a `deployment` or `pod_name`. Workload lists default `namespace` to `all`; events default to `default`, so set `namespace` to `all` to read warnings across the cluster. Pod logs and deployment status need the resource's namespace.
+
+## Credentials
+
+### IAM permissions
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "eks:ListClusters",
+        "eks:DescribeCluster",
+        "eks:ListNodegroups",
+        "eks:DescribeNodegroup",
+        "eks:ListAddons",
+        "eks:DescribeAddon"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+If you set `AWS_ROLE_ARN`, the identity running OpenSRE also needs `sts:AssumeRole` on that role.
+
+### Kubernetes access
+
+IAM permissions only cover the EKS API. To read pods, logs, and events, the same IAM role must also be mapped to a Kubernetes identity, with an [EKS access entry](https://docs.aws.amazon.com/eks/latest/userguide/access-entries.html) (recommended) or the `aws-auth` ConfigMap.
+
+A least-privilege read-only `ClusterRole` covering every EKS tool:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opensre-read-only
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "namespaces", "nodes"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+```
+
+Bind it to the Kubernetes group or username your access entry assigns to the OpenSRE role.
+
+## Tools
+
+| Tool | Reads | What it returns |
+| --- | --- | --- |
+| `list_eks_clusters` | EKS API | Clusters in the account and region |
+| `describe_eks_cluster` | EKS API | Status, version, endpoint, and logging config |
+| `get_eks_nodegroup_health` | EKS API | Instance types, scaling config, AMI version, and health issues per node group |
+| `describe_eks_addon` | EKS API | Addon status and version (coredns, kube-proxy, vpc-cni, aws-ebs-csi-driver, and others) |
+| `get_eks_node_health` | Kubernetes API | Node conditions, capacity, allocatable resources, and pod counts |
+| `list_eks_namespaces` | Kubernetes API | Namespaces and their status |
+| `list_eks_pods` | Kubernetes API | Pods in a namespace (or all), with the failing ones listed separately |
+| `get_eks_pod_logs` | Kubernetes API | Recent log lines from a pod (`tail_lines`, default 100) |
+| `get_eks_events` | Kubernetes API | Warning events in a namespace |
+| `list_eks_deployments` | Kubernetes API | Deployments with replica counts and availability |
+| `get_eks_deployment_status` | Kubernetes API | Desired, ready, and unavailable replicas for one deployment |
+
+### Use cases
+
+- Finding which pods are crash-looping or `OOMKilled`, and why
+- Checking whether a rollout is stuck, with unavailable replicas
+- Spotting unhealthy nodes, degraded node groups, or a broken addon after an upgrade
+
+## Verify
+
+```bash
+opensre integrations verify aws
+```
+
+`eks` is an alias for this check. A passing verify confirms AWS credentials only. Kubernetes access is checked when a Kubernetes API tool runs, so a missing access entry or RBAC binding shows up as an `Unauthorized` or `Forbidden` tool result.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **EKS tools never selected** | Confirm `opensre integrations verify aws` passes and the alert or prompt names the cluster |
+| **`Unauthorized` from Kubernetes API tools** | The IAM role has no access entry (or `aws-auth` mapping) on the cluster |
+| **`Forbidden` on pods, logs, or nodes** | The mapped Kubernetes identity lacks the RBAC rules above |
+| **Connection timeout to the cluster** | The cluster endpoint is private; run OpenSRE inside the VPC, or enable the public endpoint for OpenSRE's IP |
+| **Cluster not found** | Set `AWS_REGION` to the cluster's region |
+
+## Security
+
+- All EKS and Kubernetes calls are read-only.
+- The `ClusterRole` above does not grant access to `secrets` or `configmaps`; keep it that way unless you need it.
+- Prefer a dedicated IAM role for OpenSRE so its cluster access can be audited and revoked on its own.

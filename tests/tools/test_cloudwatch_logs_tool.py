@@ -40,8 +40,10 @@ def test_run_with_filter_pattern_happy_path() -> None:
     mock_client.filter_log_events.return_value = {
         "events": [{"message": "Error: something failed", "timestamp": 1000}]
     }
-    with patch("integrations.cloudwatch.tools.cloudwatch_logs_tool.boto3") as mock_boto3:
-        mock_boto3.client.return_value = mock_client
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
         result = get_cloudwatch_logs(log_group="/my/group", filter_pattern="Error")
     assert result["found"] is True
     assert result["event_count"] == 1
@@ -51,8 +53,10 @@ def test_run_with_filter_pattern_happy_path() -> None:
 def test_run_with_filter_pattern_no_events() -> None:
     mock_client = MagicMock()
     mock_client.filter_log_events.return_value = {"events": []}
-    with patch("integrations.cloudwatch.tools.cloudwatch_logs_tool.boto3") as mock_boto3:
-        mock_boto3.client.return_value = mock_client
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
         result = get_cloudwatch_logs(log_group="/my/group", filter_pattern="Error")
     assert result["found"] is False
     assert "filter_pattern" in result
@@ -62,8 +66,10 @@ def test_run_auto_discovers_log_stream() -> None:
     mock_client = MagicMock()
     mock_client.describe_log_streams.return_value = {"logStreams": [{"logStreamName": "stream-1"}]}
     mock_client.get_log_events.return_value = {"events": [{"message": "hello"}]}
-    with patch("integrations.cloudwatch.tools.cloudwatch_logs_tool.boto3") as mock_boto3:
-        mock_boto3.client.return_value = mock_client
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
         result = get_cloudwatch_logs(log_group="/my/group")
     assert result["found"] is True
     assert result["log_stream"] == "stream-1"
@@ -72,8 +78,10 @@ def test_run_auto_discovers_log_stream() -> None:
 def test_run_no_streams_found() -> None:
     mock_client = MagicMock()
     mock_client.describe_log_streams.return_value = {"logStreams": []}
-    with patch("integrations.cloudwatch.tools.cloudwatch_logs_tool.boto3") as mock_boto3:
-        mock_boto3.client.return_value = mock_client
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
         result = get_cloudwatch_logs(log_group="/my/group")
     assert result["found"] is False
 
@@ -81,15 +89,19 @@ def test_run_no_streams_found() -> None:
 def test_run_with_explicit_log_stream() -> None:
     mock_client = MagicMock()
     mock_client.get_log_events.return_value = {"events": [{"message": "msg1"}, {"message": "msg2"}]}
-    with patch("integrations.cloudwatch.tools.cloudwatch_logs_tool.boto3") as mock_boto3:
-        mock_boto3.client.return_value = mock_client
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
         result = get_cloudwatch_logs(log_group="/my/group", log_stream="stream-x")
     assert result["found"] is True
     assert result["event_count"] == 2
 
 
 def test_run_handles_boto3_exception() -> None:
-    with patch("integrations.cloudwatch.tools.cloudwatch_logs_tool.boto3") as mock_boto3:
-        mock_boto3.client.side_effect = Exception("AWS error")
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        side_effect=Exception("AWS error"),
+    ):
         result = get_cloudwatch_logs(log_group="/my/group")
     assert "error" in result
