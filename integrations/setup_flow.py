@@ -381,14 +381,25 @@ def _persist_env(spec: IntegrationSetupSpec, credentials: dict[str, str | None])
     return sync_env_values(env_values)
 
 
-def _carried_over(
+def _named_instance(
     spec: IntegrationSetupSpec, credentials: Mapping[str, str | None]
 ) -> dict[str, Any]:
-    """Saved settings of the named instance that the form does not edit."""
-    if not spec.instance_field or spec.carry_over is None:
+    """The saved instance a named-instance spec is updating, or ``{}`` for a new one."""
+    if not spec.instance_field:
         return {}
     name = str(credentials.get(spec.instance_field) or "")
-    saved = (get_instance(spec.service, name=name) or {}).get("credentials") or {}
+    return get_instance(spec.service, name=name) or {} if name else {}
+
+
+def _carried_over(
+    spec: IntegrationSetupSpec,
+    existing: Mapping[str, Any],
+    credentials: Mapping[str, str | None],
+) -> dict[str, Any]:
+    """Saved settings of the named instance that the form does not edit."""
+    if spec.carry_over is None:
+        return {}
+    saved = existing.get("credentials") or {}
     declared = {field.name for field in spec.fields}
     kept = spec.carry_over(saved, credentials)
     return {key: value for key, value in kept.items() if key not in declared}
@@ -407,7 +418,8 @@ def apply_setup(
     if missing:
         return SetupOutcome(ok=False, detail=missing)
 
-    kept = _carried_over(spec, credentials)
+    existing = _named_instance(spec, credentials)
+    kept = _carried_over(spec, existing, credentials) if spec.instance_field else {}
     verified, detail = _verify(spec, {**kept, **credentials})
     if not verified:
         return SetupOutcome(ok=False, detail=detail)
@@ -435,7 +447,13 @@ def apply_setup(
     if spec.instance_field:
         instance = str(credentials.pop(spec.instance_field, None) or "")
         saved = {**kept, **credentials}
-        upsert_instance(spec.service, {"name": instance, "credentials": saved}, activate=True)
+        # Update the record that already holds this name, so no duplicate is created.
+        upsert_instance(
+            spec.service,
+            {"name": instance, "credentials": saved},
+            record_id=existing.get("integration_id") or None,
+            activate=True,
+        )
     else:
         upsert_integration(spec.service, {"credentials": credentials})
         # Mirror the change up so a silo's edit reaches the org vault. No-op off a

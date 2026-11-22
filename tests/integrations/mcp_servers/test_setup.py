@@ -79,6 +79,47 @@ def test_setup_into_an_inactive_record_makes_the_server_available(tmp_path: Path
     assert tools == {"mcp__ops__query_range", "mcp__ops__silence_alert"}
 
 
+def test_updating_a_server_rewrites_the_record_that_holds_it(tmp_path: Path) -> None:
+    # Arrange: two mcp records; the server being updated lives in the second.
+    import json
+
+    store = tmp_path / "integrations.json"
+    old = {"command": "/old/server"}
+    store.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "integrations": [
+                    {
+                        "id": "mcp-a",
+                        "service": "mcp",
+                        "status": "active",
+                        "instances": [{"name": "grafana", "credentials": {"url": "http://g"}}],
+                    },
+                    {
+                        "id": "mcp-b",
+                        "service": "mcp",
+                        "status": "active",
+                        "instances": [{"name": "ops", "credentials": old}],
+                    },
+                ],
+            }
+        )
+    )
+
+    # Act
+    outcome = apply_setup(
+        MCP_SERVERS_SETUP, {"name": "ops", "command": sys.executable, "args": _OPS_SERVER}
+    )
+
+    # Assert: one "ops", still in its own record, with the new settings.
+    assert outcome.ok, outcome.detail
+    records = {r["id"]: r for r in json.loads(store.read_text())["integrations"]}
+    assert [i["name"] for i in records["mcp-a"]["instances"]] == ["grafana"]
+    [ops] = records["mcp-b"]["instances"]
+    assert ops["credentials"]["command"] == sys.executable
+
+
 @pytest.mark.parametrize(
     ("raw", "mode"),
     [
