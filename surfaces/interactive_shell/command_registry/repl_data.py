@@ -35,7 +35,7 @@ def mcp_server_names() -> list[str]:
     from config.constants.mcp import MCP_SERVERS_SERVICE
     from integrations.store import get_instances
 
-    return list(dict.fromkeys(inst["name"] for inst in get_instances(MCP_SERVERS_SERVICE)))
+    return list(dict.fromkeys(inst["name"].lower() for inst in get_instances(MCP_SERVERS_SERVICE)))
 
 
 def verify_service(service: str) -> list[dict[str, str]]:

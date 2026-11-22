@@ -135,7 +135,7 @@ def render_health_report(
 
     for result in normalized_results:
         table.add_row(
-            _service_label(result),
+            Text(_service_label(result)),
             result["source"] or "-",
             status_badge(result["status"]),
             result["detail"] or "-",

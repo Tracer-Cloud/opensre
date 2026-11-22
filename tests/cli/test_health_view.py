@@ -135,7 +135,7 @@ def test_health_keeps_instance_names_apart(mock_rules_path: MagicMock, capsys) -
     mock_rules_path.return_value = Path("/nonexistent/rules")
     results = [
         {"service": "mcp", "instance": name, "source": "store", "status": "failed", "detail": "x"}
-        for name in ("ops", "grafana")
+        for name in ("ops", "grafana", "[/]west")
     ]
 
     render_health_json(environment="t", integration_store_path="/tmp", results=results)
@@ -147,8 +147,10 @@ def test_health_keeps_instance_names_apart(mock_rules_path: MagicMock, capsys) -
     assert [r["instance"] for r in json.loads(capsys.readouterr().out)["results"]] == [
         "ops",
         "grafana",
+        "[/]west",
     ]
-    assert "mcp/ops" in console.file.getvalue() and "mcp/grafana" in console.file.getvalue()
+    out = console.file.getvalue()
+    assert "mcp/ops" in out and "mcp/grafana" in out and "mcp/[/]west" in out
 
 
 @patch("infrastructure.safety.guardrails.rules.get_default_rules_path")
