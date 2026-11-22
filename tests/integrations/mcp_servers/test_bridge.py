@@ -277,3 +277,45 @@ def test_a_recursive_argument_schema_is_inlined_without_looping() -> None:
     node = inlined["properties"]["node"]
     assert set(node["properties"]) == {"child", "name"}
     assert "$ref" not in json.dumps(inlined) and "$defs" not in inlined
+
+
+def test_arguments_named_like_schema_keywords_are_kept() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "definitions": {"type": "string"},
+            "$ref": {"type": "string"},
+            "$defs": {"type": "integer"},
+            "payload": {"type": "object", "default": {"$ref": "kept as data"}},
+        },
+        "required": ["definitions", "$ref"],
+        "additionalProperties": False,
+    }
+
+    inlined = bridged_input_schema(schema)
+
+    assert set(inlined["properties"]) == {"definitions", "$ref", "$defs", "payload"}
+    assert inlined["properties"]["payload"]["default"] == {"$ref": "kept as data"}
+    assert inlined["required"] == ["definitions", "$ref"]
+
+
+def test_a_schema_that_would_expand_exponentially_stays_bounded() -> None:
+    # Eight levels, each referencing the next ten times: ~10^8 nodes if fully inlined.
+    defs = {
+        f"L{level}": {
+            "type": "object",
+            "properties": {f"p{i}": {"$ref": f"#/$defs/L{level + 1}"} for i in range(10)},
+        }
+        for level in range(8)
+    }
+    defs["L8"] = {"type": "string"}
+    schema = {"type": "object", "properties": {"root": {"$ref": "#/$defs/L0"}}, "$defs": defs}
+
+    started = time.monotonic()
+    inlined = bridged_input_schema(schema)
+    elapsed = time.monotonic() - started
+
+    text = json.dumps(inlined)
+    assert elapsed < 2
+    assert len(text) < 1_000_000
+    assert "$ref" not in text and "root" in inlined["properties"]
