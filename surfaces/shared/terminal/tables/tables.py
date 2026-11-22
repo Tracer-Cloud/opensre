@@ -37,7 +37,7 @@ from surfaces.shared.terminal.tables.provider import resolve_provider_models
 from surfaces.shared.terminal.tables.records import RecordColumn, RecordRow, RecordTable
 
 if TYPE_CHECKING:
-    from integrations.mcp_servers.summary import McpServerSummary
+    from integrations.mcp_servers import McpServerSummary
     from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 
 # MCP-type services are also rendered under `/mcp list` for focused MCP actions.

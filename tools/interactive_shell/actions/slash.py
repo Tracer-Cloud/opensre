@@ -50,6 +50,7 @@ _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/mcp", "list"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
+        ("/mcp", "remove"),
     }
 )
 

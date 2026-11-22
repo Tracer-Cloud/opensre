@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from integrations.mcp_servers.summary import McpServerSummary
+    from integrations.mcp_servers import McpServerSummary
 
 
 def load_verified_integrations() -> list[dict[str, str]]:
