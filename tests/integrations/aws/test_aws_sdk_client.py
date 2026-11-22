@@ -398,3 +398,24 @@ class TestSecretsNeverReachTheModel:
         assert result["success"] is True
         assert details["privateKey"] == details["password"] == "<redacted>"
         assert details["username"] == "admin" and details["ipAddress"] == "203.0.113.5"
+
+    def test_secret_fields_are_found_by_name_part(self, mock_boto3_client) -> None:
+        # Amplify get_app nests base64 user:password credentials under several names.
+        mock_boto3_client.get_app.return_value = {
+            "app": {
+                "appId": "d1",
+                "basicAuthCredentials": "dXNlcjpwYXNz",
+                "autoBranchCreationConfig": {"basicAuthCredentials": "dXNlcjpwYXNz"},
+                "MasterUserPassword": "pw",
+            },
+            "SecretArn": "arn:aws:secretsmanager:us-east-1:1:secret:x",
+            "NextToken": "page-2",
+        }
+
+        result = execute_aws_sdk_call("amplify", "get_app", parameters={"appId": "d1"})
+
+        text = str(result["data"])
+        assert "dXNlcjpwYXNz" not in text and "'pw'" not in text
+        assert result["data"]["SecretArn"].startswith("arn:")
+        assert result["data"]["NextToken"] == "page-2"
+        assert result["data"]["app"]["appId"] == "d1"

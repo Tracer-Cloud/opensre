@@ -72,22 +72,22 @@ SECRET_PARAMETERS = frozenset(
     }
 )
 
-# Response fields whose values are secrets; replaced before reaching the caller.
-# Matched without regard to case: services spell them differently (Lightsail
-# returns ``privateKey`` and ``password``, ECR ``authorizationToken``).
-REDACTED_RESPONSE_KEYS = frozenset(
-    {
-        "authorizationtoken",
-        "clientsecret",
-        "credentials",
-        "password",
-        "passworddata",
-        "privatekey",
-        "secretaccesskey",
-        "secretbinary",
-        "secretstring",
-        "sessiontoken",
-    }
+# A response field is redacted when its name, lowercased, contains one of these.
+# Matching on part of the name covers the many spellings services use
+# (Lightsail ``privateKey``, ECR ``authorizationToken``, Amplify
+# ``basicAuthCredentials``, RDS ``MasterUserPassword``) while leaving
+# identifiers such as ``SecretArn`` and pagination ``NextToken`` intact.
+REDACTED_RESPONSE_KEY_PARTS = (
+    "password",
+    "credential",
+    "privatekey",
+    "clientsecret",
+    "secretaccesskey",
+    "secretbinary",
+    "secretstring",
+    "sessiontoken",
+    "authtoken",
+    "authorizationtoken",
 )
 REDACTED = "<redacted>"
 
@@ -124,6 +124,11 @@ def _is_operation_allowed(operation_name: str) -> tuple[bool, str]:
     return False, f"Operation '{operation_name}' does not match any allowed patterns"
 
 
+def _is_secret_field(key: str) -> bool:
+    name = key.lower()
+    return any(part in name for part in REDACTED_RESPONSE_KEY_PARTS)
+
+
 def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
     """
     Sanitize AWS response data for safe consumption.
@@ -132,7 +137,7 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
     - Truncates large collections
     - Handles binary data
     - Prevents excessive nesting
-    - Replaces secret-bearing fields (``REDACTED_RESPONSE_KEYS``) with a placeholder
+    - Replaces secret-bearing fields (``REDACTED_RESPONSE_KEY_PARTS``) with a placeholder
 
     Args:
         data: Response data to sanitize
@@ -164,7 +169,7 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
             # Skip ResponseMetadata (noise)
             if key == "ResponseMetadata":
                 continue
-            if isinstance(key, str) and key.lower() in REDACTED_RESPONSE_KEYS:
+            if isinstance(key, str) and _is_secret_field(key):
                 sanitized[key] = REDACTED
                 continue
             sanitized[key] = _sanitize_response(value, depth + 1, max_depth)

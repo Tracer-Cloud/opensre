@@ -296,7 +296,7 @@ unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION
 
 ## Security
 
-- `execute_aws_operation` refuses calls that return secrets or credentials, such as `get_secret_value`, `get_session_token`, `get_authorization_token`, `get_password_data`, AppSync `list_api_keys`, API Gateway `get_usage_plan_key(s)`, or any call with `WithDecryption`, `includeValue` or `includeValues` (API Gateway keys). It also replaces secret fields in any response, whatever their capitalisation (`SecretString`, `SecretAccessKey`, `SessionToken`, `Credentials`, `privateKey`, `password`, `ClientSecret`, …), with `<redacted>`. To keep secrets out of reach entirely, don't grant `secretsmanager:GetSecretValue` or `kms:Decrypt` to the OpenSRE identity
+- `execute_aws_operation` refuses calls that return secrets or credentials, such as `get_secret_value`, `get_session_token`, `get_authorization_token`, `get_password_data`, AppSync `list_api_keys`, API Gateway `get_usage_plan_key(s)`, or any call with `WithDecryption`, `includeValue` or `includeValues` (API Gateway keys). It also replaces with `<redacted>` any response field whose name contains `password`, `credential`, `privateKey`, `clientSecret`, `secretAccessKey`, `secretString`, `secretBinary`, `sessionToken` or `authToken`, whatever the capitalisation (for example `MasterUserPassword` or Amplify `basicAuthCredentials`). Identifiers such as `SecretArn` and pagination tokens such as `NextToken` are kept. To keep secrets out of reach entirely, don't grant `secretsmanager:GetSecretValue` or `kms:Decrypt` to the OpenSRE identity
 - Prefer **IAM roles** over static keys wherever possible.
 - Scope IAM permissions to only the AWS services OpenSRE needs to inspect.
 - Rotate static access keys regularly.
