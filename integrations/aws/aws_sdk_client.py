@@ -52,6 +52,10 @@ SECRET_OPERATION_PATTERNS = [
     r".*decrypt.*",
 ]
 
+# (service, operation) pairs whose ordinary output is a secret, where redacting
+# the field by name would also hide ordinary data (AppSync returns keys as ``id``).
+SECRET_SERVICE_OPERATIONS = frozenset({("appsync", "list_api_keys")})
+
 # Parameters that make an otherwise allowed read return decrypted secrets.
 SECRET_PARAMETERS = frozenset(
     {
@@ -215,6 +219,16 @@ def execute_aws_sdk_call(
         return {
             "success": False,
             "error": f"Operation not allowed: {reason}",
+            "service": service_name,
+            "operation": operation_name,
+            "data": None,
+            "metadata": {"validation_failed": True},
+        }
+
+    if (service_name.lower(), operation_name.lower()) in SECRET_SERVICE_OPERATIONS:
+        return {
+            "success": False,
+            "error": f"Operation not allowed: {service_name}.{operation_name} returns secrets",
             "service": service_name,
             "operation": operation_name,
             "data": None,

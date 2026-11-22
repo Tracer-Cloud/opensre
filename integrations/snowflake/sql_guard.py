@@ -4,8 +4,9 @@ The query-history tool runs a model-supplied statement, and the model's inputs
 include untrusted alert and log text. Only a single read statement is allowed:
 it must start with a read keyword, and no write, DDL, access-control or
 procedure keyword may appear outside string literals and comments. Snowflake
-``SYSTEM$`` functions are refused too, since several act on the account
-(``SYSTEM$CANCEL_QUERY``, ``SYSTEM$ABORT_SESSION``).
+``SYSTEM$`` functions are refused too, quoted or not, since several act on the
+account (``SYSTEM$CANCEL_QUERY``, ``SYSTEM$ABORT_SESSION``), and so is
+``IDENTIFIER()``, which can name a function from a string.
 
 A read-only Snowflake role remains the real boundary; this check keeps the
 tool from being the way around a role that can write.
@@ -47,6 +48,7 @@ _LITERALS_AND_COMMENTS = re.compile(
     r"|/\*.*?\*/",  # block comment
     re.DOTALL,
 )
+_QUOTED_IDENTIFIER = re.compile(r'"((?:[^"]|"")*)"')
 _WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_$]*")
 
 
@@ -70,9 +72,18 @@ def read_only_sql_problem(statement: str) -> str | None:
     blocked = sorted(statement_words & _WRITE_KEYWORDS)
     if blocked:
         return f"Statement contains a write or control keyword: {', '.join(blocked).upper()}."
-    if any(word.startswith("system$") for word in words):
+    if any(word.startswith("system$") for word in words) or _quoted_system_function(statement):
         return "SYSTEM$ functions are not allowed."
+    if "identifier" in words:
+        # IDENTIFIER('...') resolves a name from a string, so it could name any function.
+        return "IDENTIFIER() is not allowed."
     return None
+
+
+def _quoted_system_function(statement: str) -> bool:
+    """Whether a quoted identifier names a ``SYSTEM$`` function (``"SYSTEM$CANCEL_QUERY"``)."""
+    names = (match.group(1) for match in _QUOTED_IDENTIFIER.finditer(statement))
+    return any(name.replace('""', '"').strip().lower().startswith("system$") for name in names)
 
 
 __all__ = ["read_only_sql_problem"]

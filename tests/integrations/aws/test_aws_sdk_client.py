@@ -343,6 +343,7 @@ class TestSecretsNeverReachTheModel:
             ("ssm", "get_parameters_by_path", {"Path": "/prod", "WithDecryption": True}),
             ("apigateway", "get_api_key", {"apiKey": "k1", "includeValue": True}),
             ("apigateway", "get_api_keys", {"includeValues": True}),
+            ("appsync", "list_api_keys", {"apiId": "a1"}),
         ],
     )
     def test_secret_returning_calls_are_refused_before_any_client(

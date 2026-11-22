@@ -42,6 +42,8 @@ def _run(query: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], l
         "USE ROLE ACCOUNTADMIN",
         "/* select */ UPDATE orders SET paid = true",
         "WITH x AS (SELECT 1) TRUNCATE TABLE orders",
+        "SELECT \"SYSTEM$CANCEL_QUERY\"('01b2')",
+        "SELECT IDENTIFIER('SYSTEM$ABORT_SESSION')(42)",
     ],
 )
 def test_write_or_multi_statement_sql_never_reaches_snowflake(
@@ -64,6 +66,7 @@ def test_write_or_multi_statement_sql_never_reaches_snowflake(
         "SHOW WAREHOUSES",
         "SELECT TRUNCATE(total_elapsed_time / 1000, 2) FROM t",
         "SELECT INSERT(query_text, 1, 0, '>') FROM t",
+        "SELECT query_text FROM t WHERE query_text ILIKE '%SYSTEM$CANCEL_QUERY%'",
     ],
 )
 def test_read_statements_still_run(query: str, monkeypatch: pytest.MonkeyPatch) -> None:
