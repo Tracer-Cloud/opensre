@@ -10,6 +10,7 @@ import json
 from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 import botocore.endpoint
 import pytest
@@ -52,7 +53,7 @@ def test_batch_metrics_send_a_bounded_window(sent: list[tuple[str, str, dict[str
     assert "error" not in result
     [(operation, url, body)] = sent
     assert operation == "GetMetricStatistics"
-    assert "monitoring.eu-west-1.amazonaws.com" in url
+    assert urlsplit(url).hostname == "monitoring.eu-west-1.amazonaws.com"
     # Both bounds were validated and serialized as epoch timestamps.
     sent_params = json.loads(body)
     assert sent_params["EndTime"] - sent_params["StartTime"] == pytest.approx(3600)
@@ -65,4 +66,4 @@ def test_logs_use_the_configured_region(sent: list[tuple[str, str, dict[str, Any
     assert result.get("message") == "No log streams found in log group"
     [(operation, url, _body)] = sent
     assert operation == "DescribeLogStreams"
-    assert "logs.eu-west-1.amazonaws.com" in url
+    assert urlsplit(url).hostname == "logs.eu-west-1.amazonaws.com"
