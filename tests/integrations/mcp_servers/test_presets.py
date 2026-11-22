@@ -164,3 +164,13 @@ def test_every_preset_mode_is_offered_by_setup() -> None:
     offered = {mode.value for mode in MCP_SERVERS_SETUP.modes}
 
     assert {"grafana", "datadog", "pagerduty", "aws"} <= offered
+
+
+def test_stdio_env_values_are_kept_as_written() -> None:
+    from integrations.mcp_servers import McpServerConfig
+
+    config = McpServerConfig(
+        mode="stdio", command="srv", env={"HTTP_PROXY": "", "GREETING": "  hi  "}
+    )
+
+    assert config.env == {"HTTP_PROXY": "", "GREETING": "  hi  "}
