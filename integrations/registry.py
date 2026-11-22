@@ -23,6 +23,12 @@ class IntegrationSpec:
     core_verify: bool = False
     setup_order: int | None = None
     verify_order: int | None = None
+    verify_each_instance: bool = False
+    """Verify every named instance separately rather than only the first one.
+
+    For services whose instances are independent endpoints (one MCP server
+    each), a single result would hide every instance but the first.
+    """
 
 
 _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
@@ -256,6 +262,7 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         direct_effective=True,
         setup_order=61,
         verify_order=61,
+        verify_each_instance=True,
     ),
     IntegrationSpec(
         service="sentry_mcp",

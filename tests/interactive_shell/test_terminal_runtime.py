@@ -530,7 +530,7 @@ def test_shell_completer_hides_inline_picker_autocomplete_in_tty(
     ("command", "expected"),
     [
         ("/integrations ", ["list", "setup", "remove", "verify", "show"]),
-        ("/mcp ", ["list", "connect", "disconnect"]),
+        ("/mcp ", ["list", "connect", "remove", "disconnect"]),
     ],
 )
 def test_shell_completer_shows_required_connection_subcommands_in_tty(

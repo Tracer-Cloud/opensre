@@ -149,3 +149,28 @@ async def test_verification_hands_off_scope_without_mutating_parent_environment(
     assert os.environ[ANALYTICS_DISABLED_ENV] == "0"
     assert os.environ[TURN_ORGANIZATION_ID_ENV] == "stale-org"
     assert os.environ[TURN_ACTOR_ID_ENV] == "stale-actor"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("statuses", "status", "detail"),
+    [
+        (["passed", "passed"], "passed", "All 2 instances passed."),
+        (["passed", "failed"], "failed", "b: down"),
+    ],
+)
+async def test_per_instance_rows_combine_into_one_service_result(
+    monkeypatch: pytest.MonkeyPatch, statuses: list[str], status: str, detail: str
+) -> None:
+    rows = [
+        {"service": "mcp", "instance": name, "status": state, "detail": "down"}
+        for name, state in zip("ab", statuses, strict=True)
+    ]
+    program = f"print({json.dumps(rows)!r})"
+    monkeypatch.setattr(
+        verification, "opensre_command", lambda *_args: [sys.executable, "-c", program]
+    )
+
+    row = await verification.verify_connection("mcp")
+
+    assert (row["status"], row["detail"]) == (status, detail)

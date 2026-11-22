@@ -124,7 +124,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/health` | Integration and agent health check |
 | `/verify` | Verify integration connectivity (all or one service) |
 | `/integrations` | List, verify, show, setup, or remove integrations |
-| `/mcp` | List, connect, or disconnect MCP servers |
+| `/mcp` | List, connect, remove, or disconnect MCP servers |
 | `/model` | Select a model from saved provider connections |
 | `/tools` | List registered chat and action tools |
 
@@ -636,15 +636,17 @@ MCP servers you added with `/mcp connect`, plus the GitHub, Sentry MCP, and Post
 /mcp list
 /mcp connect
 /mcp connect github
+/mcp remove grafana
 /mcp disconnect github
 ```
 
 | Subcommand | Maps to |
 | --- | --- |
-| `list` | Browse configured MCP servers in a TTY; render a verified table otherwise |
+| `list` | Browse configured MCP servers in a TTY; otherwise a verified table with one row per added server (name, transport, endpoint, read-only, status; no credentials) |
 | `connect` | `opensre integrations setup mcp` — add any MCP server (see [MCP servers](/integrations/mcp-servers)) |
-| `connect &lt;server&gt;` | `opensre integrations setup &lt;server&gt;` |
-| `disconnect &lt;server&gt;` | `opensre integrations remove &lt;server&gt;` |
+| `connect &lt;service&gt;` | `opensre integrations setup &lt;service&gt;` |
+| `remove &lt;name&gt;` | `opensre integrations remove mcp &lt;name&gt;` — remove one added MCP server, with confirmation; other servers are kept |
+| `disconnect &lt;service&gt;` | `opensre integrations remove &lt;service&gt;` — remove a whole integration, such as `github` |
 
 </Accordion>
 
