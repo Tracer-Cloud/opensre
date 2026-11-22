@@ -16,8 +16,8 @@ from integrations.posthog_mcp import (
     PostHogMCPConfig,
     build_posthog_mcp_config,
     posthog_mcp_runtime_unavailable_reason,
-    posthog_stdio_env,
 )
+from integrations.posthog_mcp.stdio_env import posthog_stdio_env
 
 #: Bridge server name; it prefixes every bridged PostHog tool name.
 POSTHOG_BRIDGE_SERVER = "posthog"
@@ -41,11 +41,11 @@ def posthog_bridge_server(
         return None
     return POSTHOG_BRIDGE_SERVER, McpServerConfig(
         mode=config.mode,
-        url=config.url,
+        url=config.session_url,  # carries the ``features`` filter
         command=config.command,
         args=config.args,
         headers=config.request_headers,
-        env=posthog_stdio_env(config),
+        env=posthog_stdio_env(config.auth_token),
         timeout_seconds=config.timeout_seconds,
         integration_id=config.integration_id,
     )

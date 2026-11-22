@@ -65,3 +65,21 @@ def test_vendor_mcp_config_becomes_typed_gated_tools_with_its_credentials(
     assert set(bridged[read_name].public_input_schema["properties"]) == {"name"}
     assert not result.is_error
     assert f"{server}-token" in json.dumps(result.content, default=str)
+
+
+def test_posthog_feature_filter_reaches_the_bridged_server_url() -> None:
+    from integrations.posthog_mcp.bridge_server import posthog_bridge_server
+
+    bridged = posthog_bridge_server(
+        {
+            "posthog_mcp": {
+                "mode": "streamable-http",
+                "url": "https://mcp.posthog.com/mcp",
+                "auth_token": "phx_test",
+                "features": ["analytics"],
+            }
+        }
+    )
+
+    assert bridged is not None
+    assert bridged[1].url == "https://mcp.posthog.com/mcp?features=analytics"

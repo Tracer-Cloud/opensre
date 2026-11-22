@@ -15,8 +15,8 @@ from integrations.sentry_mcp import (
     SentryMCPConfig,
     build_sentry_mcp_config,
     sentry_mcp_runtime_unavailable_reason,
-    sentry_stdio_env,
 )
+from integrations.sentry_mcp.stdio_env import sentry_stdio_env
 
 #: Bridge server name; it prefixes every bridged Sentry tool name.
 SENTRY_BRIDGE_SERVER = "sentry"
@@ -44,7 +44,7 @@ def sentry_bridge_server(
         command=config.command,
         args=config.args,
         headers=config.request_headers,
-        env=sentry_stdio_env(config),
+        env=sentry_stdio_env(config.auth_token, config.host, config.skills),
         timeout_seconds=config.timeout_seconds,
         integration_id=config.integration_id,
     )
