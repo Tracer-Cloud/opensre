@@ -44,6 +44,7 @@ You choose how OpenSRE reaches the server, then answer:
 | Bearer token | No | — | Sent as `Authorization: Bearer …` |
 | Command | For a local server | — | Executable that starts the server, e.g. `uvx` |
 | Arguments | No | — | Space separated, e.g. `mcp-grafana`. Quote an argument that contains spaces: `"/path/with spaces/server.py"` |
+| Preset answers | For a preset | — | See [Official server presets](#official-server-presets) |
 | Read-only | No | `no` | `yes` exposes only the tools the server marks read-only |
 | Allowed tools | No | all tools | Comma-separated server tool names |
 
@@ -55,6 +56,28 @@ Check servers later with `opensre integrations verify mcp`. It checks the first 
 `opensre integrations remove mcp` (or `/mcp disconnect mcp`) removes **every** configured MCP server. To remove a single server, delete its entry from `instances` in `~/.opensre/integrations.json`.
 </Note>
 
+### Official server presets
+
+For these vendors' own MCP servers, run `opensre integrations setup mcp` and pick the vendor instead of typing a command or URL. Then answer the server name (for example `grafana`, so its tools appear as `mcp__grafana__<tool>`), the vendor's own prompts below, read-only and allowed tools.
+
+Credentials are passed to the server only as its environment variables (local servers) or request headers (remote servers), never as tool arguments. The local servers run with `uvx`, so [uv](https://docs.astral.sh/uv/getting-started/installation/) must be installed.
+
+| Preset | Server | Prompts | How credentials are passed |
+| --- | --- | --- | --- |
+| **Grafana** | [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana), run as `uvx mcp-grafana` | Grafana URL, service account token | `GRAFANA_URL`, `GRAFANA_SERVICE_ACCOUNT_TOKEN` env vars |
+| **Datadog** | Datadog's [managed MCP server](https://docs.datadoghq.com/bits_ai/mcp_server/), `https://mcp.<site>/v1/mcp` | API key, application key, site (optional, default `datadoghq.com`) | `DD_API_KEY`, `DD_APPLICATION_KEY` headers |
+| **PagerDuty** | [`pagerduty-mcp`](https://github.com/PagerDuty/pagerduty-mcp-server), run as `uvx pagerduty-mcp` | User API token, API host (optional; `https://api.eu.pagerduty.com` for EU accounts) | `PAGERDUTY_USER_API_KEY`, `PAGERDUTY_API_HOST` env vars |
+| **AWS** | [awslabs MCP servers](https://github.com/awslabs/mcp): `cloudwatch`, `ecs`, `eks` or `prometheus` (Amazon Managed Service for Prometheus) | Which server, AWS region (optional), AWS profile (optional) | `AWS_REGION`, `AWS_PROFILE` env vars; otherwise the default AWS credential chain |
+
+What each preset does about writes:
+
+- **Grafana**: with **Read-only** set to `yes`, the server is also started with `--disable-write`. Its write tools (dashboards, alert rules, incidents) and raw-SQL query tools are then not registered at all.
+- **Datadog**: write tools are controlled by your Datadog account's `mcp_write` permission. **Read-only** `yes` hides tools Datadog doesn't mark read-only.
+- **PagerDuty**: the server exposes only read-only tools by default; OpenSRE never adds `--enable-write-tools`. PagerDuty has deprecated this local server in favour of its [hosted remote server](https://support.pagerduty.com/main/docs/pagerduty-mcp-server); the local one still works with a user API token.
+- **AWS**: ECS is given `ALLOW_WRITE=false` and `ALLOW_SENSITIVE_DATA=false`, and EKS runs without `--allow-write`, its read-only default. The CloudWatch and Prometheus servers have no write switch; their tools go through OpenSRE's approval gates as usual.
+
+Give each credential the narrowest role that covers what you want the agent to read. To run a server another way, such as with Docker or with writes enabled, use the local-command option and set its environment with the `env` field in the store or `MCP_INSTANCES`.
+
 ### Server fields
 
 | Field | Required | Default | Description |
@@ -63,6 +86,7 @@ Check servers later with `opensre integrations verify mcp`. It checks the first 
 | `url` | For `streamable-http` and `sse` | — | Server endpoint, e.g. `http://localhost:8000/mcp` |
 | `command` | For `stdio` | — | Executable that starts the server |
 | `args` | No | `[]` | Arguments for `command` |
+| `env` | No | `{}` | Environment variables for a `stdio` server, e.g. its API keys. Added to OpenSRE's own environment |
 | `auth_token` | No | — | Sent as `Authorization: Bearer …` unless `headers` sets `Authorization` |
 | `headers` | No | `{}` | HTTP headers sent on every request |
 | `allowed_tools` | No | all tools | Only expose these server tool names: a list, or a comma- or space-separated string. Any other value makes the server's config invalid, so the server is skipped |

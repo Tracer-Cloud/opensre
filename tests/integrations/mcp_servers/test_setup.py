@@ -219,7 +219,7 @@ def test_rerunning_setup_keeps_a_stored_argument_list_intact(
 
     # Assert
     [instance] = (get_integration("mcp") or {})["instances"]
-    config = McpServerConfig.model_validate(instance["credentials"])
+    config = McpServerConfig.from_mapping(instance["credentials"])
     assert config.args == tuple(stored_args)
 
 
@@ -333,9 +333,7 @@ def test_updating_a_server_keeps_settings_the_form_does_not_edit() -> None:
         assert config["headers"] == {"X-Api-Key": "k-1"}
         assert config["timeout_seconds"] == 90
         assert config["mode"] == "sse"
-    server = McpServerConfig.model_validate(
-        {k: v for k, v in instance["credentials"].items() if k in McpServerConfig.model_fields}
-    )
+    server = McpServerConfig.from_mapping(instance["credentials"])
     assert server.request_headers["Authorization"] == "Bearer new"
 
 

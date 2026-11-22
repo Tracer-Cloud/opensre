@@ -2,13 +2,14 @@
 
 Each ``mcp`` integration instance is one server; the instance name becomes the
 server name in its bridged tools' names. Credentials live in ``headers`` (HTTP)
-or the stdio command's own environment, never in tool arguments.
+or ``env``, the stdio command's own environment, never in tool arguments.
 """
 
 from __future__ import annotations
 
 import logging
 import shlex
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import Field, field_validator, model_validator
@@ -16,6 +17,7 @@ from pydantic import Field, field_validator, model_validator
 from config.constants.mcp import MCP_SERVERS_SERVICE
 from config.strict_config import StrictConfigModel
 from integrations._validation_helpers import report_classify_failure
+from integrations.mcp_servers.presets import expand_presets
 from integrations.mcp_transport import McpTransportMode
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ class McpServerConfig(StrictConfigModel):
     command: str = ""
     args: tuple[str, ...] = ()
     headers: dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
     auth_token: str = ""
     allowed_tools: tuple[str, ...] = ()
     read_only: bool = False
@@ -96,7 +99,7 @@ class McpServerConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
-    @field_validator("headers", mode="before")
+    @field_validator("headers", "env", mode="before")
     @classmethod
     def _normalize_headers(cls, value: object) -> dict[str, str]:
         if not isinstance(value, dict):
@@ -110,6 +113,12 @@ class McpServerConfig(StrictConfigModel):
         if self.mode != McpTransportMode.STDIO and not self.url:
             raise ValueError(f"MCP server mode '{self.mode}' requires a url.")
         return self
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any]) -> McpServerConfig:
+        """Build a config from stored or typed settings: presets expanded, other keys ignored."""
+        expanded = expand_presets(raw)
+        return cls.model_validate({k: v for k, v in expanded.items() if k in cls.model_fields})
 
     @property
     def request_headers(self) -> dict[str, str]:
@@ -135,12 +144,8 @@ def classify(
 ) -> tuple[McpServerConfig | None, str | None]:
     """Build one server's config from an integration instance, or skip it."""
     try:
-        config = McpServerConfig.model_validate(
-            {
-                key: value
-                for key, value in credentials.items()
-                if key in McpServerConfig.model_fields and key != "integration_id"
-            }
+        config = McpServerConfig.from_mapping(
+            {key: value for key, value in credentials.items() if key != "integration_id"}
             | {"integration_id": record_id}
         )
     except Exception as exc:

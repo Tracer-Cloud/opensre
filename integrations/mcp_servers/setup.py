@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import re
 import shlex
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from config.constants.mcp import MCP_SERVERS_SERVICE
+from integrations.mcp_servers.presets import PRESETS, PresetField
 from integrations.mcp_servers.verifier import verify_mcp_server
 from integrations.mcp_transport import McpTransportMode
 from integrations.setup_flow import IntegrationSetupSpec, SetupField, SetupMode
@@ -77,6 +78,36 @@ def _validate_yes_no(value: str) -> str | None:
     return None if value.strip().lower() in _YES_NO else "Answer yes or no."
 
 
+def _choice_validator(choices: tuple[str, ...]) -> Callable[[str], str | None]:
+    def validate(value: str) -> str | None:
+        if value.strip() in choices:
+            return None
+        return f"Choose one of: {', '.join(choices)}."
+
+    return validate
+
+
+def _preset_field(spec: PresetField) -> SetupField:
+    validate: Callable[[str], str | None] | None = None
+    if spec.choices:
+        validate = _choice_validator(spec.choices)
+    elif spec.is_url:
+        validate = _validate_url
+    # Mode-gated, so never spec-required; the preset's mode lists what it requires.
+    return SetupField(
+        name=spec.name,
+        label=spec.label,
+        prompt=spec.prompt,
+        required=False,
+        secret=spec.secret,
+        validate=validate,
+    )
+
+
+def _preset_fields() -> tuple[SetupField, ...]:
+    return tuple(_preset_field(spec) for preset in PRESETS for spec in preset.fields)
+
+
 MCP_SERVERS_SETUP = IntegrationSetupSpec(
     service=MCP_SERVERS_SERVICE,
     instance_field=NAME_FIELD,
@@ -115,6 +146,7 @@ MCP_SERVERS_SETUP = IntegrationSetupSpec(
             prefill=shlex.join,
             required=False,
         ),
+        *_preset_fields(),
         SetupField(
             name=READ_ONLY_FIELD,
             label="Read-only",
@@ -142,6 +174,15 @@ MCP_SERVERS_SETUP = IntegrationSetupSpec(
             label="Local command (stdio)",
             fields=(COMMAND_FIELD, ARGS_FIELD),
             required_fields=(COMMAND_FIELD,),
+        ),
+        *(
+            SetupMode(
+                value=preset.key,
+                label=preset.label,
+                fields=tuple(spec.name for spec in preset.fields),
+                required_fields=tuple(spec.name for spec in preset.fields if spec.required),
+            )
+            for preset in PRESETS
         ),
     ),
     verify=verify_mcp_server,
