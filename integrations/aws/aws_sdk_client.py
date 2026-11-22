@@ -52,7 +52,15 @@ SECRET_OPERATION_PATTERNS = [
     r".*decrypt.*",
     r".*embed_url.*",  # QuickSight embed URLs carry a bearer authorization code
     r".*presigned.*",  # presigned URLs grant access to whoever holds them
+    # Reads named ``*_url`` return presigned, signed-session or login URLs
+    # (Amplify artifacts, Kinesis Video streams, QuickSight, Glue dashboards, ...).
+    # The one plain address, SQS ``get_queue_url``, is exempted below.
+    r".*_url$",
+    r".*download_url.*",  # e.g. ECR get_download_url_for_layer
 ]
+
+# Operations that match ``SECRET_OPERATION_PATTERNS`` but return no secret.
+NON_SECRET_OPERATIONS = frozenset({"get_queue_url"})
 
 # (service, operation) pairs whose ordinary output is a secret, where redacting
 # the field by name would also hide ordinary data (keys come back as ``id`` or
@@ -123,6 +131,8 @@ def _is_operation_allowed(operation_name: str) -> tuple[bool, str]:
             return False, f"Operation '{operation_name}' matches blocked pattern '{pattern}'"
 
     for pattern in SECRET_OPERATION_PATTERNS:
+        if operation_lower in NON_SECRET_OPERATIONS:
+            break
         if re.match(pattern, operation_lower):
             return False, f"Operation '{operation_name}' can return secrets or credentials"
 

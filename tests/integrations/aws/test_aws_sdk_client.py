@@ -348,6 +348,9 @@ class TestSecretsNeverReachTheModel:
             ("apigateway", "get_usage_plan_keys", {"usagePlanId": "p"}),
             ("quicksight", "get_dashboard_embed_url", {"AwsAccountId": "1", "DashboardId": "d"}),
             ("quicksight", "get_session_embed_url", {"AwsAccountId": "1"}),
+            ("amplify", "get_artifact_url", {"artifactId": "a"}),
+            ("kinesis-video-archived-media", "get_hls_streaming_session_url", {}),
+            ("ecr", "get_download_url_for_layer", {"repositoryName": "r", "layerDigest": "d"}),
         ],
     )
     def test_secret_returning_calls_are_refused_before_any_client(
@@ -361,7 +364,13 @@ class TestSecretsNeverReachTheModel:
         client.assert_not_called()
 
     def test_ordinary_reads_stay_allowed(self) -> None:
-        for operation in ("get_role", "get_parameter", "describe_secret", "list_secrets"):
+        for operation in (
+            "get_role",
+            "get_parameter",
+            "describe_secret",
+            "list_secrets",
+            "get_queue_url",
+        ):
             assert _is_operation_allowed(operation)[0], operation
 
     def test_secret_fields_in_a_response_are_redacted(self, mock_boto3_client) -> None:
