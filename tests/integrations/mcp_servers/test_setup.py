@@ -52,6 +52,33 @@ def test_verified_servers_are_saved_by_name_and_become_agent_tools() -> None:
     }
 
 
+def test_setup_into_an_inactive_record_makes_the_server_available(tmp_path: Path) -> None:
+    # Arrange: a disabled mcp record already exists in the store.
+    import json
+
+    store = tmp_path / "integrations.json"
+    store.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "integrations": [
+                    {"id": "mcp-old", "service": "mcp", "status": "inactive", "instances": []}
+                ],
+            }
+        )
+    )
+
+    # Act
+    outcome = apply_setup(
+        MCP_SERVERS_SETUP, {"name": "ops", "command": sys.executable, "args": _OPS_SERVER}
+    )
+    tools = {tool.name for tool in mcp_server_tools(resolve_integrations())}
+
+    # Assert
+    assert outcome.ok, outcome.detail
+    assert tools == {"mcp__ops__query_range", "mcp__ops__silence_alert"}
+
+
 @pytest.mark.parametrize(
     ("raw", "mode"),
     [

@@ -435,7 +435,7 @@ def apply_setup(
     if spec.instance_field:
         instance = str(credentials.pop(spec.instance_field, None) or "")
         saved = {**kept, **credentials}
-        upsert_instance(spec.service, {"name": instance, "credentials": saved})
+        upsert_instance(spec.service, {"name": instance, "credentials": saved}, activate=True)
     else:
         upsert_integration(spec.service, {"credentials": credentials})
         # Mirror the change up so a silo's edit reaches the org vault. No-op off a

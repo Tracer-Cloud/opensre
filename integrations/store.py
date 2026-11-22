@@ -439,12 +439,15 @@ def upsert_instance(
     instance: dict[str, Any],
     *,
     record_id: str | None = None,
+    activate: bool = False,
 ) -> None:
     """Add or update an instance by name within a specific record.
 
     If ``record_id`` matches an existing record for ``service``, the instance
     is appended or updated by name within that record. Otherwise, a new
-    record is created containing only this instance.
+    record is created containing only this instance. With ``activate``, an
+    existing record is also set ``active``, as a fresh setup expects; inactive
+    records are skipped at runtime.
     """
 
     def _mutate(data: dict[str, Any]) -> bool:
@@ -489,6 +492,8 @@ def upsert_instance(
             if not replaced:
                 existing_instances.append(normalized_instance)
             target["instances"] = existing_instances
+            if activate:
+                target["status"] = "active"
 
         data["integrations"] = integrations
         return True
