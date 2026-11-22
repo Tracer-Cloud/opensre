@@ -443,3 +443,31 @@ class TestSecretsNeverReachTheModel:
         assert result["data"]["Code"]["Location"] == "<redacted>"
         assert result["data"]["Code"]["RepositoryType"] == "S3"
         assert result["data"]["Configuration"]["Runtime"] == "python3.13"
+
+    def test_presigned_urls_are_redacted_wherever_they_appear(self, mock_boto3_client) -> None:
+        # Translate get_terminology embeds one under a field not named like a URL.
+        url = (
+            "https://s3.amazonaws.com/b/terms.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            "&X-Amz-Credential=AKIA%2F20261122&X-Amz-Signature=abc"
+        )
+        mock_boto3_client.get_terminology.return_value = {
+            "TerminologyProperties": {"Name": "glossary"},
+            "TerminologyDataLocation": {"RepositoryType": "S3", "Location": url},
+            "Docs": "https://docs.aws.amazon.com/translate/",
+        }
+
+        result = execute_aws_sdk_call("translate", "get_terminology", parameters={"Name": "g"})
+
+        data = result["data"]
+        assert data["TerminologyDataLocation"]["Location"] == "<redacted>"
+        assert data["TerminologyProperties"]["Name"] == "glossary"
+        assert data["Docs"] == "https://docs.aws.amazon.com/translate/"
+
+    def test_ivs_stream_keys_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.get_stream_key.return_value = {
+            "streamKey": {"arn": "arn:aws:ivs:k", "value": "sk_us-west-2_secret"}
+        }
+
+        result = execute_aws_sdk_call("ivs", "get_stream_key", parameters={"arn": "arn:aws:ivs:k"})
+
+        assert "sk_us-west-2_secret" not in str(result["data"])

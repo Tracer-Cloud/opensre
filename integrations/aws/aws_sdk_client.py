@@ -106,7 +106,12 @@ REDACTED_RESPONSE_KEY_PARTS = (
     "sessiontoken",
     "authtoken",
     "authorizationtoken",
+    "streamkey",  # IVS stream keys let anyone holding them broadcast
 )
+
+# Query parameters that mark a string as a presigned AWS URL, wherever it
+# appears in a response (Lambda ``Code.Location``, Translate terminology, ...).
+_PRESIGNED_URL_MARKERS = ("x-amz-signature=", "x-amz-credential=", "awsaccesskeyid=")
 REDACTED = "<redacted>"
 
 # Response size limits
@@ -155,6 +160,11 @@ def _redact_presigned_fields(service: str, operation: str, data: Any) -> Any:
     return data
 
 
+def _is_presigned_url(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith("http") and any(m in lowered for m in _PRESIGNED_URL_MARKERS)
+
+
 def _is_secret_field(key: str) -> bool:
     name = key.lower()
     return any(part in name for part in REDACTED_RESPONSE_KEY_PARTS)
@@ -168,7 +178,8 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
     - Truncates large collections
     - Handles binary data
     - Prevents excessive nesting
-    - Replaces secret-bearing fields (``REDACTED_RESPONSE_KEY_PARTS``) with a placeholder
+    - Replaces secret-bearing fields (``REDACTED_RESPONSE_KEY_PARTS``) and any
+      presigned AWS URL value with a placeholder
 
     Args:
         data: Response data to sanitize
@@ -215,6 +226,9 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
             truncated.append(f"... ({len(data) - MAX_LIST_ITEMS} more items truncated)")
             return truncated
         return [_sanitize_response(item, depth + 1, max_depth) for item in data]
+
+    if isinstance(data, str) and _is_presigned_url(data):
+        return REDACTED
 
     # Handle primitive types
     return data
