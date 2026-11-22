@@ -23,20 +23,53 @@ What a tool may do depends on the server's `readOnlyHint` annotation:
 
 Each server is one instance of the `mcp` integration. The instance name becomes the `<server>` part of the tool names, so give every server a short, distinct name using letters, digits, `-` and single `_`. If two servers share a name, only the first is used. A server or tool name with other characters still works, but its tool name gets a short hash suffix, e.g. `mcp__my_server__read_1a2b3c4d`; use the name shown in the tool list for `--allowed-tool`.
 
+### Interactive setup (recommended)
+
+Run this once per server:
+
+```bash
+opensre integrations setup mcp
+```
+
+In the interactive shell, `/mcp connect` does the same.
+
+Re-running setup with an existing server name updates that server, and its saved answers are the defaults. Settings the prompts don't cover are kept: `timeout_seconds` always, and `headers` and an `sse` mode while the server still has a URL. A new bearer token replaces a saved `Authorization` header. Switching the server to a local command drops its headers.
+
+You choose how OpenSRE reaches the server, then answer:
+
+| Prompt | Required | Default | Notes |
+| --- | --- | --- | --- |
+| Server name | Yes | — | 1–32 lowercase letters, digits, `-` or `_`; prefixes the tool names |
+| Server URL | For a remote server | — | `http://` or `https://` endpoint |
+| Bearer token | No | — | Sent as `Authorization: Bearer …` |
+| Command | For a local server | — | Executable that starts the server, e.g. `uvx` |
+| Arguments | No | — | Space separated, e.g. `mcp-grafana`. Quote an argument that contains spaces: `"/path/with spaces/server.py"` |
+| Read-only | No | `no` | `yes` exposes only the tools the server marks read-only |
+| Allowed tools | No | all tools | Comma-separated server tool names |
+
+OpenSRE connects and lists the server's tools before saving. If it can't connect, or the server exposes no tools under your answers, nothing is saved. Run setup again with the same name to change a server; your other servers are kept.
+
+Check servers later with `opensre integrations verify mcp`. It checks the first configured server; each server is also checked when you set it up.
+
+<Note>
+`opensre integrations remove mcp` (or `/mcp disconnect mcp`) removes **every** configured MCP server. To remove a single server, delete its entry from `instances` in `~/.opensre/integrations.json`.
+</Note>
+
 ### Server fields
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `mode` | No | `streamable-http` | `streamable-http`, `sse`, or `stdio` |
+| `mode` | No | `stdio` when only `command` is set, else `streamable-http` | `streamable-http`, `sse`, or `stdio` |
 | `url` | For `streamable-http` and `sse` | — | Server endpoint, e.g. `http://localhost:8000/mcp` |
 | `command` | For `stdio` | — | Executable that starts the server |
 | `args` | No | `[]` | Arguments for `command` |
-| `headers` | No | `{}` | HTTP headers sent on every request, e.g. `Authorization` |
+| `auth_token` | No | — | Sent as `Authorization: Bearer …` unless `headers` sets `Authorization` |
+| `headers` | No | `{}` | HTTP headers sent on every request |
 | `allowed_tools` | No | all tools | Only expose these server tool names: a list, or a comma- or space-separated string. Any other value makes the server's config invalid, so the server is skipped |
 | `read_only` | No | `false` | Expose only the tools the server marks read-only |
 | `timeout_seconds` | No | `20` | Per-request timeout |
 
-### Option 1: local store
+### Manual: local store
 
 Add each server to `~/.opensre/integrations.json` as an instance of an `mcp` record:
 
@@ -67,7 +100,7 @@ Add each server to `~/.opensre/integrations.json` as an instance of an `mcp` rec
 
 Keep any other records already in the file; add the `mcp` record beside them.
 
-### Option 2: environment variable
+### Manual: environment variable
 
 Set `MCP_INSTANCES` to a JSON array, one object per server:
 
@@ -80,7 +113,7 @@ export MCP_INSTANCES='[
 ```
 
 <Warning>
-Environment integrations are read only when the local store has no integrations. If you already configured any integration with `opensre integrations setup`, add MCP servers to the store (Option 1) instead.
+Environment integrations are read only when the local store has no integrations. If you already configured any integration with `opensre integrations setup`, add MCP servers with `opensre integrations setup mcp` instead.
 </Warning>
 
 ## How tools are discovered
@@ -100,6 +133,8 @@ Environment integrations are read only when the local store has no integrations.
 | Symptom | Fix |
 | --- | --- |
 | **No `mcp__…` tools appear** | Check the store or `MCP_INSTANCES` JSON is valid and the record `status` is `active`. If you use `MCP_INSTANCES`, make sure the local store is empty, or move the servers into the store. |
+| **Setup says `Could not list tools`** | OpenSRE couldn't start or reach the server. For a local server, check the command runs on its own in a terminal; for a remote one, check the URL and token. Nothing was saved. |
+| **Setup says the server exposes no tools** | Your `Read-only` or `Allowed tools` answers filtered out every tool. Run setup again with fewer restrictions. |
 | **A server's tools disappear for a minute** | The server failed or timed out while listing tools. Check the URL or command, then retry after a minute. |
 | **A write tool is missing** | `read_only: true` hides every tool the server doesn't mark read-only, and `allowed_tools` hides any tool not listed. |
 | **`opensre ask` blocks a tool** | The server doesn't mark it read-only. Pass `--allowed-tool mcp__<server>__<tool>`, or ask the server's maintainer to set `readOnlyHint` on read tools. |

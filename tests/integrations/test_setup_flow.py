@@ -374,3 +374,48 @@ def test_finalize_note_is_omitted_when_empty(recorder: _Recorder) -> None:
     outcome = setup_flow.apply_setup(spec, {"api_token": "tok-1", "room": "ops"})
 
     assert outcome.detail == "Demo connected."
+
+
+def test_instance_setup_keeps_other_instances_and_skips_env_and_vault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: a real store; env, keyring and vault writes are recorded.
+    monkeypatch.setattr("integrations.store.STORE_PATH", tmp_path / "integrations.json")
+    env_writes: list[dict[str, str]] = []
+    keyring: list[tuple[str, str]] = []
+    pushed: list[str] = []
+    monkeypatch.setattr(
+        setup_flow, "sync_env_values", lambda values, **_: env_writes.append(values) or _ENV_PATH
+    )
+    monkeypatch.setattr(
+        setup_flow, "sync_env_secret", lambda key, value: keyring.append((key, value))
+    )
+    monkeypatch.setattr(
+        setup_flow, "push_webapp_org_integration", lambda service, _c: pushed.append(service)
+    )
+    spec = setup_flow.IntegrationSetupSpec(
+        service="demo_servers",
+        instance_field="name",
+        fields=(
+            setup_flow.SetupField(name="name", label="Name"),
+            setup_flow.SetupField(name="url", label="URL"),
+        ),
+        verify=_passing,
+    )
+
+    # Act
+    first = setup_flow.apply_setup(spec, {"name": "alpha", "url": "http://a"})
+    second = setup_flow.apply_setup(spec, {"name": "beta", "url": "http://b"})
+    updated = setup_flow.apply_setup(spec, {"name": "alpha", "url": "http://a2"})
+
+    # Assert
+    from integrations.store import get_integration
+
+    record = get_integration("demo_servers") or {}
+    assert first.ok and second.ok and updated.ok
+    assert [(i["name"], i["credentials"]) for i in record["instances"]] == [
+        ("alpha", {"url": "http://a2"}),
+        ("beta", {"url": "http://b"}),
+    ]
+    assert keyring == [] and all(values == {} for values in env_writes)
+    assert pushed == []

@@ -252,7 +252,10 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         # User-configured MCP servers, one instance per server (MCP_INSTANCES).
         service="mcp",
         aliases=("mcp server", "mcp servers"),
+        has_verifier=True,
         direct_effective=True,
+        setup_order=61,
+        verify_order=61,
     ),
     IntegrationSpec(
         service="sentry_mcp",

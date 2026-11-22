@@ -298,7 +298,7 @@ def _run_spec_setup(
     through the rest of the prompts.
     """
     from integrations.setup_flow import apply_setup
-    from integrations.store import get_integration
+    from integrations.store import get_instance, get_integration
 
     if spec.guide is not None:
         from integrations.setup import run_guided_setup
@@ -328,6 +328,9 @@ def _run_spec_setup(
             mode = on_mode_chosen(mode)
 
     collectable = {field.name for field in spec.collectable_fields(mode)}
+    if spec.instance_field:
+        # Prefill comes from the named instance, known once its name is answered.
+        stored = {}
 
     values: dict[str, str | None] = {}
     for field in spec.fields:
@@ -339,13 +342,9 @@ def _run_spec_setup(
             # switching modes turns the other mode's credentials off.
             values[field.name] = ""
             continue
-        stored_value = stored.get(field.name)
-        # A list field (Kubernetes ``allowed_namespaces``, Better Stack
-        # ``sources``) may be stored as a sequence; prefill it comma-joined so
-        # pressing enter keeps it instead of saving its repr.
-        if isinstance(stored_value, (list, tuple)):
-            stored_value = ",".join(str(item) for item in stored_value)
-        default = str(stored_value or "") or field.default
+        # A list field (Kubernetes ``allowed_namespaces``, MCP ``args``) may be
+        # stored as a sequence; the field formats it so pressing enter keeps it.
+        default = field.stored_default(stored.get(field.name)) or field.default
         # A field with a default is never missing — apply_setup substitutes it —
         # so only a defaultless required field can be blank here. Ask again
         # rather than exit: an empty answer at an interactive prompt is not a
@@ -361,6 +360,9 @@ def _run_spec_setup(
                 continue
             break
         values[field.name] = value
+        if field.name == spec.instance_field:
+            instance = get_instance(spec.service, name=value) or {}
+            stored = dict(instance.get("credentials") or {})
 
     print(f"\n  Validating {spec.service} credentials...")
     outcome = apply_setup(spec, values)
@@ -423,6 +425,12 @@ def _setup_sentry_mcp() -> None:
     from integrations.sentry_mcp.setup import SENTRY_MCP_SETUP
 
     _run_spec_setup(SENTRY_MCP_SETUP)
+
+
+def _setup_mcp_server() -> None:
+    from integrations.mcp_servers.setup import MCP_SERVERS_SETUP
+
+    _run_spec_setup(MCP_SERVERS_SETUP)
 
 
 def _setup_postgresql() -> None:
@@ -531,6 +539,7 @@ _HANDLERS: dict[str, Any] = {
     "twilio": _setup_twilio,
     "posthog_mcp": _setup_posthog_mcp,
     "sentry_mcp": _setup_sentry_mcp,
+    "mcp": _setup_mcp_server,
     "postgresql": _setup_postgresql,
     "mysql": _setup_mysql,
     "redis": _setup_redis,
