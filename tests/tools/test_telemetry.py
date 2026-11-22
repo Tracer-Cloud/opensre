@@ -281,7 +281,7 @@ def _openobserve_case() -> ToolFailureCase:
 
 def _snowflake_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
-        from integrations.snowflake.tools import snowflake_query_history_tool as mod
+        from integrations.snowflake.tools.snowflake_query_history_tool import tool as mod
 
         mp.setattr(mod, "httpx", SimpleNamespace(post=MagicMock(side_effect=RuntimeError("net"))))
 

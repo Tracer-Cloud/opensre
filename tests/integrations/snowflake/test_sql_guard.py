@@ -24,7 +24,7 @@ def _run(query: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], l
         return _Response()
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", post
     )
     result = query_snowflake_history(account_identifier="acct", query=query, token="tok")
     return result, sent

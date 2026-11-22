@@ -148,7 +148,7 @@ def test_default_query_used_when_query_blank(monkeypatch: pytest.MonkeyPatch) ->
         return MockHttpxResponse({"data": []})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(
@@ -175,7 +175,7 @@ def test_user_query_gets_limit_appended_if_missing(monkeypatch: pytest.MonkeyPat
         return MockHttpxResponse({"data": []})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     query_snowflake_history(
@@ -200,7 +200,7 @@ def test_user_query_with_existing_limit_is_left_untouched(
         return MockHttpxResponse({"data": []})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     query_snowflake_history(
@@ -226,7 +226,7 @@ def test_optional_session_params_only_included_when_set(
         return MockHttpxResponse({"data": []})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     query_snowflake_history(
@@ -257,7 +257,7 @@ def test_optional_session_params_omitted_when_blank(
         return MockHttpxResponse({"data": []})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     query_snowflake_history(
@@ -278,7 +278,7 @@ def test_bounded_limit_caps_caller_request(monkeypatch: pytest.MonkeyPatch) -> N
         return MockHttpxResponse({"data": [{"id": idx} for idx in range(20)]})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(
@@ -313,7 +313,7 @@ def test_normalizes_dict_rows_passthrough(monkeypatch: pytest.MonkeyPatch) -> No
         )
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(
@@ -349,7 +349,7 @@ def test_normalizes_tabular_rows_using_result_set_metadata(
         )
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(
@@ -372,7 +372,7 @@ def test_normalizes_to_empty_when_payload_unrecognized(
         return MockHttpxResponse({"unexpected": "shape"})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(
@@ -398,7 +398,7 @@ def test_returns_unavailable_on_http_error_status(monkeypatch: pytest.MonkeyPatc
         )
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(
@@ -416,7 +416,7 @@ def test_returns_unavailable_on_request_exception(monkeypatch: pytest.MonkeyPatc
         raise ConnectionError("connection refused")
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _raise
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _raise
     )
 
     result = query_snowflake_history(
