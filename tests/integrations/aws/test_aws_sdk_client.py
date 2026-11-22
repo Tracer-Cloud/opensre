@@ -349,6 +349,7 @@ class TestSecretsNeverReachTheModel:
             ("quicksight", "get_dashboard_embed_url", {"AwsAccountId": "1", "DashboardId": "d"}),
             ("quicksight", "get_session_embed_url", {"AwsAccountId": "1"}),
             ("amplify", "get_artifact_url", {"artifactId": "a"}),
+            ("location", "describe_key", {"KeyName": "prod"}),
             ("kinesis-video-archived-media", "get_hls_streaming_session_url", {}),
             ("ecr", "get_download_url_for_layer", {"repositoryName": "r", "layerDigest": "d"}),
         ],

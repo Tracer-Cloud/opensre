@@ -70,6 +70,7 @@ SECRET_SERVICE_OPERATIONS = frozenset(
         ("appsync", "list_api_keys"),
         ("apigateway", "get_usage_plan_key"),  # key in ``value``
         ("apigateway", "get_usage_plan_keys"),  # keys in ``items[].value``
+        ("location", "describe_key"),  # API key value in ``Key``
     }
 )
 
