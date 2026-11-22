@@ -1,0 +1,105 @@
+---
+title: "MCP servers"
+description: "Connect any Model Context Protocol server and let OpenSRE call its tools during investigations"
+---
+
+## Overview
+
+Connect any [Model Context Protocol](https://modelcontextprotocol.io) server, such as Grafana's, AWS's, or one your team runs, and OpenSRE can call its tools during an investigation. Each server tool becomes its own agent tool, named `mcp__<server>__<tool>`, with the server's own description and argument schema. The agent calls it directly with typed arguments, with no listing step first.
+
+What a tool may do depends on the server's `readOnlyHint` annotation:
+
+| Server marks the tool | OpenSRE treats it as | `opensre ask` | Scheduled loops | Interactive shell |
+| --- | --- | --- | --- | --- |
+| Read-only | `read_only` | Runs | Runs | Runs |
+| Anything else | `external` | Needs `--allowed-tool` | Not available | Asks first when `/auto` is below `high` |
+
+## Prerequisites
+
+- An MCP server reachable from where OpenSRE runs: a URL for HTTP servers (`streamable-http` or `sse`), or a command for local `stdio` servers.
+- Any credentials the server needs: an HTTP header for remote servers, or the command's own environment for `stdio` servers.
+
+## Setup
+
+Each server is one instance of the `mcp` integration. The instance name becomes the `<server>` part of the tool names, so give every server a short, distinct name using letters, digits, `-` and single `_`. If two servers share a name, only the first is used. A server or tool name with other characters still works, but its tool name gets a short hash suffix, e.g. `mcp__my_server__read_1a2b3c4d`; use the name shown in the tool list for `--allowed-tool`.
+
+### Server fields
+
+| Field | Required | Default | Description |
+| --- | --- | --- | --- |
+| `mode` | No | `streamable-http` | `streamable-http`, `sse`, or `stdio` |
+| `url` | For `streamable-http` and `sse` | — | Server endpoint, e.g. `http://localhost:8000/mcp` |
+| `command` | For `stdio` | — | Executable that starts the server |
+| `args` | No | `[]` | Arguments for `command` |
+| `headers` | No | `{}` | HTTP headers sent on every request, e.g. `Authorization` |
+| `allowed_tools` | No | all tools | Only expose these server tool names: a list, or a comma- or space-separated string. Any other value makes the server's config invalid, so the server is skipped |
+| `read_only` | No | `false` | Expose only the tools the server marks read-only |
+| `timeout_seconds` | No | `20` | Per-request timeout |
+
+### Option 1: local store
+
+Add each server to `~/.opensre/integrations.json` as an instance of an `mcp` record:
+
+```json
+{
+  "version": 2,
+  "integrations": [
+    {
+      "id": "mcp-servers",
+      "service": "mcp",
+      "status": "active",
+      "instances": [
+        {
+          "name": "grafana",
+          "tags": {},
+          "credentials": {
+            "mode": "streamable-http",
+            "url": "http://localhost:8000/mcp",
+            "headers": { "Authorization": "Bearer glsa_your-service-account-token" },
+            "read_only": true
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Keep any other records already in the file; add the `mcp` record beside them.
+
+### Option 2: environment variable
+
+Set `MCP_INSTANCES` to a JSON array, one object per server:
+
+```bash
+export MCP_INSTANCES='[
+  {"name": "grafana", "mode": "streamable-http", "url": "http://localhost:8000/mcp",
+   "headers": {"Authorization": "Bearer glsa_your-service-account-token"}, "read_only": true},
+  {"name": "ops", "mode": "stdio", "command": "uvx", "args": ["my-ops-mcp-server"]}
+]'
+```
+
+<Warning>
+Environment integrations are read only when the local store has no integrations. If you already configured any integration with `opensre integrations setup`, add MCP servers to the store (Option 1) instead.
+</Warning>
+
+## How tools are discovered
+
+- OpenSRE lists each server's tools when it builds a turn's tool list, then reuses that list for 5 minutes.
+- A server that fails or doesn't answer within 10 seconds contributes no tools, and isn't retried for 1 minute. The rest of the turn carries on.
+- Large servers don't flood the prompt: tools beyond the initial catalog are found through tool search when the agent needs them.
+
+## Security
+
+- `readOnlyHint` is declared by the server itself. Only connect servers you trust. For a server you don't fully trust, set `read_only: true` so only its read-only tools are exposed, and use `allowed_tools` to narrow it further.
+- Credentials stay in the server config (`headers`, or the `stdio` command's environment). They are never shown to the model or passed as tool arguments.
+- Store tokens in `~/.opensre/integrations.json` or your secret manager, not in source control.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **No `mcp__…` tools appear** | Check the store or `MCP_INSTANCES` JSON is valid and the record `status` is `active`. If you use `MCP_INSTANCES`, make sure the local store is empty, or move the servers into the store. |
+| **A server's tools disappear for a minute** | The server failed or timed out while listing tools. Check the URL or command, then retry after a minute. |
+| **A write tool is missing** | `read_only: true` hides every tool the server doesn't mark read-only, and `allowed_tools` hides any tool not listed. |
+| **`opensre ask` blocks a tool** | The server doesn't mark it read-only. Pass `--allowed-tool mcp__<server>__<tool>`, or ask the server's maintainer to set `readOnlyHint` on read tools. |

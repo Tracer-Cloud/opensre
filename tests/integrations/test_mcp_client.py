@@ -37,10 +37,14 @@ class _Config:
 @dataclass(frozen=True)
 class _ListToolsResult:
     tools: list[types.Tool]
+    next_cursor: str | None = None
 
 
 class _Session:
-    async def list_tools(self) -> _ListToolsResult:
+    async def list_tools(
+        self, *, params: types.PaginatedRequestParams | None = None
+    ) -> _ListToolsResult:
+        assert params is None
         return _ListToolsResult(tools=[types.Tool(name="status", input_schema={})])
 
     async def call_tool(self, name: str, arguments: dict[str, object]) -> types.CallToolResult:

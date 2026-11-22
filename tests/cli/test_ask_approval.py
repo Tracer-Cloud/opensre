@@ -9,6 +9,7 @@ from surfaces.cli.ask.approval import (
     ApprovalTracker,
     approval_required,
     build_approval_hooks,
+    unknown_allowed_tools,
 )
 
 
@@ -114,3 +115,7 @@ def test_explicit_authority_approves_tool(
     assert decision.approved is True
     assert decision.blocked is False
     assert tracker.denied_tools == ()
+
+
+def test_allowlist_accepts_bridged_mcp_tools_but_still_flags_typos() -> None:
+    assert unknown_allowed_tools(["mcp__ops__silence_alert", "no_such_tool"]) == ("no_such_tool",)

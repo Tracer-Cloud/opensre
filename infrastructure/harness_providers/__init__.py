@@ -131,7 +131,9 @@ from infrastructure.harness_providers.subprocess_presenter import (
     reset as _reset_subprocess_presenter,
 )
 from infrastructure.harness_providers.tool_registry import (
+    DynamicToolSource,
     ToolSources,
+    resolve_dynamic_tools,
     resolve_skill_tools,
     resolve_surface_tool_map,
     resolve_surface_tools,
@@ -261,6 +263,8 @@ __all__ = [
     "resolve_subprocess_presenter",
     "resolve_surface_tool_map",
     "resolve_surface_tools",
+    "DynamicToolSource",
+    "resolve_dynamic_tools",
     "resolve_skill_tools",
     "setupable_integration_services",
     "skill_prerequisite_met",
