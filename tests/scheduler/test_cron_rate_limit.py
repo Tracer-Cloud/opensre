@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from config.constants.ci_repair import CI_REPAIR_CRON, CI_REPAIR_REPORT_BUILDER
-from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
+from infrastructure.scheduling.scheduler.cron_expression import (
+    build_cron_trigger,
+    cap_cron_at_most_hourly,
+)
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM, LOOP_REPORT_PARAM
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
 from infrastructure.scheduling.scheduler.runner import _register_jobs
@@ -40,6 +44,48 @@ def test_schedules_faster_than_hourly_collapse_to_one_minute(cron: str, expected
 )
 def test_hourly_or_slower_schedules_stay(cron: str) -> None:
     assert cap_cron_at_most_hourly(f"  {cron}  ", "UTC") == cron
+
+
+@pytest.mark.parametrize(
+    "cron",
+    [
+        # A stepped range starts at its first value, not at its step.
+        "10-50/5 * * * *",
+        "20-40/10 * * * *",
+        "45-59/5 * * * *",
+        "5-55/10 * * * *",
+        "1-59/7 * * * *",
+    ],
+)
+def test_the_hourly_cap_only_ever_keeps_a_time_the_loop_already_had(cron: str) -> None:
+    """Capping thins a loop's fires; it must never move one to a minute it never ran at."""
+    # Arrange: every time the loop was asked for, and every time the cap would fire.
+    start = datetime(2026, 11, 2, tzinfo=UTC)
+    requested = _fire_times(cron, start)
+    capped = cap_cron_at_most_hourly(cron, "UTC")
+    capped_times = _fire_times(capped, start)
+
+    # Act
+    invented = capped_times - requested
+
+    # Assert: the cap keeps a subset of the requested times, and does fire.
+    assert capped_times
+    assert invented == set(), (
+        f"capping {cron!r} to {capped!r} fires at times the loop never ran at: "
+        f"{sorted(invented)[:3]}"
+    )
+
+
+def _fire_times(cron: str, start: datetime) -> set[datetime]:
+    """Every fire time ``cron`` has in the day after ``start``."""
+    trigger = build_cron_trigger(cron, "UTC")
+    end = start + timedelta(days=1)
+    times: set[datetime] = set()
+    fire = trigger.get_next_fire_time(None, start)
+    while fire is not None and fire < end:
+        times.add(fire)
+        fire = trigger.get_next_fire_time(fire, fire)
+    return times
 
 
 def test_create_manual_loop_stores_at_most_one_run_per_hour(tmp_path: Path) -> None:

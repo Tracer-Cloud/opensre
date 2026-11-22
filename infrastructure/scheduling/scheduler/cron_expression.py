@@ -150,10 +150,24 @@ def _fires_more_than_hourly(cron: str, timezone: str | None) -> bool:
     return False
 
 
-def _earliest_field_value(field: str, maximum: int) -> str:
-    numbers = [int(match) for match in re.findall(r"\d+", field)]
-    allowed = [number for number in numbers if number <= maximum]
-    return str(min(allowed)) if allowed else "0"
+def _earliest_field_value(field: str) -> str:
+    """The earliest value the field selects, read from where each item starts.
+
+    ``build_cron_trigger`` has already validated the field, so every item is a
+    crontab item and starts selecting at its own point: ``*`` at 0, ``*/15`` at
+    its step, a range at its first value (``10-50/5`` selects 10-50 and never
+    5), and a bare value at itself. Taking the smallest number written instead
+    would read a range's end as its start and move the loop to a minute it
+    never fires at.
+    """
+    starts: list[int] = []
+    for item in field.split(","):
+        base, _, step = item.partition("/")
+        if base == "*":
+            starts.append(int(step) if step else 0)
+        else:
+            starts.append(int(base.split("-", 1)[0]))
+    return str(min(starts))
 
 
 def cap_cron_at_most_hourly(cron: str, timezone: str | None = None) -> str:
@@ -171,10 +185,10 @@ def cap_cron_at_most_hourly(cron: str, timezone: str | None = None) -> str:
     parts = normalized.split()
     if len(parts) == CRON_FIELD_COUNT_WITH_SECONDS:
         parts = parts[1:]
-    parts[0] = _earliest_field_value(parts[0], 59)
+    parts[0] = _earliest_field_value(parts[0])
     capped = " ".join(parts)
     if _fires_more_than_hourly(capped, timezone):
-        parts[1] = _earliest_field_value(parts[1], 23)
+        parts[1] = _earliest_field_value(parts[1])
         capped = " ".join(parts)
     return capped
 
