@@ -346,6 +346,8 @@ class TestSecretsNeverReachTheModel:
             ("appsync", "list_api_keys", {"apiId": "a1"}),
             ("apigateway", "get_usage_plan_key", {"usagePlanId": "p", "keyId": "k"}),
             ("apigateway", "get_usage_plan_keys", {"usagePlanId": "p"}),
+            ("quicksight", "get_dashboard_embed_url", {"AwsAccountId": "1", "DashboardId": "d"}),
+            ("quicksight", "get_session_embed_url", {"AwsAccountId": "1"}),
         ],
     )
     def test_secret_returning_calls_are_refused_before_any_client(

@@ -50,6 +50,8 @@ SECRET_OPERATION_PATTERNS = [
     r".*token.*",
     r".*password.*",
     r".*decrypt.*",
+    r".*embed_url.*",  # QuickSight embed URLs carry a bearer authorization code
+    r".*presigned.*",  # presigned URLs grant access to whoever holds them
 ]
 
 # (service, operation) pairs whose ordinary output is a secret, where redacting
