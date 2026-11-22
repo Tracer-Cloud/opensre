@@ -52,6 +52,99 @@ def _configured_service_choices() -> list[tuple[str, str]]:
     return [(name, name) for name in repl_data.configured_integration_names()]
 
 
+def _confirm_remove(session: Session, console: Console, *, label: str, breadcrumb: str) -> bool:
+    """Ask before removing *label*; a cancel or interrupt removes nothing."""
+    if repl_tty_interactive():
+        confirmed = repl_choose_one(
+            title=f"remove '{escape(label)}'?",
+            breadcrumb=breadcrumb,
+            choices=[
+                ("no", "No, cancel"),
+                ("yes", f"Yes, remove '{label}'"),
+            ],
+        )
+        prepare_repl_output_line()
+        if confirmed != "yes":
+            repl_print(console, f"[{DIM}]cancelled.[/]")
+            session.refresh_integration_state()
+            return False
+        return True
+
+    import sys
+
+    try:
+        import questionary
+
+        confirmed_bool = questionary.confirm(f"  Remove '{label}'?", default=False).ask()
+    except (EOFError, KeyboardInterrupt):
+        session.refresh_integration_state()
+        return False
+    if not confirmed_bool:
+        print("  Cancelled.", file=sys.stderr)
+        session.refresh_integration_state()
+        return False
+    return True
+
+
+def _handle_remove_mcp_server(session: Session, console: Console, name: str | None) -> bool:
+    """Remove one configured MCP server, keeping the others."""
+    from config.constants.mcp import MCP_SERVERS_SERVICE
+    from infrastructure.analytics.capture import capture_integration_removed
+    from integrations.store import remove_instance
+
+    names = repl_data.mcp_server_names()
+    server = (name or "").strip().lower()
+    if not server:
+        if not repl_tty_interactive():
+            repl_print(console, f"[{DIM}]usage:[/] /mcp remove <server>")
+            session.mark_latest(ok=False, kind="slash")
+            return True
+        if not names:
+            repl_print(console, f"[{DIM}]no MCP servers configured.[/]")
+            return True
+        server = (
+            repl_choose_one(
+                title="select MCP server to remove",
+                breadcrumb=f"/mcp{CRUMB_SEP}remove",
+                choices=[(server_name, server_name) for server_name in names],
+            )
+            or ""
+        )
+        if not server:
+            return True
+
+    if server not in names:
+        known = ", ".join(names) if names else "none"
+        repl_print(
+            console,
+            f"[{ERROR}]no MCP server named:[/] {escape(server)}  [{DIM}](configured: "
+            f"{escape(known)})[/]",
+        )
+        session.mark_latest(ok=False, kind="slash")
+        return True
+
+    if not _confirm_remove(
+        session,
+        console,
+        label=f"MCP server {server}",
+        breadcrumb=f"/mcp{CRUMB_SEP}remove{CRUMB_SEP}{escape(server)}",
+    ):
+        return True
+
+    if remove_instance(MCP_SERVERS_SERVICE, server):
+        repl_print(console, f"[{HIGHLIGHT}]removed MCP server '{escape(server)}'.[/]")
+        capture_integration_removed(MCP_SERVERS_SERVICE)
+    else:
+        repl_print(
+            console,
+            f"[{ERROR}]MCP server '{escape(server)}' is not in the local store.[/]  "
+            f"[{DIM}]A server from MCP_INSTANCES is removed by editing that variable.[/]",
+        )
+        session.mark_latest(ok=False, kind="slash")
+    session.refresh_integration_state()
+    return True
+
+
 def _handle_remove(session: Session, console: Console, service: str | None) -> bool:
     """Remove an integration with a native inline-picker confirmation (no subprocess)."""
     from infrastructure.analytics.capture import capture_integration_removed
@@ -77,34 +170,13 @@ def _handle_remove(session: Session, console: Console, service: str | None) -> b
         if not svc:
             return True
 
-    if repl_tty_interactive():
-        confirmed = repl_choose_one(
-            title=f"remove '{escape(svc)}'?",
-            breadcrumb=f"{_ROOT_INTEGRATIONS}{CRUMB_SEP}remove{CRUMB_SEP}{escape(svc)}",
-            choices=[
-                ("no", "No, cancel"),
-                ("yes", f"Yes, remove '{svc}'"),
-            ],
-        )
-        prepare_repl_output_line()
-        if confirmed != "yes":
-            repl_print(console, f"[{DIM}]cancelled.[/]")
-            session.refresh_integration_state()
-            return True
-    else:
-        import sys
-
-        try:
-            import questionary
-
-            confirmed_bool = questionary.confirm(f"  Remove '{svc}'?", default=False).ask()
-        except (EOFError, KeyboardInterrupt):
-            session.refresh_integration_state()
-            return True
-        if not confirmed_bool:
-            print("  Cancelled.", file=sys.stderr)
-            session.refresh_integration_state()
-            return True
+    if not _confirm_remove(
+        session,
+        console,
+        label=svc,
+        breadcrumb=f"{_ROOT_INTEGRATIONS}{CRUMB_SEP}remove{CRUMB_SEP}{escape(svc)}",
+    ):
+        return True
 
     if remove_integration(svc):
         delete_webapp_org_integration(svc)
@@ -165,12 +237,11 @@ def _run_verify(session: Session, console: Console, service: str | None = None) 
     label = escape(normalized) if service is not None else "integrations"
     with console.status(f"[{DIM}]Verifying {label}…[/]", spinner="dots"):
         if service is not None:
-            match = repl_data.verify_integration(normalized)
-            if match is None:
+            results = repl_data.verify_service(normalized)
+            if not results:
                 repl_print(console, f"[{ERROR}]service not found:[/] {escape(normalized)}")
                 session.mark_latest(ok=False, kind="slash")
                 return True
-            results = [match]
         else:
             results = repl_data.load_verified_integrations()
 
@@ -374,12 +445,17 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
     if sub == "list":
         if _use_browser(console):
             return _browse_connections(session, console, mcp=True)
-        render_mcp_table(console, repl_data.load_verified_integrations())
+        render_mcp_table(
+            console, repl_data.load_verified_integrations(), repl_data.mcp_server_summaries()
+        )
         return True
 
     if sub == "connect":
         # Bare ``/mcp connect`` adds an MCP server; a named service still works.
         return _run_integrations_setup(session, console, ["setup", *(args[1:] or ["mcp"])])
+
+    if sub == "remove":
+        return _handle_remove_mcp_server(session, console, args[1] if len(args) > 1 else None)
 
     if sub == "disconnect":
         return _handle_remove(session, console, args[1] if len(args) > 1 else None)
@@ -387,7 +463,8 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
     repl_print(
         console,
         f"[{ERROR}]unknown subcommand:[/] {escape(sub)}  "
-        "(try [bold]/mcp list[/bold], [bold]/mcp connect[/bold], or [bold]/mcp disconnect[/bold])",
+        "(try [bold]/mcp list[/bold], [bold]/mcp connect[/bold], [bold]/mcp remove[/bold], "
+        "or [bold]/mcp disconnect[/bold])",
     )
     session.mark_latest(ok=False, kind="slash")
     return True
@@ -404,7 +481,8 @@ _INTEGRATIONS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
 _MCP_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "list connected MCP servers"),
     ("connect", "add an MCP server (opensre integrations setup mcp)"),
-    ("disconnect", "remove an MCP server"),
+    ("remove", "remove one added MCP server by name"),
+    ("disconnect", "remove an MCP integration (github, sentry_mcp, …)"),
 )
 
 COMMANDS: list[SlashCommand] = [
@@ -435,7 +513,7 @@ COMMANDS: list[SlashCommand] = [
         "/mcp",
         "Manage MCP servers.",
         _cmd_mcp,
-        usage=("/mcp list", "/mcp connect", "/mcp disconnect"),
+        usage=("/mcp list", "/mcp connect", "/mcp remove <server>", "/mcp disconnect <service>"),
         notes=("In a TTY, /mcp list browses configured MCP servers without probing them.",),
         first_arg_completions=_MCP_FIRST_ARGS,
     ),

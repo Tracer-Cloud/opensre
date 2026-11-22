@@ -131,6 +131,29 @@ def test_render_health_json(capsys) -> None:
 
 
 @patch("infrastructure.safety.guardrails.rules.get_default_rules_path")
+def test_health_keeps_instance_names_apart(mock_rules_path: MagicMock, capsys) -> None:
+    mock_rules_path.return_value = Path("/nonexistent/rules")
+    results = [
+        {"service": "mcp", "instance": name, "source": "store", "status": "failed", "detail": "x"}
+        for name in ("ops", "grafana", "[/]west")
+    ]
+
+    render_health_json(environment="t", integration_store_path="/tmp", results=results)
+    console = Console(file=StringIO(), force_terminal=False, width=120)
+    render_health_report(
+        console=console, environment="t", integration_store_path="/tmp", results=results
+    )
+
+    assert [r["instance"] for r in json.loads(capsys.readouterr().out)["results"]] == [
+        "ops",
+        "grafana",
+        "[/]west",
+    ]
+    out = console.file.getvalue()
+    assert "mcp/ops" in out and "mcp/grafana" in out and "mcp/[/]west" in out
+
+
+@patch("infrastructure.safety.guardrails.rules.get_default_rules_path")
 def test_render_health_report_folds_long_detail(mock_rules_path: MagicMock) -> None:
     mock_rules_path.return_value = Path("/nonexistent/rules")
     long_detail = (
