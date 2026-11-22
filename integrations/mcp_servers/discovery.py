@@ -57,7 +57,7 @@ def session_options(server: str, config: McpServerConfig) -> McpSessionOptions:
     """Session options for one configured server (no vendor-specific values)."""
     return {
         "session_url": config.url,
-        "stdio_env": {},
+        "stdio_env": dict(config.env),
         "integration_name": f"{MCP_SERVERS_SERVICE} server '{server}'",
         "config_env_name": MCP_SERVERS_INSTANCES_ENV,
     }

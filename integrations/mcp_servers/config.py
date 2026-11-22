@@ -40,6 +40,7 @@ class McpServerConfig(StrictConfigModel):
     command: str = ""
     args: tuple[str, ...] = ()
     headers: dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
     auth_token: str = ""
     allowed_tools: tuple[str, ...] = ()
     read_only: bool = False
@@ -96,7 +97,7 @@ class McpServerConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
-    @field_validator("headers", mode="before")
+    @field_validator("headers", "env", mode="before")
     @classmethod
     def _normalize_headers(cls, value: object) -> dict[str, str]:
         if not isinstance(value, dict):

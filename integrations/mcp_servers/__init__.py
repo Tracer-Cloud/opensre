@@ -1,6 +1,7 @@
 """User-configured MCP servers bridged into first-class agent tools."""
 
 from integrations.mcp_servers.bridge import (
+    McpServerSource,
     bridged_tool_name,
     build_bridged_tool,
     configured_servers,
@@ -11,6 +12,7 @@ from integrations.mcp_servers.discovery import McpServerTool, clear_discovery_ca
 
 __all__ = [
     "McpServerConfig",
+    "McpServerSource",
     "McpServerTool",
     "bridged_tool_name",
     "build_bridged_tool",

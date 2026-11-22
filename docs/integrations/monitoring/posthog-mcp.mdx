@@ -99,6 +99,8 @@ Set it as `POSTHOG_MCP_AUTH_TOKEN` (or paste it during interactive setup). Optio
 
 Typical flow: call `list_posthog_tools` first, then `call_posthog_tool` with the chosen name and arguments.
 
+The same connection also gives the agent each PostHog MCP tool as its own typed tool, named `mcp__posthog__<tool>` (for example `mcp__posthog__execute-sql`), with the server's own description and argument schema. They are found through tool search rather than all shown at once, so the large catalog does not fill the context window. Tools the server marks read-only run like any read; every other one asks for approval the same way `call_posthog_tool` does. Your `read_only`, organization and project settings apply to these tools too. If you also configured a [custom MCP server](/integrations/mcp-servers) named `posthog`, that server keeps the name and these typed tools are not added.
+
 The hosted PostHog MCP server exposes a large vendor catalog of tools (often 240+), each with a full input schema. Returning all of them at once exceeds most model context windows, so `list_posthog_tools` returns a **compact, bounded listing** — names plus short descriptions, without schemas.
 
 | Tip | Detail |
