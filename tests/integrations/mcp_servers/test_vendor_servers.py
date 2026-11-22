@@ -83,3 +83,13 @@ def test_posthog_feature_filter_reaches_the_bridged_server_url() -> None:
 
     assert bridged is not None
     assert bridged[1].url == "https://mcp.posthog.com/mcp?features=analytics"
+
+
+def test_stdio_env_values_are_kept_as_written() -> None:
+    from integrations.mcp_servers import McpServerConfig
+
+    config = McpServerConfig(
+        mode="stdio", command="srv", env={"HTTP_PROXY": "", "GREETING": "  hi  "}
+    )
+
+    assert config.env == {"HTTP_PROXY": "", "GREETING": "  hi  "}

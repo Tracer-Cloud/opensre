@@ -97,12 +97,20 @@ class McpServerConfig(StrictConfigModel):
             token = token.split(None, 1)[1].strip()
         return token
 
-    @field_validator("headers", "env", mode="before")
+    @field_validator("headers", mode="before")
     @classmethod
     def _normalize_headers(cls, value: object) -> dict[str, str]:
         if not isinstance(value, dict):
             return {}
         return {str(k).strip(): str(v).strip() for k, v in value.items() if str(v).strip()}
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _normalize_env(cls, value: object) -> dict[str, str]:
+        """Values are kept as written: an empty value clears an inherited variable."""
+        if not isinstance(value, dict):
+            return {}
+        return {str(k).strip(): str(v) for k, v in value.items() if str(k).strip()}
 
     @model_validator(mode="after")
     def _validate_transport(self) -> McpServerConfig:
