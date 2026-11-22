@@ -341,6 +341,8 @@ class TestSecretsNeverReachTheModel:
             ("ec2", "get_password_data", {"InstanceId": "i-1"}),
             ("ssm", "get_parameter", {"Name": "/prod/db", "WithDecryption": True}),
             ("ssm", "get_parameters_by_path", {"Path": "/prod", "WithDecryption": True}),
+            ("apigateway", "get_api_key", {"apiKey": "k1", "includeValue": True}),
+            ("apigateway", "get_api_keys", {"includeValues": True}),
         ],
     )
     def test_secret_returning_calls_are_refused_before_any_client(
@@ -375,3 +377,21 @@ class TestSecretsNeverReachTheModel:
         assert "abc" not in text and "tok" not in text
         assert "hunter2" not in text and "Zm9v" not in text
         assert "i-1" in text and "'Name': 'n'" in text
+
+    def test_lightsail_camel_case_secrets_are_redacted(self, mock_boto3_client) -> None:
+        # Shape returned by lightsail.get_instance_access_details.
+        mock_boto3_client.get_instance_access_details.return_value = {
+            "accessDetails": {
+                "username": "admin",
+                "privateKey": "-----BEGIN RSA PRIVATE KEY-----abc",
+                "password": "Lightsail#1",
+                "ipAddress": "203.0.113.5",
+            }
+        }
+
+        result = execute_aws_sdk_call("lightsail", "get_instance_access_details")
+
+        details = result["data"]["accessDetails"]
+        assert result["success"] is True
+        assert details["privateKey"] == details["password"] == "<redacted>"
+        assert details["username"] == "admin" and details["ipAddress"] == "203.0.113.5"

@@ -53,20 +53,29 @@ SECRET_OPERATION_PATTERNS = [
 ]
 
 # Parameters that make an otherwise allowed read return decrypted secrets.
-SECRET_PARAMETERS = frozenset({"WithDecryption"})
+SECRET_PARAMETERS = frozenset(
+    {
+        "WithDecryption",  # SSM get_parameter(s)
+        "includeValue",  # API Gateway get_api_key
+        "includeValues",  # API Gateway get_api_keys
+    }
+)
 
 # Response fields whose values are secrets; replaced before reaching the caller.
+# Matched without regard to case: services spell them differently (Lightsail
+# returns ``privateKey`` and ``password``, ECR ``authorizationToken``).
 REDACTED_RESPONSE_KEYS = frozenset(
     {
-        "AuthorizationToken",
-        "Credentials",
-        "Password",
-        "PasswordData",
-        "PrivateKey",
-        "SecretAccessKey",
-        "SecretBinary",
-        "SecretString",
-        "SessionToken",
+        "authorizationtoken",
+        "clientsecret",
+        "credentials",
+        "password",
+        "passworddata",
+        "privatekey",
+        "secretaccesskey",
+        "secretbinary",
+        "secretstring",
+        "sessiontoken",
     }
 )
 REDACTED = "<redacted>"
@@ -144,7 +153,7 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
             # Skip ResponseMetadata (noise)
             if key == "ResponseMetadata":
                 continue
-            if key in REDACTED_RESPONSE_KEYS or key.lower() == "authorizationtoken":
+            if isinstance(key, str) and key.lower() in REDACTED_RESPONSE_KEYS:
                 sanitized[key] = REDACTED
                 continue
             sanitized[key] = _sanitize_response(value, depth + 1, max_depth)

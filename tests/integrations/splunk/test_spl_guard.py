@@ -54,6 +54,8 @@ def test_unsafe_spl_never_reaches_splunk(query: str, monkeypatch: pytest.MonkeyP
     "query",
     [
         "index=main error | head 50",
+        "delete error",
+        "run timeout | stats count by host",
         'index=main message="| delete everything" | stats count by host',
         "index=main ``` | delete is only mentioned here ``` | head 10",
         "index=main [ search index=app error | fields trace_id ] | table _time message",
