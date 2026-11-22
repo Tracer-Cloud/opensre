@@ -477,6 +477,7 @@ class TestSecretsNeverReachTheModel:
             "VpnConnections": [
                 {
                     "VpnConnectionId": "vpn-1",
+                    "CustomerGatewayConfiguration": "<vpn><pre_shared_key>psk-xml</pre_shared_key></vpn>",
                     "Options": {
                         "TunnelOptions": [{"OutsideIpAddress": "1.2.3.4", "PreSharedKey": "psk-1"}]
                     },
@@ -488,6 +489,7 @@ class TestSecretsNeverReachTheModel:
 
         tunnel = result["data"]["VpnConnections"][0]["Options"]["TunnelOptions"][0]
         assert tunnel["PreSharedKey"] == "<redacted>"
+        assert "psk-xml" not in str(result["data"])
         assert tunnel["OutsideIpAddress"] == "1.2.3.4"
 
     def test_lorawan_device_keys_are_redacted(self, mock_boto3_client) -> None:

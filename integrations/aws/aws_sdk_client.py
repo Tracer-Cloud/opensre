@@ -114,6 +114,7 @@ REDACTED_RESPONSE_KEY_PARTS = (
     "sessionkey",  # LoRaWAN ABP SessionKeys
     "appkey",  # LoRaWAN OTAA root keys (AppKey, NwkKey)
     "nwkkey",
+    "customergatewayconfiguration",  # EC2 VPN config XML embeds <pre_shared_key>
 )
 
 # Query parameters that mark a string as a presigned AWS URL, wherever it
