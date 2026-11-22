@@ -60,7 +60,14 @@ def read_only_sql_problem(statement: str) -> str | None:
     words = [word.lower() for word in _WORD.findall(code)]
     if not words or words[0] not in _READ_KEYWORDS:
         return "Only read statements (SELECT, WITH, SHOW, DESCRIBE, EXPLAIN) are allowed."
-    blocked = sorted({word for word in words if word in _WRITE_KEYWORDS})
+    # A keyword directly followed by "(" is a function call (TRUNCATE(n, 2),
+    # INSERT(str, ...)); no write statement starts that way.
+    statement_words = {
+        match.group(0).lower()
+        for match in _WORD.finditer(code)
+        if not code[match.end() :].lstrip().startswith("(")
+    }
+    blocked = sorted(statement_words & _WRITE_KEYWORDS)
     if blocked:
         return f"Statement contains a write or control keyword: {', '.join(blocked).upper()}."
     if any(word.startswith("system$") for word in words):

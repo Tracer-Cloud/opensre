@@ -38,6 +38,8 @@ def _search(query: str, monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any]
         "index=main [ search index=app | outputlookup x.csv ]",
         "index=main | SCRIPT python payload",
         'index=main | map search="search index=other | delete"',
+        "index=main | ``` comment ``` delete",
+        "index=main |```multi\nline```outputlookup x.csv",
     ],
 )
 def test_unsafe_spl_never_reaches_splunk(query: str, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,6 +55,7 @@ def test_unsafe_spl_never_reaches_splunk(query: str, monkeypatch: pytest.MonkeyP
     [
         "index=main error | head 50",
         'index=main message="| delete everything" | stats count by host',
+        "index=main ``` | delete is only mentioned here ``` | head 10",
         "index=main [ search index=app error | fields trace_id ] | table _time message",
     ],
 )

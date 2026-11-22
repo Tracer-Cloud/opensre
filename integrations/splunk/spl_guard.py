@@ -35,14 +35,20 @@ _BLOCKED_COMMANDS = frozenset(
         "tscollect",
     }
 )
-_QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
+# Quoted strings, and ```...``` comments, which Splunk turns into whitespace
+# before parsing, so a comment cannot hide the command that follows it.
+_QUOTED_OR_COMMENT = re.compile(r'"(?:[^"\\]|\\.)*"|```.*?```', re.DOTALL)
 # A command name follows the start of the search, a pipe, or a subsearch bracket.
 _COMMAND = re.compile(r"(?:^|[|\[])\s*([A-Za-z_][A-Za-z0-9_]*)")
 
 
+def _blank(match: re.Match[str]) -> str:
+    return '""' if match.group(0).startswith('"') else " "
+
+
 def unsafe_spl_problem(query: str) -> str | None:
     """Why ``query`` may not run as an investigation search, or ``None`` if it may."""
-    code = _QUOTED.sub('""', query)
+    code = _QUOTED_OR_COMMENT.sub(_blank, query)
     commands = {match.group(1).lower() for match in _COMMAND.finditer(code)}
     blocked = sorted(commands & _BLOCKED_COMMANDS)
     if blocked:
