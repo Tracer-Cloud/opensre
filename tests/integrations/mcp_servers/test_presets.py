@@ -174,3 +174,15 @@ def test_stdio_env_values_are_kept_as_written() -> None:
     )
 
     assert config.env == {"HTTP_PROXY": "", "GREETING": "  hi  "}
+
+
+def test_answers_for_two_presets_are_refused_by_the_shared_verifier() -> None:
+    # A hand-edited store or a direct apply_setup caller can bypass the picker.
+    answers = {"name": "obs", "grafana_url": "http://g", "datadog_api_key": "k"}
+
+    with pytest.raises(ValueError, match="one MCP preset"):
+        McpServerConfig.from_mapping(answers)
+    outcome = apply_setup(MCP_SERVERS_SETUP, answers)
+
+    assert not outcome.ok
+    assert get_integration("mcp") is None

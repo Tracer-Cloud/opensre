@@ -35,13 +35,16 @@ def _keep_unedited_settings(
     """Settings the form never asks about, kept when a server is updated.
 
     HTTP-only settings (headers, an ``sse`` transport) are kept only while the
-    server still has a URL; a saved ``Authorization`` header yields to a newly
-    typed bearer token.
+    server still has a URL, and a local server's ``env`` only while it has none;
+    a saved ``Authorization`` header yields to a newly typed bearer token.
     """
     kept: dict[str, Any] = {}
     if saved.get("timeout_seconds"):
         kept["timeout_seconds"] = saved["timeout_seconds"]
     if not collected.get(URL_FIELD):
+        env = saved.get("env")
+        if isinstance(env, Mapping) and env:
+            kept["env"] = dict(env)
         return kept
     if str(saved.get("mode") or "").strip().lower() == McpTransportMode.SSE.value:
         kept["mode"] = McpTransportMode.SSE.value

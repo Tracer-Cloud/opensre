@@ -364,3 +364,27 @@ def test_switching_a_server_to_a_local_command_drops_http_only_settings() -> Non
     assert "headers" not in instance["credentials"]
     assert "mode" not in instance["credentials"]
     assert instance["credentials"]["timeout_seconds"] == 90
+
+
+def test_updating_a_local_server_keeps_its_saved_env() -> None:
+    from integrations.store import upsert_instance
+
+    env = {"OPS_TOKEN": "t-1", "CLEARED": ""}
+    upsert_instance(
+        "mcp",
+        {
+            "name": "ops",
+            "credentials": {"command": sys.executable, "args": [_OPS_SERVER], "env": env},
+        },
+    )
+    seen: list[dict[str, object]] = []
+
+    outcome = apply_setup(
+        _capturing_spec(seen),
+        {"name": "ops", "command": sys.executable, "args": _OPS_SERVER, "read_only": "yes"},
+    )
+
+    assert outcome.ok, outcome.detail
+    [instance] = (get_integration("mcp") or {})["instances"]
+    assert seen[0]["env"] == env
+    assert instance["credentials"]["env"] == env

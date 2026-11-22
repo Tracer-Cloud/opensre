@@ -259,7 +259,8 @@ def _apply(preset: McpPreset, answers: Mapping[str, str], data: dict[str, Any]) 
 def expand_presets(raw: Mapping[str, Any]) -> dict[str, Any]:
     """``raw`` with any preset answers replaced by the server settings they imply.
 
-    Raises ``ValueError`` for an answer outside a preset's allowed choices.
+    Raises ``ValueError`` for an answer outside a preset's allowed choices, or
+    when answers for more than one preset are present.
     """
     data = dict(raw)
     stored = {
@@ -267,11 +268,15 @@ def expand_presets(raw: Mapping[str, Any]) -> dict[str, Any]:
         for preset in PRESETS
         for spec in preset.fields
     }
-    for preset in PRESETS:
-        if stored.get(preset.marker):
-            answers = {spec.name: stored[spec.name] or spec.default for spec in preset.fields}
-            return _apply(preset, answers, data)
-    return data
+    chosen = [preset for preset in PRESETS if stored.get(preset.marker)]
+    if len(chosen) > 1:
+        names = ", ".join(preset.key for preset in chosen)
+        raise ValueError(f"Configure one MCP preset per server, not several ({names}).")
+    if not chosen:
+        return data
+    [preset] = chosen
+    answers = {spec.name: stored[spec.name] or spec.default for spec in preset.fields}
+    return _apply(preset, answers, data)
 
 
 __all__ = [
