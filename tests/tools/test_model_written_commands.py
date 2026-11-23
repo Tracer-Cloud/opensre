@@ -81,7 +81,7 @@ class _Presenter:
         self.printed.append(message)
 
     def __getattr__(self, name: str) -> Any:
-        raise AssertionError(f"a blocked command must not reach presenter.{name}")
+        raise AttributeError(f"a blocked command must not reach presenter.{name}")
 
 
 @pytest.mark.parametrize(
