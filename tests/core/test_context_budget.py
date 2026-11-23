@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import patch
+
+import pytest
 
 from core.context_budget import (
     _TOKENS_PER_CHAR,
@@ -11,6 +14,7 @@ from core.context_budget import (
     estimate_message_tokens,
     strip_internal_message_markers,
     system_and_tools_overhead,
+    trim_lowest_value_tool_pair,
 )
 
 
@@ -269,3 +273,30 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
         "t1",
         "t2",
     ]
+
+
+@pytest.mark.parametrize(
+    "tool_call_block",
+    [
+        {"type": "tool_use", "id": "t1", "name": "noop", "input": {}},
+        {"toolUse": {"toolUseId": "t1", "name": "noop", "input": {}}},
+    ],
+    ids=["anthropic", "bedrock"],
+)
+def test_tool_call_without_a_result_is_truncated_not_stubbed(
+    tool_call_block: dict[str, Any],
+) -> None:
+    # A cancelled call leaves a plain message where its result would be.
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "alert"},
+        {"role": "assistant", "content": [tool_call_block]},
+        {"role": "user", "content": "cancelled by user " * 1000},
+    ]
+    ceiling = 5_000
+
+    # Checked first: reporting a stub that did not happen is what makes
+    # enforce_context_budget spin forever, which would hang this test.
+    assert trim_lowest_value_tool_pair(messages) is False
+
+    assert enforce_context_budget(messages, fixed_overhead_tokens=0, ceiling=ceiling) <= ceiling
+    assert messages[1]["content"] == [tool_call_block]
