@@ -803,8 +803,6 @@ class OpenAILLMClient:
             except (OpenAIAuthError, OpenAINotFoundError, OpenAIBadRequestError):
                 raise
             except OpenAIConnectionError as err:
-                # Not retried: the request already ran upstream and was billed.
-                # Covers APITimeoutError, which subclasses it.
                 raise RuntimeError(
                     _format_openai_connection_error(err, getattr(self, "_provider_label", "OpenAI"))
                 ) from err

@@ -123,7 +123,6 @@ def test_anthropic_transport_failure_is_not_followed_by_fallback(
         StructuredOutputClient(client, _Payload).invoke("diagnose this")
 
     assert raised.value.__cause__ is error
-    # The client's own retry attempts for one native call, and no prompt-schema call after them.
     assert sdk.messages.create.call_count == _RETRY_MAX_ATTEMPTS
 
 

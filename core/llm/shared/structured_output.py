@@ -77,8 +77,6 @@ class StructuredOutputClient:
                         return self._model.model_validate(extract_json_payload(payload))
                 except Exception as err:
                     elapsed_ms = (time.perf_counter() - started) * 1000
-                    # A timeout or dropped connection means the native request may
-                    # already have run upstream; the fallback would bill it again.
                     if is_transport_failure(err):
                         logger.warning(
                             "Native structured output failed after %.0fms (%s: %s); "

@@ -5,7 +5,6 @@ from __future__ import annotations
 from anthropic import APIConnectionError as AnthropicConnectionError
 from openai import APIConnectionError as OpenAIConnectionError
 
-# Both SDKs raise their timeout error as a subclass of the connection error.
 _TRANSPORT_ERRORS = (OpenAIConnectionError, AnthropicConnectionError)
 
 
