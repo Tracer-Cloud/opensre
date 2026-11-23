@@ -9,6 +9,7 @@ import pytest
 
 from infrastructure.harness_providers.integration_resolution import resolve_integrations
 from integrations.mcp_servers import McpServerConfig, clear_discovery_cache, mcp_server_tools
+from integrations.mcp_servers import setup as mcp_setup
 from integrations.mcp_servers.setup import MCP_SERVERS_SETUP
 from integrations.setup_flow import IntegrationSetupSpec, apply_setup
 from integrations.store import get_integration
@@ -154,7 +155,6 @@ def test_rerunning_setup_keeps_a_servers_settings_by_default(
     import dataclasses
 
     import integrations.cli as cli
-    import integrations.mcp_servers.setup as mcp_setup
     from integrations.store import upsert_instance
 
     saved = {
@@ -248,7 +248,6 @@ def test_a_new_server_never_inherits_another_servers_token(
     import dataclasses
 
     import integrations.cli as cli
-    import integrations.mcp_servers.setup as mcp_setup
     from integrations.store import upsert_instance
 
     upsert_instance(
