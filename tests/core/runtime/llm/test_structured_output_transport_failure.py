@@ -6,6 +6,7 @@ still fall back to the prompt-schema call once.
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
@@ -99,7 +100,7 @@ def test_openai_schema_rejection_still_falls_back_once(monkeypatch: pytest.Monke
     client, sdk = _openai_client(monkeypatch)
     rejection = openai.BadRequestError(
         "response_format json_schema is not supported",
-        response=httpx.Response(400, request=_REQUEST),
+        response=httpx.Response(HTTPStatus.BAD_REQUEST, request=_REQUEST),
         body=None,
     )
     sdk.chat.completions.parse.side_effect = rejection
