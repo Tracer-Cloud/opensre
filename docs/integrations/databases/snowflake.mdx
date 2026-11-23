@@ -143,6 +143,8 @@ Detail: Configured for Snowflake account xy12345.us-east-1
 
 ## Security
 
+- `query_snowflake_history` runs only a single read statement: it must start with `SELECT`, `WITH`, `SHOW`, `DESCRIBE` or `EXPLAIN`, and may not contain write, DDL or access-control keywords, `SYSTEM$` functions (quoted or not) or `IDENTIFIER()`. Anything else is refused with **Query refused** and never sent to Snowflake
+- Still give the OpenSRE user a **read-only role**: the check above keeps the agent from writing, but the role is what Snowflake enforces
 - Use a dedicated Snowflake user for OpenSRE
 - Grant only the permissions the agent needs
 - Rotate credentials regularly

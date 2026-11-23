@@ -41,6 +41,88 @@ BLOCKED_OPERATION_PATTERNS = [
     r".*disassociate.*",
 ]
 
+# Read operations that return secrets or mint credentials. The allowlist admits
+# them (``get_secret_value``, ``get_session_token``, ...), but their output
+# would put secret material into model context.
+SECRET_OPERATION_PATTERNS = [
+    r".*secret_value.*",
+    r".*credential.*",
+    r".*token.*",
+    r".*password.*",
+    r".*decrypt.*",
+    r".*embed_url.*",  # QuickSight embed URLs carry a bearer authorization code
+    r".*presigned.*",  # presigned URLs grant access to whoever holds them
+    # Reads named ``*_url`` return presigned, signed-session or login URLs
+    # (Amplify artifacts, Kinesis Video streams, QuickSight, Glue dashboards, ...).
+    # The one plain address, SQS ``get_queue_url``, is exempted below.
+    r".*_url$",
+    r".*download_url.*",  # e.g. ECR get_download_url_for_layer
+]
+
+# Operations that match ``SECRET_OPERATION_PATTERNS`` but return no secret.
+NON_SECRET_OPERATIONS = frozenset({"get_queue_url"})
+
+# (service, operation) pairs whose ordinary output is a secret, where redacting
+# the field by name would also hide ordinary data (keys come back as ``id`` or
+# ``value``).
+SECRET_SERVICE_OPERATIONS = frozenset(
+    {
+        ("appsync", "list_api_keys"),
+        ("apigateway", "get_usage_plan_key"),  # key in ``value``
+        ("apigateway", "get_usage_plan_keys"),  # keys in ``items[].value``
+        ("location", "describe_key"),  # API key value in ``Key``
+    }
+)
+
+# Fields that hold a presigned URL in an otherwise useful response, by
+# (service, operation): the URL is redacted, the rest of the response is kept.
+PRESIGNED_RESPONSE_FIELDS: dict[tuple[str, str], tuple[tuple[str, ...], ...]] = {
+    ("lambda", "get_function"): (("Code", "Location"),),
+    ("lambda", "get_layer_version"): (("Content", "Location"),),
+    ("lambda", "get_layer_version_by_arn"): (("Content", "Location"),),
+}
+
+# Parameters that make an otherwise allowed read return decrypted secrets.
+SECRET_PARAMETERS = frozenset(
+    {
+        "WithDecryption",  # SSM get_parameter(s)
+        "includeValue",  # API Gateway get_api_key
+        "includeValues",  # API Gateway get_api_keys
+    }
+)
+
+# A response field is redacted when its name, lowercased, contains one of these.
+# Matching on part of the name covers the many spellings services use
+# (Lightsail ``privateKey``, ECR ``authorizationToken``, Amplify
+# ``basicAuthCredentials``, RDS ``MasterUserPassword``) while leaving
+# identifiers such as ``SecretArn`` and pagination ``NextToken`` intact.
+REDACTED_RESPONSE_KEY_PARTS = (
+    "password",
+    "credential",
+    "privatekey",
+    "clientsecret",
+    "secretaccesskey",
+    "secretbinary",
+    "secretstring",
+    "sessiontoken",
+    "authtoken",
+    "authorizationtoken",
+    "streamkey",  # IVS stream keys let anyone holding them broadcast
+    "presharedkey",  # EC2 VPN tunnel PreSharedKey
+    "sharedsecret",
+    "secretkey",
+    "authkey",
+    "sessionkey",  # LoRaWAN ABP SessionKeys
+    "appkey",  # LoRaWAN OTAA root keys (AppKey, NwkKey)
+    "nwkkey",
+    "customergatewayconfiguration",  # EC2 VPN config XML embeds <pre_shared_key>
+)
+
+# Query parameters that mark a string as a presigned AWS URL, wherever it
+# appears in a response (Lambda ``Code.Location``, Translate terminology, ...).
+_PRESIGNED_URL_MARKERS = ("x-amz-signature=", "x-amz-credential=", "awsaccesskeyid=")
+REDACTED = "<redacted>"
+
 # Response size limits
 MAX_LIST_ITEMS = 100
 
@@ -62,12 +144,39 @@ def _is_operation_allowed(operation_name: str) -> tuple[bool, str]:
         if re.match(pattern, operation_lower):
             return False, f"Operation '{operation_name}' matches blocked pattern '{pattern}'"
 
+    for pattern in SECRET_OPERATION_PATTERNS:
+        if operation_lower in NON_SECRET_OPERATIONS:
+            break
+        if re.match(pattern, operation_lower):
+            return False, f"Operation '{operation_name}' can return secrets or credentials"
+
     # Check allowlist
     for pattern in ALLOWED_OPERATION_PATTERNS:
         if re.match(pattern, operation_lower):
             return True, "Operation allowed"
 
     return False, f"Operation '{operation_name}' does not match any allowed patterns"
+
+
+def _redact_presigned_fields(service: str, operation: str, data: Any) -> Any:
+    """Replace the presigned URLs this operation is known to return."""
+    for path in PRESIGNED_RESPONSE_FIELDS.get((service.lower(), operation.lower()), ()):
+        parent = data
+        for key in path[:-1]:
+            parent = parent.get(key) if isinstance(parent, dict) else None
+        if isinstance(parent, dict) and path[-1] in parent:
+            parent[path[-1]] = REDACTED
+    return data
+
+
+def _is_presigned_url(value: str) -> bool:
+    lowered = value.lower()
+    return lowered.startswith("http") and any(m in lowered for m in _PRESIGNED_URL_MARKERS)
+
+
+def _is_secret_field(key: str) -> bool:
+    name = key.lower()
+    return any(part in name for part in REDACTED_RESPONSE_KEY_PARTS)
 
 
 def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
@@ -78,6 +187,8 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
     - Truncates large collections
     - Handles binary data
     - Prevents excessive nesting
+    - Replaces secret-bearing fields (``REDACTED_RESPONSE_KEY_PARTS``) and any
+      presigned AWS URL value with a placeholder
 
     Args:
         data: Response data to sanitize
@@ -109,6 +220,9 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
             # Skip ResponseMetadata (noise)
             if key == "ResponseMetadata":
                 continue
+            if isinstance(key, str) and _is_secret_field(key):
+                sanitized[key] = REDACTED
+                continue
             sanitized[key] = _sanitize_response(value, depth + 1, max_depth)
         return sanitized
 
@@ -121,6 +235,9 @@ def _sanitize_response(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
             truncated.append(f"... ({len(data) - MAX_LIST_ITEMS} more items truncated)")
             return truncated
         return [_sanitize_response(item, depth + 1, max_depth) for item in data]
+
+    if isinstance(data, str) and _is_presigned_url(data):
+        return REDACTED
 
     # Handle primitive types
     return data
@@ -174,6 +291,27 @@ def execute_aws_sdk_call(
             "metadata": {"validation_failed": True},
         }
 
+    if (service_name.lower(), operation_name.lower()) in SECRET_SERVICE_OPERATIONS:
+        return {
+            "success": False,
+            "error": f"Operation not allowed: {service_name}.{operation_name} returns secrets",
+            "service": service_name,
+            "operation": operation_name,
+            "data": None,
+            "metadata": {"validation_failed": True},
+        }
+
+    secret_params = sorted(name for name in SECRET_PARAMETERS if (parameters or {}).get(name))
+    if secret_params:
+        return {
+            "success": False,
+            "error": f"Operation not allowed: {', '.join(secret_params)} returns decrypted secrets",
+            "service": service_name,
+            "operation": operation_name,
+            "data": None,
+            "metadata": {"validation_failed": True},
+        }
+
     try:
         # Create boto3 client
         client_kwargs: dict[str, str] = {}
@@ -201,7 +339,9 @@ def execute_aws_sdk_call(
             response = operation()
 
         # Sanitize response
-        sanitized_data = _sanitize_response(response)
+        sanitized_data = _redact_presigned_fields(
+            service_name, operation_name, _sanitize_response(response)
+        )
 
         return {
             "success": True,

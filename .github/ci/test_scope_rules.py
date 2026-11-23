@@ -219,6 +219,7 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/snowflake/",
         (
+            "tests/integrations/snowflake/",
             "tests/tools/test_snowflake_query_history_evidence.py",
             "tests/tools/test_snowflake_query_history_tool.py",
             "tests/tools/test_telemetry.py",

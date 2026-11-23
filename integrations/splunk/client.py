@@ -13,6 +13,7 @@ from infrastructure.observability.errors.service import capture_service_error
 from infrastructure.observability.streaming import StreamingParseStats
 from integrations.config_models import SplunkIntegrationConfig
 from integrations.probes import ProbeResult
+from integrations.splunk.spl_guard import unsafe_spl_problem
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +86,17 @@ class SplunkClient:
         Returns normalized log rows. The export endpoint streams results
         immediately — no job polling needed, making it ideal for RCA.
         """
+        search = query if query.startswith("search ") else f"search {query}"
+        # Check what Splunk will run: a leading word is a search term, not a command.
+        problem = unsafe_spl_problem(search)
+        if problem is not None:
+            return {"success": False, "error": f"Query refused: {problem}"}
+
         now = datetime.now(UTC)
         earliest = now - timedelta(minutes=max(int(time_range_minutes), 1))
 
         params = {
-            "search": query if query.startswith("search ") else f"search {query}",
+            "search": search,
             "earliest_time": earliest.strftime("%Y-%m-%dT%H:%M:%S"),
             "latest_time": now.strftime("%Y-%m-%dT%H:%M:%S"),
             "output_mode": "json",

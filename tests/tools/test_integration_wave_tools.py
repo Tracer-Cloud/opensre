@@ -51,7 +51,7 @@ def test_snowflake_tool_enforces_bounded_limit(monkeypatch: Any) -> None:
         return _MockResponse({"data": [{"id": idx} for idx in range(20)]})
 
     monkeypatch.setattr(
-        "integrations.snowflake.tools.snowflake_query_history_tool.httpx.post", _fake_post
+        "integrations.snowflake.tools.snowflake_query_history_tool.tool.httpx.post", _fake_post
     )
 
     result = query_snowflake_history(

@@ -326,3 +326,187 @@ class TestExecuteAwsSdkCallUnexpectedError:
         assert result["success"] is False
         assert "unexpected error" in result["error"].lower()
         assert result["metadata"]["error_type"] == "unexpected"
+
+
+class TestSecretsNeverReachTheModel:
+    @pytest.mark.parametrize(
+        ("service", "operation", "parameters"),
+        [
+            ("secretsmanager", "get_secret_value", {"SecretId": "prod/db"}),
+            ("secretsmanager", "batch_get_secret_value", {"SecretIdList": ["a"]}),
+            ("sts", "get_session_token", None),
+            ("sts", "get_federation_token", {"Name": "x"}),
+            ("ecr", "get_authorization_token", None),
+            ("redshift", "get_cluster_credentials", {"DbUser": "u", "ClusterIdentifier": "c"}),
+            ("ec2", "get_password_data", {"InstanceId": "i-1"}),
+            ("ssm", "get_parameter", {"Name": "/prod/db", "WithDecryption": True}),
+            ("ssm", "get_parameters_by_path", {"Path": "/prod", "WithDecryption": True}),
+            ("apigateway", "get_api_key", {"apiKey": "k1", "includeValue": True}),
+            ("apigateway", "get_api_keys", {"includeValues": True}),
+            ("appsync", "list_api_keys", {"apiId": "a1"}),
+            ("apigateway", "get_usage_plan_key", {"usagePlanId": "p", "keyId": "k"}),
+            ("apigateway", "get_usage_plan_keys", {"usagePlanId": "p"}),
+            ("quicksight", "get_dashboard_embed_url", {"AwsAccountId": "1", "DashboardId": "d"}),
+            ("quicksight", "get_session_embed_url", {"AwsAccountId": "1"}),
+            ("amplify", "get_artifact_url", {"artifactId": "a"}),
+            ("location", "describe_key", {"KeyName": "prod"}),
+            ("kinesis-video-archived-media", "get_hls_streaming_session_url", {}),
+            ("ecr", "get_download_url_for_layer", {"repositoryName": "r", "layerDigest": "d"}),
+        ],
+    )
+    def test_secret_returning_calls_are_refused_before_any_client(
+        self, service: str, operation: str, parameters: dict[str, object] | None
+    ) -> None:
+        with patch("integrations.aws.aws_sdk_client.boto3.client") as client:
+            result = execute_aws_sdk_call(service, operation, parameters=parameters)
+
+        assert result["success"] is False
+        assert result["metadata"]["validation_failed"] is True
+        client.assert_not_called()
+
+    def test_ordinary_reads_stay_allowed(self) -> None:
+        for operation in (
+            "get_role",
+            "get_parameter",
+            "describe_secret",
+            "list_secrets",
+            "get_queue_url",
+        ):
+            assert _is_operation_allowed(operation)[0], operation
+
+    def test_secret_fields_in_a_response_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.describe_instances.return_value = {
+            "Reservations": [
+                {
+                    "Instances": [{"InstanceId": "i-1"}],
+                    "Credentials": {"SecretAccessKey": "abc", "SessionToken": "tok"},
+                }
+            ],
+            "Items": [{"SecretString": "hunter2", "authorizationToken": "Zm9v", "Name": "n"}],
+        }
+
+        result = execute_aws_sdk_call("ec2", "describe_instances")
+
+        text = str(result["data"])
+        assert result["success"] is True
+        assert "abc" not in text and "tok" not in text
+        assert "hunter2" not in text and "Zm9v" not in text
+        assert "i-1" in text and "'Name': 'n'" in text
+
+    def test_lightsail_camel_case_secrets_are_redacted(self, mock_boto3_client) -> None:
+        # Shape returned by lightsail.get_instance_access_details.
+        mock_boto3_client.get_instance_access_details.return_value = {
+            "accessDetails": {
+                "username": "admin",
+                "privateKey": "-----BEGIN RSA PRIVATE KEY-----abc",
+                "password": "Lightsail#1",
+                "ipAddress": "203.0.113.5",
+            }
+        }
+
+        result = execute_aws_sdk_call("lightsail", "get_instance_access_details")
+
+        details = result["data"]["accessDetails"]
+        assert result["success"] is True
+        assert details["privateKey"] == details["password"] == "<redacted>"
+        assert details["username"] == "admin" and details["ipAddress"] == "203.0.113.5"
+
+    def test_secret_fields_are_found_by_name_part(self, mock_boto3_client) -> None:
+        # Amplify get_app nests base64 user:password credentials under several names.
+        mock_boto3_client.get_app.return_value = {
+            "app": {
+                "appId": "d1",
+                "basicAuthCredentials": "dXNlcjpwYXNz",
+                "autoBranchCreationConfig": {"basicAuthCredentials": "dXNlcjpwYXNz"},
+                "MasterUserPassword": "pw",
+            },
+            "SecretArn": "arn:aws:secretsmanager:us-east-1:1:secret:x",
+            "NextToken": "page-2",
+        }
+
+        result = execute_aws_sdk_call("amplify", "get_app", parameters={"appId": "d1"})
+
+        text = str(result["data"])
+        assert "dXNlcjpwYXNz" not in text and "'pw'" not in text
+        assert result["data"]["SecretArn"].startswith("arn:")
+        assert result["data"]["NextToken"] == "page-2"
+        assert result["data"]["app"]["appId"] == "d1"
+
+    def test_lambda_package_download_urls_are_redacted(self, mock_boto3_client) -> None:
+        url = "https://awslambda-us-east-1-tasks.s3.amazonaws.com/x?X-Amz-Signature=abc"
+        mock_boto3_client.get_function.return_value = {
+            "Configuration": {"FunctionName": "prod", "Runtime": "python3.13"},
+            "Code": {"RepositoryType": "S3", "Location": url},
+        }
+
+        result = execute_aws_sdk_call("lambda", "get_function", parameters={"FunctionName": "prod"})
+
+        assert result["data"]["Code"]["Location"] == "<redacted>"
+        assert result["data"]["Code"]["RepositoryType"] == "S3"
+        assert result["data"]["Configuration"]["Runtime"] == "python3.13"
+
+    def test_presigned_urls_are_redacted_wherever_they_appear(self, mock_boto3_client) -> None:
+        # Translate get_terminology embeds one under a field not named like a URL.
+        url = (
+            "https://s3.amazonaws.com/b/terms.csv?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            "&X-Amz-Credential=AKIA%2F20261122&X-Amz-Signature=abc"
+        )
+        mock_boto3_client.get_terminology.return_value = {
+            "TerminologyProperties": {"Name": "glossary"},
+            "TerminologyDataLocation": {"RepositoryType": "S3", "Location": url},
+            "Docs": "https://docs.aws.amazon.com/translate/",
+        }
+
+        result = execute_aws_sdk_call("translate", "get_terminology", parameters={"Name": "g"})
+
+        data = result["data"]
+        assert data["TerminologyDataLocation"]["Location"] == "<redacted>"
+        assert data["TerminologyProperties"]["Name"] == "glossary"
+        assert data["Docs"] == "https://docs.aws.amazon.com/translate/"
+
+    def test_ivs_stream_keys_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.get_stream_key.return_value = {
+            "streamKey": {"arn": "arn:aws:ivs:k", "value": "sk_us-west-2_secret"}
+        }
+
+        result = execute_aws_sdk_call("ivs", "get_stream_key", parameters={"arn": "arn:aws:ivs:k"})
+
+        assert "sk_us-west-2_secret" not in str(result["data"])
+
+    def test_vpn_pre_shared_keys_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.describe_vpn_connections.return_value = {
+            "VpnConnections": [
+                {
+                    "VpnConnectionId": "vpn-1",
+                    "CustomerGatewayConfiguration": "<vpn><pre_shared_key>psk-xml</pre_shared_key></vpn>",
+                    "Options": {
+                        "TunnelOptions": [{"OutsideIpAddress": "1.2.3.4", "PreSharedKey": "psk-1"}]
+                    },
+                }
+            ]
+        }
+
+        result = execute_aws_sdk_call("ec2", "describe_vpn_connections")
+
+        tunnel = result["data"]["VpnConnections"][0]["Options"]["TunnelOptions"][0]
+        assert tunnel["PreSharedKey"] == "<redacted>"
+        assert "psk-xml" not in str(result["data"])
+        assert tunnel["OutsideIpAddress"] == "1.2.3.4"
+
+    def test_lorawan_device_keys_are_redacted(self, mock_boto3_client) -> None:
+        mock_boto3_client.get_wireless_device.return_value = {
+            "Name": "sensor-1",
+            "LoRaWAN": {
+                "DevEui": "0011223344556677",
+                "OtaaV1_1": {"AppKey": "a" * 32, "NwkKey": "b" * 32, "JoinEui": "j"},
+                "AbpV1_0_x": {"DevAddr": "d", "SessionKeys": {"NwkSKey": "c" * 32}},
+            },
+        }
+
+        result = execute_aws_sdk_call(
+            "iotwireless", "get_wireless_device", parameters={"Identifier": "x"}
+        )
+
+        text = str(result["data"])
+        assert "a" * 32 not in text and "b" * 32 not in text and "c" * 32 not in text
+        assert result["data"]["LoRaWAN"]["DevEui"] == "0011223344556677"
