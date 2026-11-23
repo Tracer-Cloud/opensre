@@ -45,14 +45,15 @@ class TestGpt56ContextWindow:
         assert context_budget_ceiling_for_model("gpt-5") == 103_000
 
 
-class TestGpt61ContextWindow:
-    """GPT-6.1 Sol's input cap is 922k inside a 1.05M window."""
+class TestGpt6ContextWindow:
+    """GPT-6.1 and GPT-6.2 Sol cap input at 922k inside a 1.05M window."""
 
     def test_sol_stops_at_the_published_input_cap(self) -> None:
         # Stored window 947_000 reserves the 25_000 output budget, leaving
         # the 922_000 maximum input.
         assert context_budget_ceiling_for_model("gpt-6.1-sol") == 922_000
         assert context_budget_ceiling_for_model("openai/gpt-6.1-sol") == 922_000
+        assert context_budget_ceiling_for_model("gpt-6.2-sol") == 922_000
 
     def test_gpt61_is_not_shadowed_by_the_gpt5_catch_all(self) -> None:
         assert context_budget_ceiling_for_model("gpt-6.1-sol") > context_budget_ceiling_for_model(

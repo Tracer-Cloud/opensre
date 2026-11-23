@@ -21,7 +21,7 @@ SUBSCRIPTION_PROVIDERS = (
         "chatgpt",
         "ChatGPT subscription",
         "CHATGPT_MODEL",
-        "gpt-6.1-sol",
+        "gpt-6.2-sol",
         usage_hint="Manage limits in ChatGPT Settings → Usage.",
     ),
     SubscriptionProvider(
