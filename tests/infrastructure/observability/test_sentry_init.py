@@ -468,15 +468,37 @@ def test_scrub_exception_value_handles_truncated_message_without_input_type() ->
     assert "input_value=[Filtered]" in scrubbed
 
 
-def test_before_breadcrumb_strips_query_string_for_http_categories() -> None:
-    crumb = {
-        "category": "httpx",
-        "data": {"url": "https://api.example.com/path?token=secret&id=42"},
-    }
-
+@pytest.mark.parametrize(
+    "crumb",
+    [
+        {
+            "category": "httpx",
+            "data": {"url": "https://api.example.com/path?token=secret&id=42"},
+        },
+        # What the SDK's HTTP integrations actually record: the category is
+        # ``httplib`` and the query travels beside the URL.
+        {
+            "type": "http",
+            "category": "httplib",
+            "data": {
+                "url": "https://api.example.com/bot123456:SECRET/sendMessage",
+                "http.query": "api_key=SECRET",
+                "http.fragment": "SECRET",
+            },
+        },
+        {
+            "type": "http",
+            "category": "httplib",
+            "data": {"url": "https://api.example.com/services/T000/B000/SECRET"},
+        },
+    ],
+    ids=["query string", "token in the path", "webhook url"],
+)
+def test_before_breadcrumb_keeps_only_the_origin_of_an_http_request(crumb: dict) -> None:
+    """A path or query can be a credential, and breadcrumbs leave the machine."""
     sentry_mod._before_breadcrumb(crumb, {})
 
-    assert crumb["data"]["url"] == "https://api.example.com/path"
+    assert crumb["data"] == {"url": "https://api.example.com"}
 
 
 def test_before_breadcrumb_leaves_other_categories_alone() -> None:

@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import IO, TypedDict
 
+from config.constants.control_plane_env import without_control_plane_secrets
 from config.constants.terminal_host import (
     BASH_EXPORTED_FUNCTION_ENV_PREFIX,
 )
@@ -75,12 +76,18 @@ def _windows_command_shell() -> str:
 
 
 def _shell_environment() -> dict[str, str]:
-    """Copy the environment without Bash functions that can replace commands."""
-    return {
-        name: value
-        for name, value in os.environ.items()
-        if not name.startswith(BASH_EXPORTED_FUNCTION_ENV_PREFIX)
-    }
+    """Copy the environment without Bash functions that can replace commands.
+
+    On a host serving an organization the host's own platform credentials are
+    left out too: the command is one a chat member asked for.
+    """
+    return without_control_plane_secrets(
+        {
+            name: value
+            for name, value in os.environ.items()
+            if not name.startswith(BASH_EXPORTED_FUNCTION_ENV_PREFIX)
+        }
+    )
 
 
 def _drain_pipe(pipe: IO[str] | None, capture: ShellOutputCapture, stream: OutputStream) -> None:

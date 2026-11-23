@@ -14,6 +14,7 @@ from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
+from integrations.openobserve.tools.openobserve_logs_tool.organization import is_organization_name
 
 _DEFAULT_MAX_RESULTS = 100
 _MAX_HARD_LIMIT = 200
@@ -193,7 +194,14 @@ def query_openobserve_logs(
             f"SELECT * FROM \"{stream_name}\" WHERE level = 'error' ORDER BY _timestamp DESC"
         )
 
-    endpoint = f"{base}/api/{(org or 'default').strip()}/_search"
+    org_name = (org or "default").strip()
+    if not is_organization_name(org_name):
+        return tool_unavailable(
+            "openobserve",
+            "OpenObserve organization must be a plain name (letters, digits, '_' or '-').",
+            records=[],
+        )
+    endpoint = f"{base}/api/{org_name}/_search"
     payload: dict[str, Any] = {
         "query": {
             "sql": normalized_query,

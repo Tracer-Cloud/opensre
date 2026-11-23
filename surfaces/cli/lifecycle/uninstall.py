@@ -31,7 +31,7 @@ def _remove_path(p: Path) -> tuple[bool, str | None]:
 
 def _pip_uninstall() -> int:
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "uninstall", "--yes", "opensre"],
+        [sys.executable, "-P", "-m", "pip", "uninstall", "--yes", "opensre"],
         check=False,
         capture_output=True,
     )

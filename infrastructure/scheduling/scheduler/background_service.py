@@ -80,7 +80,7 @@ def scheduler_command() -> list[str]:
     executable = shutil.which("opensre")
     if executable:
         return [executable, "cron", "start", "--service"]
-    return [sys.executable, "-m", "surfaces.entrypoint", "cron", "start", "--service"]
+    return [sys.executable, "-P", "-m", "surfaces.entrypoint", "cron", "start", "--service"]
 
 
 def install_background_service(

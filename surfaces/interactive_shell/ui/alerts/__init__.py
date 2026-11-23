@@ -14,6 +14,7 @@ from rich.markup import escape
 from rich.panel import Panel
 
 from core.domain.alerts.inbox import IncomingAlert
+from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (
     DIM,
     INCOMING_ALERT_ACCENT,
@@ -62,13 +63,19 @@ def format_incoming_alert(alert: IncomingAlert) -> RenderableType:
     - Relative received time
     - Alert text body
     """
+    # Alert fields are written by whatever raised the alert. Rich's ``escape``
+    # only neutralizes its own markup, so terminal control bytes go first.
+    source = strip_terminal_controls(alert.source or "")
+    severity = strip_terminal_controls(alert.severity or "")
+    text = strip_terminal_controls(alert.text, keep_whitespace=True)
+
     # Build the header line: source and severity
     header_parts: list[str] = ["incoming alert"]
-    if alert.source:
-        header_parts.append(f"from {escape(alert.source)}")
-    if alert.severity:
+    if source:
+        header_parts.append(f"from {escape(source)}")
+    if severity:
         # Escape the whole `[severity]` fragment so Rich cannot treat `[bold ...]` etc. as tags.
-        header_parts.append(escape(f"[{alert.severity}]"))
+        header_parts.append(escape(f"[{severity}]"))
 
     header = " | ".join(header_parts)
 
@@ -77,7 +84,7 @@ def format_incoming_alert(alert: IncomingAlert) -> RenderableType:
     body_lines = [
         f"[{DIM}]received {timestamp_str}[/]",
         "",
-        f"[{TEXT}]{escape(alert.text)}[/]",
+        f"[{TEXT}]{escape(text)}[/]",
     ]
     body = "\n".join(body_lines)
 

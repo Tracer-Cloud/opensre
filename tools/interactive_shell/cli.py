@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from config.constants.cli_handoff import CLI_HANDOFF_FLAG
 from config.scope_handoff import hand_off_scope
 from infrastructure.scheduling.task_types import TaskKind
 from tools.interactive_shell.shared import (
@@ -26,7 +27,26 @@ _ERROR_STYLE = "error"
 
 _PYTHON_EXECUTABLE_PREFIXES: tuple[str, ...] = ("python", "pypy")
 
-OPENSRE_BLOCKED_SUBCOMMANDS: frozenset[str] = frozenset({"agent"})
+# ``agent`` and ``ask`` start another agent, and ``ask`` takes flags that
+# pre-approve that agent's tools, so a command written by the model could grant
+# itself the approval the user never gave.
+OPENSRE_BLOCKED_SUBCOMMANDS: frozenset[str] = frozenset({"agent", "ask"})
+
+
+def blocked_subcommand(tokens: list[str]) -> str | None:
+    """The blocked subcommand ``tokens`` would reach, or None.
+
+    The subcommand is the first word unless root options come before it, and
+    some of those take a value. Rather than guess which later word the CLI
+    will dispatch on, a command that starts with an option is refused when a
+    blocked word appears anywhere in it.
+    """
+    words = [token.lower() for token in tokens]
+    if not words:
+        return None
+    candidates = words if words[0].startswith("-") else words[:1]
+    return next((word for word in candidates if word in OPENSRE_BLOCKED_SUBCOMMANDS), None)
+
 
 INTERACTIVE_OPENSRE_COMMAND_PATHS: frozenset[str] = frozenset(
     {
@@ -127,7 +147,8 @@ def build_opensre_cli_argv(args: list[str]) -> list[str]:
         return [entrypoint, *args]
     if getattr(sys, "frozen", False) or not _sys_executable_is_python():
         return [sys.executable, *args]
-    return [sys.executable, "-m", "surfaces.cli", *args]
+    # ``-P``: the working directory must not shadow the installed package.
+    return [sys.executable, "-P", "-m", "surfaces.cli", *args]
 
 
 def is_interactive_wizard(tokens: list[str]) -> bool:
@@ -344,8 +365,14 @@ def run_opensre_cli_command_result(
         return OpensreRunResult(outcome=OpensreRunOutcome.INVALID, attempted=False)
 
     first_token = tokens[0].lower()
-    if first_token in OPENSRE_BLOCKED_SUBCOMMANDS:
-        presenter.print(f"[error]Cannot run `opensre {first_token}`: subcommand is blocked.[/]")
+    if first_token == CLI_HANDOFF_FLAG:
+        # The launcher runs whatever argv follows this flag. It exists for
+        # OpenSRE's own child processes; from here it would be any program at all.
+        presenter.print("[error]Cannot run an internal launcher flag as a command.[/]")
+        return OpensreRunResult(outcome=OpensreRunOutcome.BLOCKED, attempted=False)
+    blocked = blocked_subcommand(tokens)
+    if blocked is not None:
+        presenter.print(f"[error]Cannot run `opensre {blocked}`: subcommand is blocked.[/]")
         return OpensreRunResult(outcome=OpensreRunOutcome.BLOCKED, attempted=False)
 
     if is_interactive_wizard(tokens):

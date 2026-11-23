@@ -51,7 +51,8 @@ class HealthResponse(BaseModel):
     scheduled_runs_in_flight: int
 
 
-app = FastAPI()
+# No generated docs or route schema: this port faces the network.
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # Above routing: every mutating route is bounded before FastAPI buffers a body.
 app.add_middleware(RequestBodyLimitMiddleware)
 # Health liveness (/healthz) and alert intake (/alerts) live in the shared

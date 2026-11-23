@@ -432,6 +432,10 @@ def launch_instance(
         "MinCount": 1,
         "MaxCount": 1,
         "IamInstanceProfile": {"Arn": instance_profile_arn},
+        # Token-only metadata: without it, one plain GET to the metadata address
+        # (any request the instance can be talked into making) returns the
+        # role's credentials.
+        "MetadataOptions": {"HttpEndpoint": "enabled", "HttpTokens": "required"},
         "TagSpecifications": [{"ResourceType": "instance", "Tags": tags}],
         "BlockDeviceMappings": [
             {

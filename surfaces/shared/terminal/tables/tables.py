@@ -16,6 +16,7 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants.mcp import MCP_SERVERS_SERVICE
+from infrastructure.safety.terminal_output import strip_non_style_escapes
 from infrastructure.terminal.peek import cap_output_for_display
 from infrastructure.terminal.theme import (
     BOLD_BRAND,
@@ -352,6 +353,9 @@ def print_command_output(
     text = "\n".join(framed)
     # Parse any ANSI the captured child emitted so its Rich styling (bold, colour)
     # survives being re-printed here instead of showing as raw escape codes.
+    # Only the styling: the child's bytes are untrusted, and Rich passes other
+    # sequences (clipboard writes, cursor moves, links) through to the terminal.
+    text = strip_non_style_escapes(text)
     rendered = Text.from_ansi(text) if style is None else Text.from_ansi(text, style=style)
     # Continue the current block: output must sit directly under its `$ command`
     # header, not detached from it by a blank line (which makes it read as if it

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from integrations.github.client import resolve_github_token
@@ -27,8 +28,10 @@ MAX_GH_OUTPUT_CHARS = 30_000
 # - extension: install/run can download and execute arbitrary code
 # - secret: mutate repository secrets
 # - codespace / ssh-key / gpg-key / config: credential and host-config mutation surface
+# - alias: an alias whose expansion starts with ``!`` is run by a shell
 _DENIED_TOP_LEVEL_COMMANDS = frozenset(
     {
+        "alias",
         "auth",
         "extension",
         "secret",
@@ -41,10 +44,31 @@ _DENIED_TOP_LEVEL_COMMANDS = frozenset(
 
 # Mutating ``gh run`` / ``gh workflow`` subcommands. ``list`` and ``view`` stay
 # allowed so a /goal can look up workflow runs by SHA.
+#
+# The rest read a file from this machine and publish it, or write files from a
+# repository of the caller's choosing onto this machine (a clone into gh's own
+# extension directory is an installed extension): ``gist create|edit|clone``,
+# ``repo clone``, ``release download|upload``.
 _DENIED_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "run": frozenset({"rerun", "cancel", "delete", "watch", "download"}),
     "workflow": frozenset({"run", "enable", "disable"}),
+    "gist": frozenset({"create", "edit", "clone"}),
+    "repo": frozenset({"clone"}),
+    "release": frozenset({"download", "upload"}),
 }
+
+# Flags whose value is a path on this machine that gh reads and sends to
+# GitHub, or a directory gh fills from a repository. The arguments are written
+# by the model, so the path could be the credential store or the environment of
+# this process; text goes in ``--body`` / ``--notes`` / ``-f key=value`` instead.
+_LOCAL_FILE_FLAGS = frozenset(
+    {"--body-file", "--env-file", "--input", "--notes-file", "--source", "--clone"}
+)
+# ``-F`` is ``--body-file`` everywhere except ``gh api``, where it is a typed
+# field whose value is read from a file only when it starts with ``@``.
+_FIELD_FLAGS = frozenset({"-F", "--field"})
+# ``gh release create <tag> <files>...`` uploads every word after the tag.
+_RELEASE_CREATE_POSITIONALS = 3
 
 # Top-level ``gh`` commands that do not define ``-R/--repo``: ``gh api`` takes the
 # repo in the endpoint path; most ``gh repo``/``gh org``/``gh gist``/``gh project`` and
@@ -119,12 +143,40 @@ def denied_gh_command(args: list[str] | tuple[str, ...]) -> str | None:
     command = positionals[0].lower()
     if command in _DENIED_TOP_LEVEL_COMMANDS:
         return command
-    denied_subs = _DENIED_SUBCOMMANDS.get(command)
-    if denied_subs is None:
-        return None
     sub = positionals[1].lower() if len(positionals) > 1 else ""
-    if sub in denied_subs:
+    if sub in _DENIED_SUBCOMMANDS.get(command, frozenset()):
         return f"{command} {sub}"
+    if (command, sub) == ("release", "create") and any(
+        # An asset is ``path`` or ``path#label``. A flag's value also lands in
+        # the positionals here, so only words that name a real file count.
+        Path(word.partition("#")[0]).expanduser().exists()
+        for word in positionals[_RELEASE_CREATE_POSITIONALS:]
+    ):
+        return "release create with files"
+    return _local_file_flag(args, command=command)
+
+
+def _local_file_flag(args: list[str] | tuple[str, ...], *, command: str) -> str | None:
+    """The first flag that makes gh read or fill a path on this machine, else None."""
+    tokens = [str(arg) for arg in args]
+    for index, token in enumerate(tokens):
+        if token == "--":
+            break
+        name, has_inline, inline = token.partition("=")
+        if name in _LOCAL_FILE_FLAGS:
+            return f"{command} {name}"
+        # A short flag may carry its value attached: ``-Fbody.md``.
+        attached = token[2:] if token.startswith("-F") and len(token) > 2 else ""
+        if name not in _FIELD_FLAGS and not attached:
+            continue
+        if command != "api":
+            return f"{command} -F"
+        if has_inline or attached:
+            value = attached.removeprefix("=") if attached else inline
+        else:
+            value = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if value.partition("=")[2].startswith("@"):
+            return "api -F key=@file"
     return None
 
 

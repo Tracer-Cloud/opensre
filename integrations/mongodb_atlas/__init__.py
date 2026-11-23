@@ -27,6 +27,7 @@ from config.constants.mongodb_atlas import (
 from config.strict_config import StrictConfigModel
 from core.tool_framework.utils import tool_unavailable
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
+from integrations.mongodb_atlas.project_id import validated_project_id
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class MongoDBAtlasConfig(StrictConfigModel):
     @field_validator("project_id", mode="before")
     @classmethod
     def _normalize_project_id(cls, value: Any) -> str:
-        return str(value or "").strip()
+        return validated_project_id(value)
 
     @field_validator("base_url", mode="before")
     @classmethod

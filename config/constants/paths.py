@@ -15,6 +15,7 @@ import functools
 import logging
 import os
 import re
+import stat
 import tempfile
 from pathlib import Path
 
@@ -268,7 +269,21 @@ def get_work_items_dir() -> Path:
 
 
 def ensure_opensre_tmp_dir() -> Path:
+    """Create OpenSRE's temp directory, refusing one that somebody else made.
+
+    The system temp directory is shared between users on Linux. Scripts are
+    written here and then run, and stale entries are deleted from here, so a
+    directory another user created first, or a link they left in its place,
+    would let them choose what runs and what is deleted.
+    """
     OPENSRE_TMP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name == "posix":
+        status = OPENSRE_TMP_DIR.lstat()
+        if not stat.S_ISDIR(status.st_mode) or status.st_uid != os.getuid():
+            raise PermissionError(
+                f"{OPENSRE_TMP_DIR} is not a directory owned by this user. Remove it, "
+                "or set TMPDIR to a directory of your own."
+            )
     with contextlib.suppress(OSError):
         OPENSRE_TMP_DIR.chmod(0o700)
     return OPENSRE_TMP_DIR
