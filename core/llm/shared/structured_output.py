@@ -21,6 +21,7 @@ from typing import Any, cast
 from pydantic import BaseModel, ValidationError
 
 from config.constants.llm import OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV
+from core.llm.shared.transport_failure import is_transport_failure
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,17 @@ class StructuredOutputClient:
                         return self._model.model_validate(extract_json_payload(payload))
                 except Exception as err:
                     elapsed_ms = (time.perf_counter() - started) * 1000
+                    # A timeout or dropped connection means the native request may
+                    # already have run upstream; the fallback would bill it again.
+                    if is_transport_failure(err):
+                        logger.warning(
+                            "Native structured output failed after %.0fms (%s: %s); "
+                            "not falling back to prompt-injected schema.",
+                            elapsed_ms,
+                            type(err).__name__,
+                            err,
+                        )
+                        raise
                     # Warning (not info): fallback means a second full LLM call.
                     logger.warning(
                         "Native structured output failed after %.0fms (%s: %s); "
