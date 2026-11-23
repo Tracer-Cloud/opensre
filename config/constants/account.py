@@ -18,11 +18,11 @@ OPENSRE_ACTOR_HEADER = "X-OpenSRE-Actor"
 OPENSRE_ACTOR_HEADER_ENV = "OPENSRE_LLM_ACTOR_ID"
 # A hosted gateway never logs in, so it cannot learn the served model the way a
 # CLI does. The webapp enforces its own model on every request; this name only
-# has to pick the matching OpenAI endpoint (gpt-6.1* → Responses API) and size
+# has to pick the matching OpenAI endpoint (gpt-6* → Responses API) and size
 # the context window. Paired effort, when unset, is extra high (``xhigh``).
 # Override the model when the webapp's model changes family.
 OPENSRE_ACCOUNT_LLM_MODEL_ENV = "OPENSRE_ACCOUNT_LLM_MODEL"
-OPENSRE_GATEWAY_LLM_MODEL_DEFAULT = "gpt-6.1-sol"
+OPENSRE_GATEWAY_LLM_MODEL_DEFAULT = "gpt-6.2-sol"
 OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
 #: ``mode`` query value asking the webapp to show the code for pasting instead
 #: of redirecting to the loopback listener (the browser is on another machine).
