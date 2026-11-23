@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ssl
 import sys
+from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 
@@ -22,7 +23,7 @@ from integrations.mongodb_atlas import MongoDBAtlasConfig
 from integrations.openobserve.tools.openobserve_logs_tool import query_openobserve_logs
 from integrations.smtp import delivery as smtp_delivery
 from integrations.snowflake.tools.snowflake_query_history_tool import query_snowflake_history
-from integrations.splunk.client import SplunkClient
+from integrations.splunk.client import SplunkClient, writing_spl_command
 from integrations.splunk.client import SplunkIntegrationConfig as SplunkConfig
 
 
@@ -129,7 +130,7 @@ def test_snowflake_still_runs_a_select(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def _post(_url: str, **kwargs: Any) -> httpx.Response:
         sent.append(kwargs["json"])
-        return httpx.Response(200, json={"data": []}, request=httpx.Request("POST", _url))
+        return httpx.Response(HTTPStatus.OK, json={"data": []}, request=httpx.Request("POST", _url))
 
     monkeypatch.setattr(httpx, "post", _post)
 
@@ -139,6 +140,37 @@ def test_snowflake_still_runs_a_select(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result["available"] is True
     assert sent[0]["statement"] == "select 1 -- limit\nLIMIT 5"
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "SELECT * FROM T WHERE note = '--' LIMIT 5",
+        "SELECT * FROM T WHERE note = 'a; b /* c' LIMIT 5",
+    ],
+)
+def test_snowflake_reads_a_quoted_value_as_a_value(
+    monkeypatch: pytest.MonkeyPatch, statement: str
+) -> None:
+    """A comment marker or ``;`` inside quotes is data, so the statement runs as written."""
+    sent: list[dict[str, Any]] = []
+
+    def _post(_url: str, **kwargs: Any) -> httpx.Response:
+        sent.append(kwargs["json"])
+        return httpx.Response(HTTPStatus.OK, json={"data": []}, request=httpx.Request("POST", _url))
+
+    monkeypatch.setattr(httpx, "post", _post)
+
+    result = query_snowflake_history(account_identifier="acct", token="t", query=statement)
+
+    assert result["available"] is True
+    assert sent[0]["statement"] == statement
+
+
+def test_splunk_can_search_for_text_that_looks_like_a_command() -> None:
+    """Quoted search terms are text to find: logs do contain ``| delete``."""
+    assert writing_spl_command('index=main "| delete" | head 5') is None
+    assert writing_spl_command('index=main "quoted" | delete') == "delete"
 
 
 @pytest.mark.parametrize(

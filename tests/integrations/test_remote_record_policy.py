@@ -136,6 +136,17 @@ def test_remote_services_named_by_the_app_are_kept() -> None:
             "kubernetes",
             {"kubeconfig": _TOKEN_KUBECONFIG.replace(_PUBLIC_ADDRESS, "169.254.170.2")},
         ),
+        # Every server a connection string names is checked, not only the first,
+        # and so is one named in the query or given as a local socket.
+        (
+            "mongodb",
+            {"connection_string": f"mongodb://{_PUBLIC_ADDRESS}:27017,127.0.0.1:27017/"},
+        ),
+        (
+            "mongodb",
+            {"connection_string": f"mongodb://u:p@{_PUBLIC_ADDRESS}/db?host=10.0.0.5"},
+        ),
+        ("mongodb", {"connection_string": "mongodb://%2Fvar%2Frun%2Fmongodb.sock/db"}),
     ],
 )
 def test_an_organization_cannot_point_its_host_at_the_hosts_own_network(
@@ -149,8 +160,11 @@ def test_an_organization_can_point_its_host_at_public_addresses() -> None:
     jenkins = {"base_url": f"https://{_PUBLIC_ADDRESS}", "username": "x", "api_token": "x"}
     postgres = {"host": _PUBLIC_ADDRESS, "database": "d", "username": "u", "password": "p"}
 
+    mongodb = {"connection_string": f"mongodb://u:p@{_PUBLIC_ADDRESS}:27017,{_PUBLIC_ADDRESS}/db"}
+
     assert _services(_record("jenkins", jenkins, from_app=False)) == ["jenkins"]
     assert _services(_record("postgresql", postgres, from_app=False)) == ["postgresql"]
+    assert _services(_record("mongodb", mongodb, from_app=False)) == ["mongodb"]
 
 
 def test_a_laptop_may_reach_its_own_private_network_through_app_records() -> None:

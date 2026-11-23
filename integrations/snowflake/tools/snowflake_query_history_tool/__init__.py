@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import httpx
@@ -12,6 +11,11 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.snowflake.tools.snowflake_query_history_tool.statement import (
+    has_limit,
+    read_only_statement_error,
+    statement_skeleton,
+)
 
 _DEFAULT_MAX_RESULTS = 50
 _MAX_HARD_LIMIT = 200
@@ -55,34 +59,11 @@ def _default_query(limit: int) -> str:
     )
 
 
-_SQL_COMMENT = re.compile(r"/\*.*?\*/|--[^\n]*", re.DOTALL)
-# Statements that read. Snowflake has no data-modifying CTE, so a statement
-# that starts with one of these cannot write.
-_READ_ONLY_STATEMENT = re.compile(r"\s*(?:select|with|show|describe|desc|explain)\b", re.IGNORECASE)
-
-
-def _read_only_statement_error(query: str) -> str | None:
-    """Why ``query`` may not run, or None when it is one read-only statement.
-
-    The statement is written by the model, which reads untrusted text (logs,
-    alerts, issue bodies), and runs with every grant the stored token has.
-    """
-    bare = _SQL_COMMENT.sub(" ", query).strip().rstrip(";").strip()
-    if not bare:
-        return None
-    if ";" in bare:
-        return "Only one statement can run per call."
-    if not _READ_ONLY_STATEMENT.match(bare):
-        return "Only SELECT, WITH, SHOW, DESCRIBE and EXPLAIN statements can run here."
-    return None
-
-
 def _ensure_sql_limit(query: str, limit: int) -> str:
     normalized = query.strip().rstrip(";")
-    bare = _SQL_COMMENT.sub(" ", normalized).strip()
-    if not bare:
+    if not statement_skeleton(normalized).strip():
         return _default_query(limit)
-    if " limit " in f" {bare.lower()} ":
+    if has_limit(normalized):
         return normalized
     # On its own line, so a trailing ``--`` comment cannot swallow the limit.
     return f"{normalized}\nLIMIT {limit}"
@@ -188,7 +169,7 @@ def query_snowflake_history(
     if not bearer:
         return tool_unavailable("snowflake", "Missing Snowflake token.", rows=[])
 
-    refusal = _read_only_statement_error(query)
+    refusal = read_only_statement_error(query)
     if refusal is not None:
         return tool_unavailable("snowflake", refusal, rows=[])
     statement = _ensure_sql_limit(query, effective_limit)

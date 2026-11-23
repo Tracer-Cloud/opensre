@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -15,11 +14,9 @@ from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
+from integrations.openobserve.tools.openobserve_logs_tool.organization import is_organization_name
 
 _DEFAULT_MAX_RESULTS = 100
-# The organization is one segment of the request path; anything else in it
-# (``/``, ``?``, ``..``) would send the stored credentials to another endpoint.
-_ORG_NAME = re.compile(r"[A-Za-z0-9_-]+")
 _MAX_HARD_LIMIT = 200
 
 #: Bound the SQL query text echoed into a report summary -- it can be a long
@@ -198,7 +195,7 @@ def query_openobserve_logs(
         )
 
     org_name = (org or "default").strip()
-    if not _ORG_NAME.fullmatch(org_name):
+    if not is_organization_name(org_name):
         return tool_unavailable(
             "openobserve",
             "OpenObserve organization must be a plain name (letters, digits, '_' or '-').",

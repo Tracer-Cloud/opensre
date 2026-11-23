@@ -32,6 +32,22 @@ _PYTHON_EXECUTABLE_PREFIXES: tuple[str, ...] = ("python", "pypy")
 # itself the approval the user never gave.
 OPENSRE_BLOCKED_SUBCOMMANDS: frozenset[str] = frozenset({"agent", "ask"})
 
+
+def blocked_subcommand(tokens: list[str]) -> str | None:
+    """The blocked subcommand ``tokens`` would reach, or None.
+
+    The subcommand is the first word unless root options come before it, and
+    some of those take a value. Rather than guess which later word the CLI
+    will dispatch on, a command that starts with an option is refused when a
+    blocked word appears anywhere in it.
+    """
+    words = [token.lower() for token in tokens]
+    if not words:
+        return None
+    candidates = words if words[0].startswith("-") else words[:1]
+    return next((word for word in candidates if word in OPENSRE_BLOCKED_SUBCOMMANDS), None)
+
+
 INTERACTIVE_OPENSRE_COMMAND_PATHS: frozenset[str] = frozenset(
     {
         "onboard",
@@ -354,8 +370,9 @@ def run_opensre_cli_command_result(
         # OpenSRE's own child processes; from here it would be any program at all.
         presenter.print("[error]Cannot run an internal launcher flag as a command.[/]")
         return OpensreRunResult(outcome=OpensreRunOutcome.BLOCKED, attempted=False)
-    if first_token in OPENSRE_BLOCKED_SUBCOMMANDS:
-        presenter.print(f"[error]Cannot run `opensre {first_token}`: subcommand is blocked.[/]")
+    blocked = blocked_subcommand(tokens)
+    if blocked is not None:
+        presenter.print(f"[error]Cannot run `opensre {blocked}`: subcommand is blocked.[/]")
         return OpensreRunResult(outcome=OpensreRunOutcome.BLOCKED, attempted=False)
 
     if is_interactive_wizard(tokens):

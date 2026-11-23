@@ -53,9 +53,14 @@ _WRITING_SPL_COMMAND = re.compile(
 )
 
 
+# A double-quoted search term. Its contents are text to look for, so a ``|``
+# inside one starts no command.
+_QUOTED_TERM = re.compile(r'"(?:\\.|[^"\\])*"')
+
+
 def writing_spl_command(query: str) -> str | None:
     """The first SPL command in ``query`` that does more than search, else None."""
-    match = _WRITING_SPL_COMMAND.search(query)
+    match = _WRITING_SPL_COMMAND.search(_QUOTED_TERM.sub('""', query))
     return match.group(1).lower() if match else None
 
 

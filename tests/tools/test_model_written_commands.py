@@ -93,6 +93,9 @@ class _Presenter:
         "ask --dangerously-bypass-approvals 'run env'",
         "ask --allowed-tool shell_run 'run env'",
         "agent",
+        # Root options may come before the subcommand, with or without a value.
+        "--json ask --dangerously-bypass-approvals 'run env'",
+        "--resume earlier-session ask --dangerously-bypass-approvals 'run env'",
     ],
 )
 def test_cli_exec_cannot_start_a_program_or_a_self_approving_agent(payload: str) -> None:
@@ -100,6 +103,11 @@ def test_cli_exec_cannot_start_a_program_or_a_self_approving_agent(payload: str)
 
     assert result.outcome is OpensreRunOutcome.BLOCKED
     assert result.attempted is False
+
+
+@pytest.mark.parametrize("payload", ["health", "--json health", "integrations show ask"])
+def test_a_root_option_does_not_block_an_ordinary_command(payload: str) -> None:
+    assert opensre_cli.blocked_subcommand(payload.split()) is None
 
 
 def test_relaunching_opensre_never_imports_from_the_working_directory(

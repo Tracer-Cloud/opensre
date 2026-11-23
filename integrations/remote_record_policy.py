@@ -24,7 +24,7 @@ import time
 from collections.abc import Mapping
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import yaml
 
@@ -58,6 +58,8 @@ _KUBECONFIG_CLUSTER_FIELDS = ("certificate-authority",)
 
 # Fields that carry a bare host name (or a comma-separated list of them).
 _HOST_FIELDS = frozenset({"bootstrap_servers", "host", "hostname", "hosts", "server"})
+# Query parameters a database driver reads the server from.
+_SERVER_QUERY_FIELDS = ("host", "hostaddr")
 _INTERNAL_NAME_SUFFIXES = (".internal", ".local", ".localhost")
 _RESOLUTION_TTL_SECONDS = 300.0
 _resolved_internal: dict[str, tuple[float, bool]] = {}
@@ -157,20 +159,35 @@ def _internal_address_field(credentials: Mapping[str, Any]) -> str | None:
         if "://" in value:
             if _address_is_internal(value):
                 return name
-        elif name in _HOST_FIELDS:
-            for host in value.split(","):
-                if _host_is_internal(_bare_host(host)):
-                    return name
+        elif name in _HOST_FIELDS and any(
+            _server_is_internal(server) for server in value.split(",")
+        ):
+            return name
     return None
 
 
 def _address_is_internal(url: str) -> bool:
+    """Whether any server ``url`` names is inside this host's network."""
     try:
-        host = urlsplit(url.strip()).hostname or ""
+        parts = urlsplit(url.strip())
+        query = parse_qs(parts.query)
     except ValueError:
         # An address that cannot be read cannot be shown to be outside.
         return True
-    return _host_is_internal(host)
+    # A connection string may list several servers (``mongodb://a,b/``), and a
+    # driver may take the server from the query instead (``?host=``).
+    named = parts.netloc.rpartition("@")[2].split(",")
+    for name in _SERVER_QUERY_FIELDS:
+        for value in query.get(name, ()):
+            named.extend(value.split(","))
+    return any(_server_is_internal(server) for server in named)
+
+
+def _server_is_internal(server: str) -> bool:
+    """Whether one ``host`` or ``host:port`` entry of a connection string is internal."""
+    text = unquote(server).strip()
+    # A path is a local socket: a service on this machine, not a remote one.
+    return text.startswith("/") or _host_is_internal(_bare_host(text))
 
 
 def _bare_host(value: str) -> str:

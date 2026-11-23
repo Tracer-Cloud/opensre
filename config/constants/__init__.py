@@ -360,6 +360,18 @@ if TYPE_CHECKING:
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_HOST as CODING_AGENT_SANDBOX_HOST,
     )
+    from config.constants.control_plane_env import (
+        CONTROL_PLANE_SECRET_ENV_NAMES as CONTROL_PLANE_SECRET_ENV_NAMES,
+    )
+    from config.constants.control_plane_env import (
+        GATEWAY_LISTENER_TOKEN_ENV as GATEWAY_LISTENER_TOKEN_ENV,
+    )
+    from config.constants.control_plane_env import (
+        LEGACY_LISTENER_TOKEN_ENV as LEGACY_LISTENER_TOKEN_ENV,
+    )
+    from config.constants.control_plane_env import (
+        without_control_plane_secrets as without_control_plane_secrets,
+    )
     from config.constants.conversation_history import (
         OPENSRE_HISTORY_TOKEN_BUDGET_ENV as OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
     )
