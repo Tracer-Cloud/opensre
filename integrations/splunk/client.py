@@ -59,8 +59,15 @@ _QUOTED_TERM = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
 def writing_spl_command(query: str) -> str | None:
-    """The first SPL command in ``query`` that does more than search, else None."""
-    match = _WRITING_SPL_COMMAND.search(_QUOTED_TERM.sub('""', query))
+    """The first SPL command in ``query`` that does more than search, else None.
+
+    Quoted search terms are set aside only when their pairing is certain. A
+    single quote quotes a field name in some commands and is a plain character
+    in others, so with one present a ``"`` can pair across a real command and
+    hide it; then the whole text is checked as written.
+    """
+    checked = query if "'" in query else _QUOTED_TERM.sub('""', query)
+    match = _WRITING_SPL_COMMAND.search(checked)
     return match.group(1).lower() if match else None
 
 
