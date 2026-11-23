@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from config.constants.paths import PROJECT_ROOT
 from config.grafana_cloud import (
     get_account_instance_url,
     get_account_read_token,
@@ -22,7 +23,7 @@ def _skip_if_missing(missing: list[str], *, reason: str) -> None:
 
 
 def require_grafana_cloud_env() -> None:
-    load_env()
+    load_env(PROJECT_ROOT / ".env")
     required = {
         "GCLOUD_OTLP_ENDPOINT": get_otlp_endpoint(),
         "GCLOUD_OTLP_AUTH_HEADER": get_otlp_auth_header(),
@@ -37,7 +38,7 @@ def require_grafana_cloud_env() -> None:
 
 
 def require_grafana_query_env(account_id: str | None = None) -> None:
-    load_env()
+    load_env(PROJECT_ROOT / ".env")
     normalized_id = (account_id or "tracerbio").lower()
     token_key = (
         "GRAFANA_READ_TOKEN"

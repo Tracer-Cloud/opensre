@@ -2242,8 +2242,8 @@ class TestRunCliCommand:
             del check
             assert timeout == 30.0
             assert env["OPENSRE_PARENT_INTERACTIVE_SHELL"] == "1"
-            assert cmd[:3] == [sys.executable, "-m", "surfaces.cli"]
-            assert cmd[3:] == ["update"]
+            assert cmd[:4] == [sys.executable, "-P", "-m", "surfaces.cli"]
+            assert cmd[4:] == ["update"]
             return subprocess.CompletedProcess(cmd, 0)
 
         monkeypatch.setattr(m.subprocess, "run", _fake_run)
@@ -2270,8 +2270,8 @@ class TestRunCliCommand:
             del check, timeout, text, encoding, errors
             assert capture_output is True
             assert env["OPENSRE_PARENT_INTERACTIVE_SHELL"] == "1"
-            assert cmd[:3] == [sys.executable, "-m", "surfaces.cli"]
-            assert cmd[3:] == ["config", "show"]
+            assert cmd[:4] == [sys.executable, "-P", "-m", "surfaces.cli"]
+            assert cmd[4:] == ["config", "show"]
             return subprocess.CompletedProcess(
                 cmd,
                 0,

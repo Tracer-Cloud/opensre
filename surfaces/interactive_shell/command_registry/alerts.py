@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.markup import escape
 
 from core.domain.alerts.inbox import get_current_inbox
+from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import BOLD_BRAND, DIM, HIGHLIGHT, WARNING
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
@@ -30,7 +32,9 @@ def _cmd_alerts(_session: Session, console: Console, _args: list[str]) -> bool:
     table.add_row("dropped", str(inbox.dropped))
 
     for alert in inbox.peek_last(5):
-        table.add_row(f"[{DIM}]recent[/]", f"{alert.alert_name or 'untitled'} — {alert.text[:80]}")
+        # Alert text is untrusted: no terminal controls, no Rich markup.
+        summary = strip_terminal_controls(f"{alert.alert_name or 'untitled'} — {alert.text[:80]}")
+        table.add_row(f"[{DIM}]recent[/]", escape(summary))
 
     print_repl_table(console, table)
     return True

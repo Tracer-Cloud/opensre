@@ -198,14 +198,13 @@ def get_topic_health(
     effective_limit = min(limit or config.max_results, config.max_results)
     try:
         admin = _get_admin_client(config)
-        if topic:
-            metadata = admin.list_topics(topic=topic, timeout=config.timeout_seconds)
-        else:
-            metadata = admin.list_topics(timeout=config.timeout_seconds)
+        # Asking a broker for one topic's metadata creates that topic when
+        # auto-creation is on, so list everything and pick the topic out here.
+        metadata = admin.list_topics(timeout=config.timeout_seconds)
 
         topics: list[dict[str, Any]] = []
         for tname, tmeta in metadata.topics.items():
-            if tname.startswith("__"):
+            if tname.startswith("__") or (topic and tname != topic):
                 continue
             if len(topics) >= effective_limit:
                 break

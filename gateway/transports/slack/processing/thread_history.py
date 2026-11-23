@@ -120,6 +120,13 @@ def seed_session_from_slack_thread(
 
 
 def _is_assistant_message(text: str, *, user: str, bot_user_id: str) -> bool:
-    if bot_user_id and user == bot_user_id:
-        return True
+    """Whether a thread message is one of the assistant's own turns.
+
+    The author decides whenever the bot's id is known. Anyone who can post in
+    the thread can write text shaped like an assistant offer, and a member's
+    "yes" would then be answered against an offer the assistant never made.
+    The shape is only a fallback for a lookup that could not name the bot.
+    """
+    if bot_user_id:
+        return user == bot_user_id
     return bool(_ASSISTANT_SHAPE_RE.search(text))

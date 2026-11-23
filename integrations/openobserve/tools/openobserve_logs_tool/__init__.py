@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,6 +17,9 @@ from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 
 _DEFAULT_MAX_RESULTS = 100
+# The organization is one segment of the request path; anything else in it
+# (``/``, ``?``, ``..``) would send the stored credentials to another endpoint.
+_ORG_NAME = re.compile(r"[A-Za-z0-9_-]+")
 _MAX_HARD_LIMIT = 200
 
 #: Bound the SQL query text echoed into a report summary -- it can be a long
@@ -193,7 +197,14 @@ def query_openobserve_logs(
             f"SELECT * FROM \"{stream_name}\" WHERE level = 'error' ORDER BY _timestamp DESC"
         )
 
-    endpoint = f"{base}/api/{(org or 'default').strip()}/_search"
+    org_name = (org or "default").strip()
+    if not _ORG_NAME.fullmatch(org_name):
+        return tool_unavailable(
+            "openobserve",
+            "OpenObserve organization must be a plain name (letters, digits, '_' or '-').",
+            records=[],
+        )
+    endpoint = f"{base}/api/{org_name}/_search"
     payload: dict[str, Any] = {
         "query": {
             "sql": normalized_query,

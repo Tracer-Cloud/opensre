@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ATLAS_BASE_URL = "https://cloud.mongodb.com/api/atlas/v2"
 DEFAULT_ATLAS_TIMEOUT = 15
 DEFAULT_ATLAS_MAX_RESULTS = 50
+_PROJECT_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 
 class MongoDBAtlasConfig(StrictConfigModel):
@@ -59,7 +61,12 @@ class MongoDBAtlasConfig(StrictConfigModel):
     @field_validator("project_id", mode="before")
     @classmethod
     def _normalize_project_id(cls, value: Any) -> str:
-        return str(value or "").strip()
+        # Every request path is built from this id, so it stays one path segment:
+        # a ``/`` or ``?`` in it would send the API key to another Atlas resource.
+        project_id = str(value or "").strip()
+        if project_id and not _PROJECT_ID.fullmatch(project_id):
+            raise ValueError("Atlas project_id must contain only letters, digits, '_' or '-'.")
+        return project_id
 
     @field_validator("base_url", mode="before")
     @classmethod

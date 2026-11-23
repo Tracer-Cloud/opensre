@@ -62,14 +62,22 @@ def format_shell_command_for_display(command: str) -> str:
                 close_index = candidate_index
                 break
 
-        body_line_count = 0 if close_index is None else close_index - body_start
+        if close_index is None:
+            # No closing line, so this is not a heredoc whose body can be
+            # folded: ``<<`` also appears inside quotes and comments, and
+            # folding there would hide every command on the lines after it.
+            display_lines.append(line)
+            index += 1
+            continue
+
+        body_line_count = close_index - body_start
         if body_line_count <= 0:
             summary = f"{line} …"
         else:
             noun = "line" if body_line_count == 1 else "lines"
             summary = f"{line} … ({body_line_count} {noun})"
         display_lines.append(summary)
-        index = len(lines) if close_index is None else close_index + 1
+        index = close_index + 1
 
     return "\n".join(display_lines)
 

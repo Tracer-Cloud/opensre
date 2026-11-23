@@ -114,9 +114,12 @@ def prepare_architecture_workspace(*, audit_owner: str = "") -> Path:
     :func:`cleanup_architecture_workspace` lets delete it. Leftovers older than
     any audit can run are swept first.
     """
-    root = architecture_workspace_dir()
     try:
+        root = architecture_workspace_dir()
         root.mkdir(parents=True, exist_ok=True)
+        if root.is_symlink():
+            # The sweep deletes what it finds here; a link would aim it elsewhere.
+            raise OSError(f"{root} is a link, not a directory")
         _sweep_stale_entries(root)
         directory = Path(tempfile.mkdtemp(prefix=_AUDIT_DIR_PREFIX, dir=root)).resolve()
     except OSError as exc:

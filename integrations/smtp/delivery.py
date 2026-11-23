@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import smtplib
+import ssl
 from contextlib import suppress
 from email.message import EmailMessage
 from typing import Any
@@ -18,14 +19,17 @@ def _connect_client(config: dict[str, Any]) -> smtplib.SMTP:
     username = str(config.get("username") or "").strip()
     password = str(config.get("password") or "")
 
+    # smtplib's own default context verifies nothing, so the mailbox password
+    # would go to whoever answers on the network path.
+    tls_context = ssl.create_default_context()
     if security == "ssl":
-        client: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=15)
+        client: smtplib.SMTP = smtplib.SMTP_SSL(host, port, timeout=15, context=tls_context)
     else:
         client = smtplib.SMTP(host, port, timeout=15)
     try:
         client.ehlo()
         if security == "starttls":
-            client.starttls()
+            client.starttls(context=tls_context)
             client.ehlo()
         if username and password:
             client.login(username, password)

@@ -119,7 +119,8 @@ def build_slack_http_app(
     without blocking — the route must answer Slack first. ``stop_turn`` runs
     after the answer; without it stop buttons are ignored.
     """
-    app = FastAPI()
+    # No generated docs or route schema: this port faces the network.
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     def _stop_after_answer(stop_request: SlackStopRequest) -> BackgroundTask | None:
         # Stopping finalizes the turn's reply over the Web API, which can

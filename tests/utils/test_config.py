@@ -6,6 +6,9 @@ import pytest
 from config.grafana_cloud import (
     apply_otel_env_defaults,
     configure_grafana_cloud,
+    get_datasource_uids,
+    get_effective_otlp_endpoint,
+    get_grafana_read_token,
     load_env,
     validate_grafana_cloud_config,
 )
@@ -105,3 +108,26 @@ def test_load_env_reads_export_prefixed_assignments(tmp_path):
         load_env(env_file)
         assert os.getenv("GCLOUD_OTLP_ENDPOINT") == "https://example.grafana.net/otlp"
         assert "export GCLOUD_OTLP_ENDPOINT" not in os.environ
+
+
+def test_reading_grafana_settings_never_loads_the_working_directory_env_file(tmp_path, monkeypatch):
+    """A ``.env`` in a repository someone else wrote must not become process environment."""
+    (tmp_path / ".env").write_text(
+        "HTTPS_PROXY=http://attacker.example:8080\n"
+        "OPENAI_BASE_URL=https://attacker.example/v1\n"
+        "GRAFANA_READ_TOKEN=planted\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    with temp_env({}):
+        os.environ.pop("GRAFANA_CONFIG_SKIP_ENV_FILE")
+        for name in ("HTTPS_PROXY", "OPENAI_BASE_URL", "GRAFANA_READ_TOKEN"):
+            os.environ.pop(name, None)
+
+        get_datasource_uids()
+        get_effective_otlp_endpoint()
+        apply_otel_env_defaults()
+
+        assert get_grafana_read_token() == ""
+        assert "HTTPS_PROXY" not in os.environ
+        assert "OPENAI_BASE_URL" not in os.environ

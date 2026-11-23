@@ -21,6 +21,10 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from config.constants.control_plane_env import (
+    GATEWAY_LISTENER_TOKEN_ENV,
+    LEGACY_LISTENER_TOKEN_ENV,
+)
 from core.domain.alerts.inbox import (
     AlertInbox,
     IncomingAlert,
@@ -37,11 +41,11 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 #: plane. A hosted gateway is reachable from the internet on its prompt port,
 #: so the token guarding it must name one tenant: a token read out of one
 #: gateway must not open any other.
-_GATEWAY_LISTENER_TOKEN_ENV = "OPENSRE_GATEWAY_LISTENER_TOKEN"
+_GATEWAY_LISTENER_TOKEN_ENV = GATEWAY_LISTENER_TOKEN_ENV
 #: The fleet-wide token every gateway used to share. Still accepted so a
 #: running gateway keeps serving while the fleet rolls onto per-tenant tokens;
 #: dropped from task definitions once every gateway carries its own.
-_LEGACY_LISTENER_TOKEN_ENV = "OPENSRE_ALERT_LISTENER_TOKEN"
+_LEGACY_LISTENER_TOKEN_ENV = LEGACY_LISTENER_TOKEN_ENV
 
 router = APIRouter()
 
@@ -74,9 +78,10 @@ def require_local_or_token(request: Request) -> JSONResponse | None:
         # Every accepted token is compared, without short-circuiting, so a
         # wrong token takes the same time to reject however much of it was
         # right and whichever token the caller was reaching for.
+        # Compared as bytes: a non-ASCII header is a wrong token, not a crash.
         matched = False
         for token in accepted:
-            if hmac.compare_digest(supplied, f"Bearer {token}"):
+            if hmac.compare_digest(supplied.encode(), f"Bearer {token}".encode()):
                 matched = True
         if matched:
             return None
@@ -166,7 +171,8 @@ def build_alert_intake_app() -> FastAPI:
     Unlike the gateway web app it pulls in no storage or process
     profile — it needs only the shared inbox the host installs.
     """
-    app = FastAPI()
+    # No generated docs or route schema: this port faces the network.
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(RequestBodyLimitMiddleware)
     app.include_router(router)
     return app

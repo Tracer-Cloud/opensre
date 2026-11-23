@@ -56,6 +56,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "port.py",
         "probes.py",
         "registry.py",
+        # What a record written off this machine may ask it to do: applied to
+        # every vendor's record where they are classified, not a vendor.
+        "remote_record_policy.py",
         "scheduled_agent_bootstrap.py",
         # Every provider's scheduled-delivery adapter, bundled for a host to
         # install (not a vendor): the delivery peer of scheduled_agent_bootstrap.py.

@@ -40,6 +40,13 @@ It retries on PR and CI events and periodically for external checks. GitHub
 branch protection and review requirements still apply. The label is the
 maintainer's decision that the PR is ready; it does not itself review code.
 
+The label approves one commit, not the pull request. Adding it records an
+`automerge/approved` status on the head commit, and only a head carrying that
+status is merged. The person adding the label needs write access. A later push
+by someone with write access approves the new head; a push by anyone else
+(including the author using "Update branch") removes the label, and a
+maintainer adds it again after looking at the new commits.
+
 Create the repository label `automerge` if it is absent. Auto-merges use the
 built-in GitHub Actions token; their resulting pushes do not trigger the normal
 push-triggered main CI, CodeQL, or rolling release workflows.

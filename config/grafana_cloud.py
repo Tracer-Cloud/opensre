@@ -24,16 +24,20 @@ def _get_env(key: str, default: str = "") -> str:
 
 
 def get_env(key: str, default: str = "") -> str:
-    load_env()
     return _get_env(key, default)
 
 
-def load_env(env_path: Path | str | None = None, *, override: bool = False) -> None:
-    """Load ``env_path`` (default ``./.env``) unless the env-file skip switch is set."""
+def load_env(env_path: Path | str, *, override: bool = False) -> None:
+    """Load the named env file unless the env-file skip switch is set.
+
+    The file is always named by the caller. The working directory is often a
+    repository someone else wrote, and every assignment in the file becomes
+    process environment (proxy, CA bundle, model endpoint, pager), so a file is
+    never picked up from wherever the process happens to be running.
+    """
     if os.getenv("GRAFANA_CONFIG_SKIP_ENV_FILE") == "1":
         return
-    path = Path(env_path) if env_path is not None else Path.cwd() / ".env"
-    load_env_file(path, override=override)
+    load_env_file(Path(env_path), override=override)
 
 
 def get_account_read_token(account_id: str) -> str:
@@ -57,7 +61,6 @@ def get_grafana_instance_url() -> str:
 
 
 def get_datasource_uids() -> tuple[str, str, str]:
-    load_env()
     loki_uid = _get_env(GRAFANA_LOKI_DATASOURCE_UID_ENV, DEFAULT_LOKI_UID)
     tempo_uid = _get_env(GRAFANA_TEMPO_DATASOURCE_UID_ENV, DEFAULT_TEMPO_UID)
     mimir_uid = _get_env(GRAFANA_MIMIR_DATASOURCE_UID_ENV, DEFAULT_MIMIR_UID)
@@ -73,7 +76,6 @@ def get_otlp_auth_header() -> str:
 
 
 def get_effective_otlp_endpoint() -> str:
-    load_env()
     return _get_env("OTEL_EXPORTER_OTLP_ENDPOINT") or _get_env("GCLOUD_OTLP_ENDPOINT", "")
 
 
@@ -134,7 +136,8 @@ def configure_grafana_cloud(env_file: Path | str | None = None) -> None:
         - GCLOUD_OTLP_ENDPOINT: Grafana Cloud OTLP endpoint (required)
         - GCLOUD_OTLP_AUTH_HEADER: Authorization header value (optional but recommended)
     """
-    load_env(env_file)
+    if env_file is not None:
+        load_env(env_file)
 
     endpoint = get_otlp_endpoint()
     auth_header = get_otlp_auth_header()
@@ -151,7 +154,6 @@ def configure_grafana_cloud(env_file: Path | str | None = None) -> None:
 
 def apply_otel_env_defaults() -> None:
     """Apply OpenTelemetry environment defaults, preferring Grafana Cloud config if available."""
-    load_env()
     gcloud_endpoint = get_otlp_endpoint()
 
     if not get_otel_exporter_otlp_endpoint() and gcloud_endpoint:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -17,6 +18,45 @@ from integrations.probes import ProbeResult
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_SECONDS = 30.0
+
+# SPL commands that write, delete, send data out, or run code, wherever they
+# appear in a pipeline or subsearch. The search text is written by the model,
+# which reads untrusted log and alert text, and runs with the stored token.
+_WRITING_SPL_COMMANDS = (
+    "collect",
+    "crawl",
+    "dbxquery",
+    "delete",
+    "dump",
+    "map",
+    "mcollect",
+    "meventcollect",
+    "outputcsv",
+    "outputlookup",
+    "outputtext",
+    "rest",
+    "run",
+    "runshellscript",
+    "script",
+    "sendalert",
+    "sendemail",
+    "sichart",
+    "sirare",
+    "sistats",
+    "sitimechart",
+    "sitop",
+    "summaryindex",
+    "tscollect",
+)
+_WRITING_SPL_COMMAND = re.compile(
+    r"(?:^|[|\[])\s*(" + "|".join(_WRITING_SPL_COMMANDS) + r")\b", re.IGNORECASE
+)
+
+
+def writing_spl_command(query: str) -> str | None:
+    """The first SPL command in ``query`` that does more than search, else None."""
+    match = _WRITING_SPL_COMMAND.search(query)
+    return match.group(1).lower() if match else None
 
 
 def build_splunk_spl_query(
@@ -85,6 +125,13 @@ class SplunkClient:
         Returns normalized log rows. The export endpoint streams results
         immediately — no job polling needed, making it ideal for RCA.
         """
+        refused = writing_spl_command(query)
+        if refused is not None:
+            return {
+                "success": False,
+                "error": f"The SPL command `{refused}` writes or sends data; only searches run here.",
+            }
+
         now = datetime.now(UTC)
         earliest = now - timedelta(minutes=max(int(time_range_minutes), 1))
 

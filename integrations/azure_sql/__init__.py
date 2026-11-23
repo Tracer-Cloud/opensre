@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -167,21 +168,36 @@ def resolve_azure_sql_config(
     return build_azure_sql_config({"server": server, "port": port, "database": database})
 
 
+# A host name, optionally with the ``tcp:`` prefix or a named instance.
+_SERVER_NAME = re.compile(
+    r"(?:tcp:)?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?:\\[A-Za-z0-9_$#-]+)?"
+)
+
+
+def _odbc_value(value: object) -> str:
+    """Quote one connection-string value so it cannot end its attribute or add another.
+
+    The database name comes from a tool argument. Unquoted, a ``;`` in it starts
+    a new attribute, and a second server or a TLS switch written there would
+    send the stored login somewhere else.
+    """
+    return "{" + str(value).replace("}", "}}") + "}"
+
+
 def _get_connection(config: AzureSQLConfig) -> Any:
     """Create a pyodbc connection from config.  Caller must close."""
     import pyodbc
 
     encrypt_value = "yes" if config.encrypt else "no"
-
-    def _esc(v: object) -> str:
-        return str(v).replace("}", "}}")
+    if not _SERVER_NAME.fullmatch(config.server):
+        raise ValueError("Azure SQL server must be a host name.")
 
     conn_str = (
-        f"DRIVER={{{config.driver}}};"
-        f"SERVER={config.server},{config.port};"
-        f"DATABASE={config.database};"
-        f"UID={{{_esc(config.username)}}};"
-        f"PWD={{{_esc(config.password)}}};"
+        f"DRIVER={_odbc_value(config.driver)};"
+        f"SERVER={config.server},{int(config.port)};"
+        f"DATABASE={_odbc_value(config.database)};"
+        f"UID={_odbc_value(config.username)};"
+        f"PWD={_odbc_value(config.password)};"
         f"Encrypt={encrypt_value};"
         f"TrustServerCertificate=no;"
         f"Connection Timeout={int(config.timeout_seconds)};"

@@ -203,10 +203,19 @@ def arguments_preview(arguments: Mapping[str, Any]) -> str:
         preview = json.dumps(safe, ensure_ascii=False, default=str)
     except Exception:
         preview = str(safe)
-    preview = scrub_secrets(preview)
-    if len(preview) > ARGS_PREVIEW_LIMIT:
-        preview = preview[: ARGS_PREVIEW_LIMIT - 1] + "…"
-    return preview
+    scrubbed = scrub_secrets(preview)
+    notes: list[str] = []
+    if scrubbed != preview or safe != dict(arguments):
+        notes.append("part of this was redacted")
+    if len(scrubbed) > ARGS_PREVIEW_LIMIT:
+        hidden = len(scrubbed) - (ARGS_PREVIEW_LIMIT - 1)
+        scrubbed = scrubbed[: ARGS_PREVIEW_LIMIT - 1] + "…"
+        notes.append(f"{hidden} more characters are not shown")
+    if notes:
+        # Approving runs the whole call, so the approver is told outright when
+        # the prompt is not showing all of it.
+        scrubbed += f"\n[{'; '.join(notes)}: you are approving more than you can read here]"
+    return scrubbed
 
 
 __all__ = [

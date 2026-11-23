@@ -1,7 +1,8 @@
 name: Auto-merge
 
 # Maintainer opt-in. This workflow runs trusted code from the base branch only;
-# it never checks out or runs the pull request's code.
+# it never checks out or runs the pull request's code. The label approves one
+# commit: a later push by someone without write access removes it.
 on:
   pull_request_target:
     types: [labeled, synchronize, reopened, ready_for_review]
@@ -18,7 +19,7 @@ permissions:
   checks: read
   contents: write
   pull-requests: write
-  statuses: read
+  statuses: write
 
 concurrency:
   group: automerge-${{ github.event.pull_request.number || github.event.workflow_run.head_sha || github.run_id }}
@@ -38,6 +39,18 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+
+      # Event fields reach the script through the environment, never the shell text.
+      - name: Record which commit the label approves
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_ACTOR: ${{ github.event.sender.login }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HAS_AUTOMERGE_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'automerge') }}
+        run: python3 .github/scripts/automerge_pr.py record-approval
 
       - name: Find and evaluate labeled pull requests
         env:

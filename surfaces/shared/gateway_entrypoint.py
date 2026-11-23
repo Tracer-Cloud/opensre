@@ -21,7 +21,8 @@ from pathlib import Path
 
 _PYTHON_EXECUTABLE_PREFIXES: tuple[str, ...] = ("python", "pypy")
 _FOREGROUND_GATEWAY: tuple[str, ...] = ("gateway", "start", "--foreground")
-_MODULE_GATEWAY_ENTRY: tuple[str, ...] = ("-m", "surfaces.gateway_entry")
+# ``-P``: the directory the gateway is started from must not shadow the package.
+_MODULE_GATEWAY_ENTRY: tuple[str, ...] = ("-P", "-m", "surfaces.gateway_entry")
 
 
 def _sys_executable_is_python() -> bool:

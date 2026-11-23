@@ -69,9 +69,10 @@ def verify_slack_signature(
         return False
     if not timestamp_within_replay_window(timestamp, now=time.time() if now is None else now):
         return False
+    # Compared as bytes: a non-ASCII signature header is a wrong one, not a crash.
     return hmac.compare_digest(
-        expected_signature(signing_secret=signing_secret, timestamp=timestamp, body=body),
-        signature,
+        expected_signature(signing_secret=signing_secret, timestamp=timestamp, body=body).encode(),
+        signature.encode(),
     )
 
 
