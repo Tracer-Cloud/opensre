@@ -380,6 +380,7 @@ def test_prose_shaped_like_a_repository_never_becomes_the_turns_repository(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """ "why is my ci/cd failing" ran every GitHub tool on ``ci/cd``, and each answered 404."""
+    monkeypatch.setattr("integrations.github.accessible_repos._confirmed", {})
     monkeypatch.setattr(
         "integrations.github.accessible_repos.accessible_repositories", lambda _token: _REACHABLE
     )
