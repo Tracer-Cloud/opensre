@@ -1067,13 +1067,20 @@ class OpenObserveIntegrationConfig(StrictConfigModel):
     username: str = ""
     password: str = ""
     stream: str = ""
+    trace_stream: str = ""
     max_results: int = 100
     integration_id: str = ""
 
     _normalize_base_url = field_validator("base_url", mode="before")(normalize_url())
     _normalize_org = field_validator("org", mode="before")(normalize_with_default("default"))
     _normalize_strs = field_validator(
-        "api_token", "username", "password", "stream", "integration_id", mode="before"
+        "api_token",
+        "username",
+        "password",
+        "stream",
+        "trace_stream",
+        "integration_id",
+        mode="before",
     )(normalize_str())
 
     @field_validator("max_results", mode="before")
