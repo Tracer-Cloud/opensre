@@ -96,7 +96,6 @@ Give each credential the narrowest role that covers what you want the agent to r
 | `env` | No | `{}` | Environment variables for a `stdio` server, e.g. its API keys. Added to OpenSRE's own environment |
 | `auth_token` | No | — | Sent as `Authorization: Bearer …` unless `headers` sets `Authorization` |
 | `headers` | No | `{}` | HTTP headers sent on every request |
-| `env` | No | `{}` | Extra environment variables for a `stdio` server's process, e.g. `{"GRAFANA_API_KEY": "glsa_…"}` |
 | `allowed_tools` | No | all tools | Only expose these server tool names: a list, or a comma- or space-separated string. Any other value makes the server's config invalid, so the server is skipped |
 | `read_only` | No | `false` | Expose only the tools the server marks read-only |
 | `timeout_seconds` | No | `20` | Per-request timeout |
