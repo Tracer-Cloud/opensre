@@ -112,6 +112,14 @@ project-management skills.
 Typical flow: call `list_sentry_tools` first, then `call_sentry_tool` with the
 chosen name and arguments.
 
+The same connection also gives the agent each Sentry MCP tool as its own typed
+tool, named `mcp__sentry__<tool>` (for example `mcp__sentry__search_issues`),
+with the server's own description and argument schema. Tools the server marks
+read-only run like any read; every other one asks for approval the same way
+`call_sentry_tool` does. No extra setup is needed. If you also configured a
+[custom MCP server](/integrations/mcp-servers) named `sentry`, that server
+keeps the name and these typed tools are not added.
+
 ## Verify
 
 ```bash

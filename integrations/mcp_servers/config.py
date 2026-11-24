@@ -40,6 +40,7 @@ class McpServerConfig(StrictConfigModel):
     command: str = ""
     args: tuple[str, ...] = ()
     headers: dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
     auth_token: str = ""
     allowed_tools: tuple[str, ...] = ()
     read_only: bool = False
@@ -102,6 +103,14 @@ class McpServerConfig(StrictConfigModel):
         if not isinstance(value, dict):
             return {}
         return {str(k).strip(): str(v).strip() for k, v in value.items() if str(v).strip()}
+
+    @field_validator("env", mode="before")
+    @classmethod
+    def _normalize_env(cls, value: object) -> dict[str, str]:
+        """Values are kept as written: an empty value clears an inherited variable."""
+        if not isinstance(value, dict):
+            return {}
+        return {str(k).strip(): str(v) for k, v in value.items() if str(k).strip()}
 
     @model_validator(mode="after")
     def _validate_transport(self) -> McpServerConfig:
