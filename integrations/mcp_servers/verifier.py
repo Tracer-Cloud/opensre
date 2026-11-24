@@ -12,9 +12,7 @@ from integrations.verification import register_verifier, result
 
 
 def _config(raw: dict[str, Any]) -> McpServerConfig:
-    return McpServerConfig.model_validate(
-        {key: value for key, value in raw.items() if key in McpServerConfig.model_fields}
-    )
+    return McpServerConfig.from_mapping(raw)
 
 
 @register_verifier(MCP_SERVERS_SERVICE)

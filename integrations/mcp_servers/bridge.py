@@ -126,9 +126,7 @@ def _server_config(raw: object) -> McpServerConfig | None:
     if not isinstance(raw, Mapping):
         return None
     try:
-        return McpServerConfig.model_validate(
-            {key: value for key, value in raw.items() if key in McpServerConfig.model_fields}
-        )
+        return McpServerConfig.from_mapping(raw)
     except Exception:
         logger.warning("[mcp] skipping an MCP server with an invalid config")
         return None
