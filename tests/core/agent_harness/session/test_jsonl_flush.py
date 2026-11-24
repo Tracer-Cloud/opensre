@@ -276,3 +276,31 @@ def test_flush_parses_the_session_file_once(
 
     # Assert
     assert len(reads) == 1, f"flush parsed the session file {len(reads)} times"
+
+
+def test_flush_persists_chat_when_only_debug_system_prompt_exists(
+    storage_home: Path,
+) -> None:
+    """A diagnostic system prompt must not skip flushing conversation messages."""
+    storage = JsonlSessionStore()
+    session = _session(messages=[("user", "hello"), ("assistant", "world")])
+    storage.open_session(session)
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+
+    storage.flush(session)
+
+    records = [
+        json.loads(line)
+        for line in session_path(session.session_id).read_text(encoding="utf-8").splitlines()
+    ]
+    messages = [
+        (rec.get("role"), rec.get("content")) for rec in records if rec.get("type") == "message"
+    ]
+    assert ("user", "hello") in messages
+    assert ("assistant", "world") in messages
+    assert ("system", "system prompt") in messages

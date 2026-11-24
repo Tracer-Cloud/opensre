@@ -64,6 +64,30 @@ def test_flush_is_idempotent() -> None:
     assert len(leaves) == 1
 
 
+def test_flush_persists_chat_when_only_debug_system_prompt_exists() -> None:
+    storage = InMemorySessionStore()
+    session = _session(storage)
+    storage.open_session(session)
+    session.agent.messages = [("user", "hello"), ("assistant", "world")]
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+
+    storage.flush(session)
+
+    messages = [
+        (rec["role"], rec["content"])
+        for rec in storage.read(session.session_id)
+        if rec["type"] == "message"
+    ]
+    assert ("user", "hello") in messages
+    assert ("assistant", "world") in messages
+    assert ("system", "system prompt") in messages
+
+
 def test_append_turn_detail_writes_message_entries() -> None:
     storage = InMemorySessionStore()
     session = _session(storage)

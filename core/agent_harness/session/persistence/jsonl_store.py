@@ -18,7 +18,11 @@ from filelock import FileLock, Timeout
 
 from config.constants.session_store import OPENSRE_SESSION_FILE_LOCK_ENV
 from config.version import get_opensre_version
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, SessionPersistenceSource
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    SessionPersistenceSource,
+    is_conversation_message_record,
+)
 from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.observability.operations_log import record_operation
 from infrastructure.observability.trace.decisions import record_decision
@@ -582,9 +586,10 @@ class JsonlSessionStore:
         # write another leaf (end-of-session flush stays idempotent).
         # ``records`` is not re-read after the appends below. The counts in
         # the leaf entry only match ``custom_message``/``turn_stub`` records,
-        # and the guard below only looks for ``message`` records — neither
-        # append can produce either, so a re-parse would return the same
-        # answers for the cost of a full pass over the whole transcript.
+        # and the guard below only looks for conversation ``message`` records
+        # (debug system prompts do not count) — the appends above cannot
+        # produce either, so a re-parse would return the same answers for the
+        # cost of a full pass over the whole transcript.
         if session.accumulated_context and not trailing_leaf:
             self.append_custom_message(
                 session.session_id,
@@ -611,7 +616,9 @@ class JsonlSessionStore:
                 )
         if trailing_leaf:
             return
-        if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
+        if session.agent.messages and not any(
+            is_conversation_message_record(rec) for rec in records
+        ):
             for role, content in session.agent.messages:
                 self.append_message(
                     session.session_id,

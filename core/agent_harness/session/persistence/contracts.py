@@ -13,6 +13,7 @@ roles are kept deliberately separate, mirroring a storage-vs-repository split:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -48,6 +49,22 @@ CARRIED_MESSAGE_METADATA_KEY = "carried"
 # is called with the turn kind, not a normalized "chat" label, so this set must
 # cover all kinds that produce conversational turns.
 CHAT_KINDS: frozenset[str] = frozenset({"chat", "cli_agent", "follow_up"})
+
+#: ``metadata["debug"]`` value written by ``persist_turn_system_prompt``.
+#: Flush must ignore these records when deciding whether chat history is
+#: already persisted — they are diagnostics, not conversation.
+SYSTEM_PROMPT_DEBUG_VALUE = "system_prompt"
+
+
+def is_conversation_message_record(record: Mapping[str, Any]) -> bool:
+    """True for persisted chat messages, excluding diagnostic system prompts."""
+    if record.get("type") != "message":
+        return False
+    metadata = record.get("metadata")
+    if not isinstance(metadata, dict):
+        return True
+    return metadata.get("debug") != SYSTEM_PROMPT_DEBUG_VALUE
+
 
 # A single JSONL entry carrying the goal and task-plan snapshots changed by a
 # durable goal control.  Restore treats it as an atomic pair.
