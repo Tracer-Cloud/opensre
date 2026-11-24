@@ -135,7 +135,12 @@ def _normalized_cron(cron: str) -> str:
 
 
 def _fires_more_than_hourly(cron: str, timezone: str | None) -> bool:
-    """Whether two of the next fires are less than an hour apart."""
+    """Whether two of the next fires are less than an hour apart.
+
+    The gap is measured in elapsed time. Subtracting two aware datetimes that
+    share a tzinfo compares wall-clock values, which reads the repeated hour
+    at a fall-back transition as zero seconds apart.
+    """
     trigger = build_cron_trigger(cron, timezone)
     previous = None
     cursor = datetime.now(UTC)
@@ -143,7 +148,7 @@ def _fires_more_than_hourly(cron: str, timezone: str | None) -> bool:
         fire = trigger.get_next_fire_time(previous, cursor)
         if fire is None:
             return False
-        if previous is not None and (fire - previous).total_seconds() < _MIN_FIRE_GAP_SECONDS:
+        if previous is not None and fire.timestamp() - previous.timestamp() < _MIN_FIRE_GAP_SECONDS:
             return True
         previous = fire
         cursor = fire

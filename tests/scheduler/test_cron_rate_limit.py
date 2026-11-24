@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from config.constants.ci_repair import CI_REPAIR_CRON, CI_REPAIR_REPORT_BUILDER
+from infrastructure.scheduling.scheduler import cron_expression
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM, LOOP_REPORT_PARAM
 from infrastructure.scheduling.scheduler.loops import create_manual_loop
@@ -40,6 +42,31 @@ def test_schedules_faster_than_hourly_collapse_to_one_minute(cron: str, expected
 )
 def test_hourly_or_slower_schedules_stay(cron: str) -> None:
     assert cap_cron_at_most_hourly(f"  {cron}  ", "UTC") == cron
+
+
+class _BeforeFallBack(datetime):
+    """Samples fires from 01:00 EDT on the 2026 New York fall-back day."""
+
+    @classmethod
+    def now(cls, _tz: object = None) -> datetime:  # type: ignore[override]
+        return datetime(2026, 11, 1, 5, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("cron", "timezone", "expected"),
+    [
+        ("0 * * * *", "America/New_York", "0 * * * *"),
+        ("*/30 * * * *", "America/New_York", "30 * * * *"),
+        ("0 1 * * *", "America/New_York", "0 1 * * *"),
+        ("0 * * * *", "UTC", "0 * * * *"),
+    ],
+)
+def test_repeated_fall_back_hour_counts_as_elapsed_time(
+    cron: str, timezone: str, expected: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cron_expression, "datetime", _BeforeFallBack)
+
+    assert cap_cron_at_most_hourly(cron, timezone) == expected
 
 
 def test_create_manual_loop_stores_at_most_one_run_per_hour(tmp_path: Path) -> None:
