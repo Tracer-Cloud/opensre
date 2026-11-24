@@ -37,6 +37,7 @@ from config.strict_config import StrictConfigModel
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
+from integrations.azure_sql.connection_string import odbc_value, require_server_name
 
 logger = logging.getLogger(__name__)
 
@@ -173,15 +174,12 @@ def _get_connection(config: AzureSQLConfig) -> Any:
 
     encrypt_value = "yes" if config.encrypt else "no"
 
-    def _esc(v: object) -> str:
-        return str(v).replace("}", "}}")
-
     conn_str = (
-        f"DRIVER={{{config.driver}}};"
-        f"SERVER={config.server},{config.port};"
-        f"DATABASE={config.database};"
-        f"UID={{{_esc(config.username)}}};"
-        f"PWD={{{_esc(config.password)}}};"
+        f"DRIVER={odbc_value(config.driver)};"
+        f"SERVER={require_server_name(config.server)},{int(config.port)};"
+        f"DATABASE={odbc_value(config.database)};"
+        f"UID={odbc_value(config.username)};"
+        f"PWD={odbc_value(config.password)};"
         f"Encrypt={encrypt_value};"
         f"TrustServerCertificate=no;"
         f"Connection Timeout={int(config.timeout_seconds)};"

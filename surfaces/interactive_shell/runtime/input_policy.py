@@ -76,6 +76,7 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/memory", "list"),
         ("/mcp", "list"),
         ("/mcp", "connect"),
+        ("/mcp", "remove"),
         ("/mcp", "disconnect"),
         ("/work", "list"),
         ("/work", "ls"),

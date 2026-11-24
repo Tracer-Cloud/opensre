@@ -54,8 +54,11 @@ _SENSITIVE_KEY_SUBSTRINGS: tuple[str, ...] = (
 _SENSITIVE_HEADERS: frozenset[str] = frozenset(
     {"authorization", "cookie", "set-cookie", "x-api-key"}
 )
-_QUERY_SCRUBBING_CATEGORIES: frozenset[str] = frozenset({"http", "httpx"})
-_HEADER_SCRUBBING_CATEGORIES: frozenset[str] = frozenset({"http", "httpx", "aiohttp"})
+# ``httplib`` is the category the SDK's own HTTP integrations record under.
+_HTTP_BREADCRUMB_CATEGORIES: frozenset[str] = frozenset({"http", "httplib", "httpx", "aiohttp"})
+# Request-line fields beyond the origin. A path can be a credential on its own
+# (``/bot<token>/sendMessage``, an incoming-webhook URL), and so can a query.
+_REQUEST_DETAIL_FIELDS: tuple[str, ...] = ("http.query", "http.fragment")
 _HOSTED_ENTRYPOINTS: frozenset[str] = frozenset({"webapp", "remote", "mcp", "pipeline", "gateway"})
 _OPERATOR_ACTIONABLE_LLM_ERROR_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Any provider auth failure: "Openrouter authentication failed. Check OPENROUTER_API_KEY …"
@@ -337,35 +340,39 @@ def _before_send(event: Any, _hint: dict[str, Any]) -> Any:
     return event
 
 
-def _strip_url_query(url: str) -> str:
-    parts = urlsplit(url)
-    if not parts.query:
-        return url
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", parts.fragment))
-
-
 def _scrub_breadcrumb_headers(headers: dict[str, Any]) -> None:
     for header in list(headers):
         if header.lower() in _SENSITIVE_HEADERS:
             headers[header] = "[Filtered]"
 
 
+def _url_origin(url: str) -> str:
+    """``scheme://host[:port]`` of ``url``: which service was called, nothing more."""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        return "[Filtered]"
+    return urlunsplit((parts.scheme, f"{host}{port}", "", "", "")) if host else "[Filtered]"
+
+
 def _before_breadcrumb(crumb: dict[str, Any], _hint: dict[str, Any]) -> dict[str, Any] | None:
-    """Strip query strings and sensitive headers from HTTP breadcrumbs."""
+    """Keep only the origin and status of an HTTP breadcrumb, and no credential headers."""
     category = crumb.get("category")
-    if not isinstance(category, str):
+    if not (crumb.get("type") == "http" or category in _HTTP_BREADCRUMB_CATEGORIES):
         return crumb
     data = crumb.get("data")
     if not isinstance(data, dict):
         return crumb
-    if category in _QUERY_SCRUBBING_CATEGORIES:
-        url = data.get("url")
-        if isinstance(url, str):
-            data["url"] = _strip_url_query(url)
-    if category in _HEADER_SCRUBBING_CATEGORIES:
-        headers = data.get("headers")
-        if isinstance(headers, dict):
-            _scrub_breadcrumb_headers(headers)
+    url = data.get("url")
+    if isinstance(url, str):
+        data["url"] = _url_origin(url)
+    for name in _REQUEST_DETAIL_FIELDS:
+        data.pop(name, None)
+    headers = data.get("headers")
+    if isinstance(headers, dict):
+        _scrub_breadcrumb_headers(headers)
     return crumb
 
 

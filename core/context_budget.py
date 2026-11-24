@@ -21,11 +21,12 @@ _MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     "gpt-4.1": 1_000_000,
     "gpt-4": 128_000,
     # Lookup is first-substring-match in insertion order, so a longer family
-    # id must stay above any shorter prefix that it contains. GPT-6.1 Sol's
-    # published window is 1,050,000 tokens with a 922,000 input cap and
+    # id must stay above any shorter prefix that it contains. GPT-6.1 and
+    # GPT-6.2 publish a 1,050,000-token window with a 922,000 input cap and
     # 128,000 max output. The trimmer only reserves DEFAULT_MAX_TOKENS
     # (25,000), so the stored window is that input cap plus the reserve.
     # A full 1,050,000 window would admit prompts the API rejects.
+    "gpt-6.2": 947_000,
     "gpt-6.1": 947_000,
     # gpt-5.4 / gpt-5.6 must stay above the gpt-5 catch-all or they are never reached.
     "gpt-5.6": 1_000_000,
@@ -110,6 +111,20 @@ def _has_tool_use_block(content: Any) -> bool:
     )
 
 
+def _carries_tool_result(message: dict[str, Any]) -> bool:
+    """Whether ``message`` holds a tool result that can be stubbed."""
+    if message.get("role") == "tool":
+        return True
+    content = message.get("content")
+    if not isinstance(content, list):
+        return False
+    return any(
+        isinstance(block, dict)
+        and (block.get("type") == "tool_result" or isinstance(block.get("toolResult"), dict))
+        for block in content
+    )
+
+
 def _candidate_exchange(
     messages: list[dict[str, Any]],
     *,
@@ -128,7 +143,9 @@ def _candidate_exchange(
         return None
 
     result_messages = exchange_messages[1:]
-    if not result_messages:
+    # A call whose result never arrived (cancelled, interrupted) has nothing to
+    # stub or drop; offering it would let the trim loop spin without shrinking.
+    if not result_messages or not all(_carries_tool_result(m) for m in result_messages):
         return None
     if all(_is_evicted_message(message) for message in result_messages) != evicted:
         return None
@@ -331,21 +348,25 @@ def _trim_lowest_value_tool_pair(
 
     The call stays and its output is replaced by a short note, so the model
     still knows the call happened and can repeat it instead of losing the
-    exchange without a trace. ``message_tokens`` is updated in place.
+    exchange without a trace. ``message_tokens`` is updated in place. Returns
+    ``None`` when nothing was stubbed, so a caller looping on the result always
+    makes progress or moves on.
     """
     candidates = _tool_exchange_candidates(messages, message_tokens=message_tokens)
     if not candidates:
         return None
 
     selected = min(candidates, key=_eviction_priority)
+    stubbed_any = False
     for index in range(selected.start + 1, selected.end):
         stubbed = _stub_tool_result_message(messages[index])
         if stubbed is None:
             continue
+        stubbed_any = True
         messages[index] = stubbed
         if message_tokens is not None:
             message_tokens[index] = _message_token_estimate(stubbed)
-    return selected.start, selected.end
+    return (selected.start, selected.end) if stubbed_any else None
 
 
 def _drop_oldest_stubbed_exchange(

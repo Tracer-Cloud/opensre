@@ -24,6 +24,7 @@ _INTERACTIVE_WIZARD_SLASH_PATHS: frozenset[str] = frozenset(
         "/integrations remove",
         "/mcp list",
         "/mcp connect",
+        "/mcp remove",
         "/mcp disconnect",
         "/auth login",
         "/auth logout",

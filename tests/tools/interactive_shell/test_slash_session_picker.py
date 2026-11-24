@@ -24,6 +24,7 @@ def test_agent_selected_sessions_picker_is_deferred_to_exclusive_stdin_turn() ->
     [
         ("/integrations", ["list"]),
         ("/mcp", ["list"]),
+        ("/mcp", ["remove"]),
         ("/work", ["add", "--priority", "high"]),
         ("/goal", ["set"]),
         ("/goal", ["set", "--max-turns", "3"]),

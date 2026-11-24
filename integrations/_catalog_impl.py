@@ -343,6 +343,7 @@ from integrations.registry import (
     family_key,
     service_key,
 )
+from integrations.remote_record_policy import is_remote_record, remote_credentials
 from integrations.rocketchat import classify as _classify_rocketchat
 from integrations.sentry import build_sentry_config
 from integrations.sentry import classify as _classify_sentry
@@ -448,9 +449,14 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
 
         key = service_key(service_lower)
         record_id = str(integration.get("id", "")).strip()
+        remote = is_remote_record(integration)
 
         for instance in _record_instances(integration):
             credentials = instance.get("credentials", {}) or {}
+            if remote:
+                credentials = remote_credentials(key, credentials)
+                if credentials is None:
+                    continue
             instance_name = str(instance.get("name", "default")).strip().lower() or "default"
             instance_tags = instance.get("tags", {}) or {}
             flat_view, flat_key = _classify_service_instance(key, credentials, record_id=record_id)

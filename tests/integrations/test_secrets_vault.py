@@ -91,3 +91,38 @@ def test_store_path_env_override_targets_ephemeral_storage(
     hydrate_integration_store_from_secret(_VALID_SECRET)
 
     assert json.loads(override.read_text())["version"] == 2
+
+
+def test_a_members_personal_connection_never_enters_the_shared_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Every member's turn reads this store, so it holds only what the workspace owns."""
+    monkeypatch.setattr(store, "STORE_PATH", tmp_path / "integrations.json")
+    monkeypatch.setenv("ORGANIZATION_ID", "org_1")
+
+    def _instance(name: str, tags: dict[str, str]) -> dict[str, object]:
+        return {"name": name, "tags": tags, "credentials": {"token": name}}
+
+    secret = json.dumps(
+        {
+            "version": 2,
+            "integrations": [
+                {
+                    "id": "github-1",
+                    "service": "github",
+                    "status": "active",
+                    "instances": [
+                        _instance("workspace", {"owner_kind": "organization", "owner_id": "org_1"}),
+                        _instance("alice", {"owner_kind": "user", "owner_id": "user_alice"}),
+                        _instance("other", {"owner_kind": "organization", "owner_id": "org_2"}),
+                    ],
+                }
+            ],
+        }
+    )
+
+    hydrate_integration_store_from_secret(secret)
+
+    (record,) = store.load_integrations()
+    assert [instance["name"] for instance in record["instances"]] == ["workspace"]

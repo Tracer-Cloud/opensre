@@ -1,30 +1,30 @@
-"""Stdio MCP server for tests: reports its own environment and arguments.
+"""Stdio MCP server for vendor-bridge tests.
 
-``show_env`` returns one environment variable and ``show_args`` the command-line
-arguments, so a test can tell what reached the server process.
+``read_env`` reports one variable from the server process's environment, so a
+test can tell which credentials reached the server; ``acknowledge`` is an
+unannotated (so write-gated) tool.
 """
 
 from __future__ import annotations
 
 import os
-import sys
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
-server = MCPServer("env")
+server = MCPServer("vendor")
 
 
 @server.tool(annotations=ToolAnnotations(read_only_hint=True))
-def show_env(name: str) -> str:
-    """Return the value of one environment variable."""
-    return os.environ.get(name, "")
+def read_env(name: str) -> str:
+    """Return one environment variable of the server process."""
+    return os.environ.get(name, "<unset>")
 
 
-@server.tool(annotations=ToolAnnotations(read_only_hint=True))
-def show_args() -> str:
-    """Return the server's command-line arguments."""
-    return " ".join(sys.argv[1:])
+@server.tool()
+def acknowledge(issue_id: str) -> str:
+    """Acknowledge an issue."""
+    return f"acknowledged {issue_id}"
 
 
 if __name__ == "__main__":

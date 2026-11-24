@@ -50,11 +50,18 @@ You choose how OpenSRE reaches the server, then answer:
 
 OpenSRE connects and lists the server's tools before saving. If it can't connect, or the server exposes no tools under your answers, nothing is saved. Run setup again with the same name to change a server; your other servers are kept.
 
-Check servers later with `opensre integrations verify mcp`. It checks the first configured server; each server is also checked when you set it up.
+### Check, list, and remove servers
 
-<Note>
-`opensre integrations remove mcp` (or `/mcp disconnect mcp`) removes **every** configured MCP server. To remove a single server, delete its entry from `instances` in `~/.opensre/integrations.json`.
-</Note>
+| Task | CLI | Interactive shell |
+| --- | --- | --- |
+| Check every server | `opensre integrations verify mcp` | `/verify mcp` |
+| See each server | — | `/mcp list` |
+| Remove one server | `opensre integrations remove mcp <name>` | `/mcp remove <name>` |
+| Remove every server | `opensre integrations remove mcp` | `/mcp disconnect mcp` |
+
+- **Verify** connects to each server and lists its tools. Each server gets its own row, shown as `mcp/<name>`, so one failing server is not hidden behind a working one.
+- **`/mcp list`** shows one row per server: its name, transport, endpoint, whether it is read-only, and its status. Tokens, headers, URL query strings, and command arguments are never shown. In a terminal that supports it, `/mcp list` opens the interactive browser, which still shows MCP servers as a single `mcp` entry; use `/mcp list` from a script or pipe, or `/verify mcp`, for the per-server view.
+- **Remove** asks for confirmation. Skip it in the CLI with the global flag: `opensre --yes integrations remove mcp <name>`. An unknown name removes nothing and lists the saved names. Removing a server only changes the local store. A server set through `MCP_INSTANCES` is removed by editing that variable.
 
 ### Official server presets
 
@@ -89,6 +96,7 @@ Give each credential the narrowest role that covers what you want the agent to r
 | `env` | No | `{}` | Environment variables for a `stdio` server, e.g. its API keys. Added to OpenSRE's own environment |
 | `auth_token` | No | — | Sent as `Authorization: Bearer …` unless `headers` sets `Authorization` |
 | `headers` | No | `{}` | HTTP headers sent on every request |
+| `env` | No | `{}` | Extra environment variables for a `stdio` server's process, e.g. `{"GRAFANA_API_KEY": "glsa_…"}` |
 | `allowed_tools` | No | all tools | Only expose these server tool names: a list, or a comma- or space-separated string. Any other value makes the server's config invalid, so the server is skipped |
 | `read_only` | No | `false` | Expose only the tools the server marks read-only |
 | `timeout_seconds` | No | `20` | Per-request timeout |

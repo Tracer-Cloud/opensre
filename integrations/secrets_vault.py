@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from config.constants.organization import organization_id
 from integrations.credentials_api import (
     CredentialsApiError,
     IntegrationStoreV2,
@@ -43,7 +44,11 @@ def parse_integrations_secret(secret_string: str) -> IntegrationStoreV2:
 
 def hydrate_integration_store_from_secret(secret_string: str) -> IntegrationStoreV2:
     """Validate the secret and atomically materialize the local v2 store."""
-    validated = parse_integrations_secret(secret_string)
+    # The store this fills is shared by every member the host serves, so a
+    # member's personal grant never lands in it, whatever the secret holds.
+    validated = parse_integrations_secret(secret_string).visible_to(
+        user_id=None, organization_id=organization_id() or None
+    )
     integrations: Any = validated.as_store_data()["integrations"]
     if not isinstance(integrations, list):
         raise IntegrationsSecretError("Integrations secret is not a valid credential set")

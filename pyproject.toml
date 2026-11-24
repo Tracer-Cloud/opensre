@@ -73,7 +73,8 @@ dependencies = [
     # ClickHouse (used by first-class SigNoz + ClickHouse integrations)
     "clickhouse-connect>=0.15.1,<2.0.0",
     "urllib3>=2.0,<3",
-    "sentry-sdk>=2.59.0",
+    # 3.x rejects options init_sentry passes (send_default_pii), crashing startup.
+    "sentry-sdk>=2.59.0,<3",
     # File locking for atomic store operations
     "filelock>=3.29.0",
     "psutil>=5.9",

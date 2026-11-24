@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from config.constants.mcp import MCP_SERVER_TOOL_PREFIX, MCP_SERVERS_SERVICE
@@ -132,21 +132,35 @@ def _server_config(raw: object) -> McpServerConfig | None:
         return None
 
 
+#: Contributes one vendor-configured MCP server, as ``(name, config)``, from a
+#: turn's resolved integrations, or ``None`` when that vendor is not configured.
+McpServerSource = Callable[[Mapping[str, Any]], tuple[str, McpServerConfig] | None]
+
+
 def configured_servers(
     resolved_integrations: Mapping[str, Any],
+    server_sources: Sequence[McpServerSource] = (),
 ) -> list[tuple[str, McpServerConfig]]:
     """Every configured MCP server as ``(name, config)``, in configuration order.
 
-    Names key discovery and tool names, so a later server reusing a name is
-    skipped rather than allowed to pair its tools with the first one's config.
+    User-configured ``mcp`` servers come first, then any server a vendor
+    integration contributes through ``server_sources``. Names key discovery
+    and tool names, so a later server reusing a name is skipped rather than
+    allowed to pair its tools with the first one's config.
     """
-    servers: list[tuple[str, McpServerConfig]] = []
-    names: set[str] = set()
+    candidates: list[tuple[str, McpServerConfig]] = []
     for instance in get_instances(dict(resolved_integrations), MCP_SERVERS_SERVICE):
         config = _server_config(instance.get("config"))
-        if config is None:
-            continue
-        name = str(instance.get("name") or "default")
+        if config is not None:
+            candidates.append((str(instance.get("name") or "default"), config))
+    for source in server_sources:
+        contributed = source(resolved_integrations)
+        if contributed is not None:
+            candidates.append(contributed)
+
+    servers: list[tuple[str, McpServerConfig]] = []
+    names: set[str] = set()
+    for name, config in candidates:
         if name in names:
             logger.warning("[mcp] skipping a second MCP server named %s", name)
             continue
@@ -155,9 +169,12 @@ def configured_servers(
     return servers
 
 
-def mcp_server_tools(resolved_integrations: Mapping[str, Any]) -> tuple[RegisteredTool, ...]:
+def mcp_server_tools(
+    resolved_integrations: Mapping[str, Any],
+    server_sources: Sequence[McpServerSource] = (),
+) -> tuple[RegisteredTool, ...]:
     """Agent tools for every tool the configured MCP servers expose this turn."""
-    servers = configured_servers(resolved_integrations)
+    servers = configured_servers(resolved_integrations, server_sources)
     if not servers:
         return ()
     listings = discover_tools(servers)
@@ -175,6 +192,7 @@ def mcp_server_tools(resolved_integrations: Mapping[str, Any]) -> tuple[Register
 
 
 __all__ = [
+    "McpServerSource",
     "bridged_tool_name",
     "build_bridged_tool",
     "configured_servers",

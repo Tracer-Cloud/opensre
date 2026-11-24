@@ -2752,7 +2752,7 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0.0,<9.0.0" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
-    { name = "sentry-sdk", specifier = ">=2.59.0" },
+    { name = "sentry-sdk", specifier = ">=2.59.0,<3" },
     { name = "slack-sdk", specifier = ">=3.31.0" },
     { name = "tracer-decorator" },
     { name = "twine", marker = "extra == 'release'", specifier = ">=6.0.0" },

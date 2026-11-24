@@ -107,7 +107,9 @@ def _ruff_argv() -> list[str] | None:
     binary = shutil.which("ruff")
     if binary:
         return [binary]
-    return [sys.executable, "-m", "ruff"]
+    # ``-P``: this runs inside the repository being fixed, and without it a
+    # ``ruff.py`` at that repository's root would be imported and run instead.
+    return [sys.executable, "-P", "-m", "ruff"]
 
 
 def _remove_single_import_line(target: Path, start_line: int | None) -> None:

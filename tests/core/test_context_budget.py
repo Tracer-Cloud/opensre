@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from unittest.mock import patch
+
+import pytest
 
 from core.context_budget import (
     _TOKENS_PER_CHAR,
@@ -11,6 +14,7 @@ from core.context_budget import (
     estimate_message_tokens,
     strip_internal_message_markers,
     system_and_tools_overhead,
+    trim_lowest_value_tool_pair,
 )
 
 
@@ -41,14 +45,15 @@ class TestGpt56ContextWindow:
         assert context_budget_ceiling_for_model("gpt-5") == 103_000
 
 
-class TestGpt61ContextWindow:
-    """GPT-6.1 Sol's input cap is 922k inside a 1.05M window."""
+class TestGpt6ContextWindow:
+    """GPT-6.1 and GPT-6.2 Sol cap input at 922k inside a 1.05M window."""
 
     def test_sol_stops_at_the_published_input_cap(self) -> None:
         # Stored window 947_000 reserves the 25_000 output budget, leaving
         # the 922_000 maximum input.
         assert context_budget_ceiling_for_model("gpt-6.1-sol") == 922_000
         assert context_budget_ceiling_for_model("openai/gpt-6.1-sol") == 922_000
+        assert context_budget_ceiling_for_model("gpt-6.2-sol") == 922_000
 
     def test_gpt61_is_not_shadowed_by_the_gpt5_catch_all(self) -> None:
         assert context_budget_ceiling_for_model("gpt-6.1-sol") > context_budget_ceiling_for_model(
@@ -269,3 +274,30 @@ def test_enforce_context_budget_still_trims_when_over_ceiling_with_tools() -> No
         "t1",
         "t2",
     ]
+
+
+@pytest.mark.parametrize(
+    "tool_call_block",
+    [
+        {"type": "tool_use", "id": "t1", "name": "noop", "input": {}},
+        {"toolUse": {"toolUseId": "t1", "name": "noop", "input": {}}},
+    ],
+    ids=["anthropic", "bedrock"],
+)
+def test_tool_call_without_a_result_is_truncated_not_stubbed(
+    tool_call_block: dict[str, Any],
+) -> None:
+    # A cancelled call leaves a plain message where its result would be.
+    messages: list[dict[str, Any]] = [
+        {"role": "user", "content": "alert"},
+        {"role": "assistant", "content": [tool_call_block]},
+        {"role": "user", "content": "cancelled by user " * 1000},
+    ]
+    ceiling = 5_000
+
+    # Checked first: reporting a stub that did not happen is what makes
+    # enforce_context_budget spin forever, which would hang this test.
+    assert trim_lowest_value_tool_pair(messages) is False
+
+    assert enforce_context_budget(messages, fixed_overhead_tokens=0, ceiling=ceiling) <= ceiling
+    assert messages[1]["content"] == [tool_call_block]

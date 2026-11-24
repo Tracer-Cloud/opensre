@@ -66,9 +66,11 @@ def run_shell_command(
     parsed = parse_shell_command(command)
     plan = plan_shell_execution(parsed)
     display_command = format_shell_command_for_display(command)
+    # The approval shows the command exactly as it will run. The folded form is
+    # for the quiet row afterwards; a folded heredoc body is the script itself.
     if not presenter.execution_allowed(
         plan.policy,
-        action_summary=f"$ {display_command}",
+        action_summary=f"$ {command}",
     ):
         session.record("shell", command, ok=False)
         return _shell_payload(

@@ -11,6 +11,11 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from integrations.snowflake.tools.snowflake_query_history_tool.statement import (
+    has_limit,
+    read_only_statement_error,
+    statement_skeleton,
+)
 
 _DEFAULT_MAX_RESULTS = 50
 _MAX_HARD_LIMIT = 200
@@ -56,12 +61,12 @@ def _default_query(limit: int) -> str:
 
 def _ensure_sql_limit(query: str, limit: int) -> str:
     normalized = query.strip().rstrip(";")
-    if not normalized:
+    if not statement_skeleton(normalized).strip():
         return _default_query(limit)
-    lowered = normalized.lower()
-    if " limit " in f" {lowered} ":
+    if has_limit(normalized):
         return normalized
-    return f"{normalized} LIMIT {limit}"
+    # On its own line, so a trailing ``--`` comment cannot swallow the limit.
+    return f"{normalized}\nLIMIT {limit}"
 
 
 def _auth_header(token: str) -> dict[str, str]:
@@ -164,6 +169,9 @@ def query_snowflake_history(
     if not bearer:
         return tool_unavailable("snowflake", "Missing Snowflake token.", rows=[])
 
+    refusal = read_only_statement_error(query)
+    if refusal is not None:
+        return tool_unavailable("snowflake", refusal, rows=[])
     statement = _ensure_sql_limit(query, effective_limit)
     endpoint = f"https://{account}.snowflakecomputing.com/api/v2/statements"
     headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}

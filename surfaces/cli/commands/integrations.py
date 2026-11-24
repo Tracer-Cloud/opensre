@@ -98,11 +98,16 @@ def show_integration(service: str) -> None:
 
 @integrations.command(name="remove")
 @click.argument("service")
-def remove_integration(service: str) -> None:
-    """Remove a configured integration."""
+@click.argument("instance", required=False, default=None)
+def remove_integration(service: str, instance: str | None) -> None:
+    """Remove a configured integration, or one named instance of it.
+
+    For example, `opensre integrations remove mcp grafana` removes only the
+    MCP server named grafana and keeps the others.
+    """
     from integrations.cli import cmd_remove
 
-    cmd_remove(service)
+    cmd_remove(service, instance=instance)
     capture_integration_removed(service)
     from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
 

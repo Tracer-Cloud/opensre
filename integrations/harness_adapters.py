@@ -84,6 +84,8 @@ def register_harness_adapters() -> None:
     from integrations.github import github_setup_url
     from integrations.github.connections import select_github_connection
     from integrations.mcp_servers import mcp_server_tools
+    from integrations.posthog_mcp.bridge_server import posthog_bridge_server
+    from integrations.sentry_mcp.bridge_server import sentry_bridge_server
     from integrations.store import load_integrations, resolve_store_path
 
     IntegrationResolutionAdapters(
@@ -102,8 +104,12 @@ def register_harness_adapters() -> None:
         fetch_account_integrations=_fetch_account_integrations,
         account_integrations_generation=_account_integrations_generation,
     ).install()
-    # Tools a configured MCP server advertises join each turn's tool list.
-    DynamicToolSource(mcp_server_tools).install()
+    # Tools a configured MCP server advertises join each turn's tool list,
+    # including vendor MCP integrations that already carry their own config.
+    vendor_servers = (sentry_bridge_server, posthog_bridge_server)
+    DynamicToolSource(
+        lambda resolved: mcp_server_tools(resolved, server_sources=vendor_servers)
+    ).install()
 
     _register_vcs_repo_scope_providers()
     _register_runbook_source_providers()

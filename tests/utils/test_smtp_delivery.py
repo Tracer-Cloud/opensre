@@ -26,8 +26,8 @@ class _FakeSMTP:
     def ehlo(self) -> None:
         return None
 
-    def starttls(self) -> None:
-        self.started_tls = True
+    def starttls(self, *, context: object) -> None:
+        self.started_tls = context is not None
 
     def login(self, username: str, password: str) -> None:
         self.logged_in = (username, password)

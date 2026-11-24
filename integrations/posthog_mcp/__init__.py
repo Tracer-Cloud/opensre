@@ -49,6 +49,7 @@ from integrations.mcp_client import (
     root_cause_message,
 )
 from integrations.mcp_transport import McpTransportMode
+from integrations.posthog_mcp.stdio_env import posthog_stdio_env
 
 logger = logging.getLogger(__name__)
 
@@ -281,10 +282,7 @@ def posthog_mcp_runtime_unavailable_reason(config: PostHogMCPConfig) -> str | No
 def _session_options(config: PostHogMCPConfig) -> McpSessionOptions:
     return {
         "session_url": config.session_url,
-        "stdio_env": {
-            **({"POSTHOG_AUTH_HEADER": f"Bearer {config.auth_token}"} if config.auth_token else {}),
-            **({"POSTHOG_PERSONAL_API_KEY": config.auth_token} if config.auth_token else {}),
-        },
+        "stdio_env": posthog_stdio_env(config.auth_token),
         "integration_name": "PostHog",
         "config_env_name": "POSTHOG_MCP",
         "sse_url_hint": "https://mcp.posthog.com/sse",
@@ -418,6 +416,7 @@ def classify(
 
 
 __all__ = [
+    "posthog_stdio_env",
     "DEFAULT_POSTHOG_MCP_URL",
     "POSTHOG_MCP_EU_URL",
     "PostHogMCPConfig",

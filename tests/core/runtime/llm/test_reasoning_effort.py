@@ -110,9 +110,13 @@ def test_infer_reasoning_effort_default_for_openai_gpt_5_2() -> None:
     assert infer_reasoning_effort_default("openai", "gpt-5.2") == "none"
 
 
-def test_gpt_6_1_defaults_to_extra_high_until_overridden(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hosted_gpt_6_sol_defaults_to_extra_high_until_overridden(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     assert model_default_reasoning_effort("gpt-6.1-sol") == "xhigh"
     assert model_default_reasoning_effort("openai/gpt-6.1-sol") == "xhigh"
+    assert model_default_reasoning_effort("gpt-6.2-sol") == "xhigh"
+    assert model_default_reasoning_effort("gpt-6.2-astra") is None
     assert model_default_reasoning_effort("gpt-5.6-sol") is None
     assert resolve_reasoning_effort("gpt-6.1-sol") == "xhigh"
     assert resolve_reasoning_effort("gpt-5.4-mini") is None

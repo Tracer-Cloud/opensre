@@ -690,7 +690,7 @@ class TestIntegrationsCommand:
             "integrations.registry.SUPPORTED_VERIFY_SERVICES",
             ("datadog",),
         )
-        monkeypatch.setattr(repl_data_module, "verify_integration", _verify_one)
+        monkeypatch.setattr(repl_data_module, "verify_service", lambda s: [_verify_one(s)])
         console, buf = _capture()
         dispatch_slash("/verify datadog", Session(), console)
         assert verified == ["datadog"]
@@ -722,7 +722,7 @@ class TestIntegrationsCommand:
                 "detail": "Configured for ServiceNow at https://dev12345.service-now.com.",
             }
 
-        monkeypatch.setattr(repl_data_module, "verify_integration", _verify_one)
+        monkeypatch.setattr(repl_data_module, "verify_service", lambda s: [_verify_one(s)])
         session = Session()
         console, buf = _capture()
         dispatch_slash("/verify servicenow", session, console)
@@ -742,7 +742,7 @@ class TestIntegrationsCommand:
                 "detail": "ok",
             }
 
-        monkeypatch.setattr(repl_data_module, "verify_integration", _verify_one)
+        monkeypatch.setattr(repl_data_module, "verify_service", lambda s: [_verify_one(s)])
         console, buf = _capture()
         dispatch_slash("/integrations verify datadog", Session(), console)
         assert verified == ["datadog"]
@@ -2242,8 +2242,8 @@ class TestRunCliCommand:
             del check
             assert timeout == 30.0
             assert env["OPENSRE_PARENT_INTERACTIVE_SHELL"] == "1"
-            assert cmd[:3] == [sys.executable, "-m", "surfaces.cli"]
-            assert cmd[3:] == ["update"]
+            assert cmd[:4] == [sys.executable, "-P", "-m", "surfaces.cli"]
+            assert cmd[4:] == ["update"]
             return subprocess.CompletedProcess(cmd, 0)
 
         monkeypatch.setattr(m.subprocess, "run", _fake_run)
@@ -2270,8 +2270,8 @@ class TestRunCliCommand:
             del check, timeout, text, encoding, errors
             assert capture_output is True
             assert env["OPENSRE_PARENT_INTERACTIVE_SHELL"] == "1"
-            assert cmd[:3] == [sys.executable, "-m", "surfaces.cli"]
-            assert cmd[3:] == ["config", "show"]
+            assert cmd[:4] == [sys.executable, "-P", "-m", "surfaces.cli"]
+            assert cmd[4:] == ["config", "show"]
             return subprocess.CompletedProcess(
                 cmd,
                 0,

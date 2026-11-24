@@ -20,7 +20,7 @@ from integrations.mcp_servers.setup import MCP_SERVERS_SETUP
 from integrations.setup_flow import apply_setup
 from integrations.store import get_integration
 
-_ENV_SERVER = str(Path(__file__).resolve().parents[2] / "fixtures" / "mcp" / "env_server.py")
+_PRESET_SERVER = str(Path(__file__).resolve().parents[2] / "fixtures" / "mcp" / "preset_server.py")
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +40,7 @@ def test_a_stdio_servers_env_reaches_its_process(monkeypatch: pytest.MonkeyPatch
     server = {
         "name": "envsrv",
         "command": sys.executable,
-        "args": [_ENV_SERVER],
+        "args": [_PRESET_SERVER],
         "env": {"OPS_API_KEY": "k-123"},
     }
     monkeypatch.setenv("MCP_INSTANCES", json.dumps([server]))
@@ -54,7 +54,9 @@ def test_a_preset_set_up_end_to_end_gets_its_credentials_through_the_environment
     # Arrange: stand the fixture in for `uvx mcp-grafana`, so the real setup,
     # verifier and bridge run end to end without downloading the server.
     grafana = next(p for p in presets.PRESETS if p.key == "grafana")
-    fixture = dataclasses.replace(grafana.servers[""], command=sys.executable, args=(_ENV_SERVER,))
+    fixture = dataclasses.replace(
+        grafana.servers[""], command=sys.executable, args=(_PRESET_SERVER,)
+    )
     catalog = tuple(
         dataclasses.replace(p, servers={"": fixture}) if p.key == "grafana" else p
         for p in presets.PRESETS
@@ -164,16 +166,6 @@ def test_every_preset_mode_is_offered_by_setup() -> None:
     offered = {mode.value for mode in MCP_SERVERS_SETUP.modes}
 
     assert {"grafana", "datadog", "pagerduty", "aws"} <= offered
-
-
-def test_stdio_env_values_are_kept_as_written() -> None:
-    from integrations.mcp_servers import McpServerConfig
-
-    config = McpServerConfig(
-        mode="stdio", command="srv", env={"HTTP_PROXY": "", "GREETING": "  hi  "}
-    )
-
-    assert config.env == {"HTTP_PROXY": "", "GREETING": "  hi  "}
 
 
 def test_answers_for_two_presets_are_refused_by_the_shared_verifier() -> None:

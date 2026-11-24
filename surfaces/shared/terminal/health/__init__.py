@@ -59,6 +59,25 @@ def _summary_counts(results: list[dict[str, str]]) -> dict[str, int]:
     return counts
 
 
+def _normalized(item: dict[str, Any]) -> dict[str, str]:
+    """String fields of one result row; ``instance`` is kept only when present."""
+    row = {
+        "service": str(item.get("service", "")),
+        "source": str(item.get("source", "")),
+        "status": str(item.get("status", "")),
+        "detail": str(item.get("detail", "")),
+    }
+    if item.get("instance"):
+        row["instance"] = str(item["instance"])
+    return row
+
+
+def _service_label(row: dict[str, str]) -> str:
+    """``service/instance`` for named instances, so rows of one service stay distinct."""
+    service = row["service"] or "-"
+    return f"{service}/{row['instance']}" if row.get("instance") else service
+
+
 def render_health_report(
     *,
     console: Console,
@@ -69,15 +88,7 @@ def render_health_report(
     """Render a polished health report with summary and actionable hints."""
     store_path_text = str(integration_store_path)
 
-    normalized_results: list[dict[str, str]] = [
-        {
-            "service": str(item.get("service", "")),
-            "source": str(item.get("source", "")),
-            "status": str(item.get("status", "")),
-            "detail": str(item.get("detail", "")),
-        }
-        for item in results
-    ]
+    normalized_results = [_normalized(item) for item in results]
     counts = _summary_counts(normalized_results)
 
     console.print()
@@ -124,7 +135,7 @@ def render_health_report(
 
     for result in normalized_results:
         table.add_row(
-            result["service"] or "-",
+            Text(_service_label(result)),
             result["source"] or "-",
             status_badge(result["status"]),
             result["detail"] or "-",
@@ -153,15 +164,7 @@ def render_health_json(
     results: list[dict[str, Any]],
 ) -> None:
     """Render the health report as machine-readable JSON."""
-    normalized = [
-        {
-            "service": str(item.get("service", "")),
-            "source": str(item.get("source", "")),
-            "status": str(item.get("status", "")),
-            "detail": str(item.get("detail", "")),
-        }
-        for item in results
-    ]
+    normalized = [_normalized(item) for item in results]
     counts = _summary_counts(normalized)
     click.echo(
         json.dumps(

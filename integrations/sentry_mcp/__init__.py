@@ -48,6 +48,7 @@ from integrations.mcp_client import (
     root_cause_message,
 )
 from integrations.mcp_transport import McpTransportMode
+from integrations.sentry_mcp.stdio_env import sentry_stdio_env
 
 logger = logging.getLogger(__name__)
 
@@ -252,11 +253,7 @@ def sentry_mcp_runtime_unavailable_reason(config: SentryMCPConfig) -> str | None
 def _session_options(config: SentryMCPConfig) -> McpSessionOptions:
     return {
         "session_url": config.session_url,
-        "stdio_env": {
-            **({"SENTRY_ACCESS_TOKEN": config.auth_token} if config.auth_token else {}),
-            **({"SENTRY_HOST": config.host} if config.host else {}),
-            **({"MCP_SKILLS": ",".join(config.skills)} if config.skills else {}),
-        },
+        "stdio_env": sentry_stdio_env(config.auth_token, config.host, config.skills),
         "integration_name": "Sentry",
         "config_env_name": "SENTRY_MCP",
         "sse_url_hint": "https://mcp.sentry.dev/sse",
@@ -390,6 +387,7 @@ def classify(
 
 
 __all__ = [
+    "sentry_stdio_env",
     "DEFAULT_SENTRY_MCP_URL",
     "SentryMCPConfig",
     "SentryMCPContentItem",

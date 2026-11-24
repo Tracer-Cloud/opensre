@@ -51,6 +51,10 @@ _PRIVATE_DESCRIPTION = (
     "workspace's connections only."
 )
 _NOT_OWNER = "Only the member who created this loop can change whether it is private."
+_NOT_MAILBOX_OWNER = (
+    "This loop emails from the mailbox of the member who created it, so only they can "
+    "change what it sends."
+)
 
 
 def _session(context: AgentToolContext | None) -> Any:
@@ -98,6 +102,11 @@ def _acting_member_owns(loop: LoopSummary) -> bool:
     if scope is None or scope.principal.kind != PrincipalKind.ORG:
         return True
     return bool(loop.owner) and same_member(scope.actor.id, loop.owner)
+
+
+def _sends_from_owner_mailbox(loop: LoopSummary) -> bool:
+    """Whether ``loop`` delivers by email, which always goes out as its owner."""
+    return loop.provider is Provider.EMAIL or Provider.EMAIL.value in loop.channels
 
 
 def _privacy_note(private: bool) -> str:
@@ -422,6 +431,14 @@ def edit_scheduled_loop(
     # only its owner may let it run as them.
     if private is not None and not _acting_member_owns(summary):
         return {"ok": False, "error": _NOT_OWNER}
+    # An email loop sends from its owner's own mailbox even when it is shared,
+    # so what it says under their name is theirs alone to change.
+    if (
+        (prompt or name or mode)
+        and _sends_from_owner_mailbox(summary)
+        and not _acting_member_owns(summary)
+    ):
+        return {"ok": False, "error": _NOT_MAILBOX_OWNER}
     try:
         changes = loop_changes(
             time=time,

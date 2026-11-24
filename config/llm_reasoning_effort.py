@@ -80,10 +80,10 @@ def _bare_model_id(model: str | None) -> str:
 def model_default_reasoning_effort(model: str | None) -> str | None:
     """Effort sent when neither the session nor the environment sets one.
 
-    GPT-6.1 Sol's product default is extra high. Other models return ``None``
-    so the provider keeps its own default.
+    GPT-6.1 and GPT-6.2 Sol, the hosted models, default to extra high. Other
+    models return ``None`` so the provider keeps its own default.
     """
-    if _bare_model_id(model).startswith("gpt-6.1"):
+    if _bare_model_id(model).startswith(("gpt-6.1", "gpt-6.2-sol")):
         return ReasoningEffort.XHIGH.value
     return None
 
