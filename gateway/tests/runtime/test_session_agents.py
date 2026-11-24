@@ -571,6 +571,51 @@ def test_drop_session_removes_cached_agent_and_output(monkeypatch: pytest.Monkey
     assert second is not first
 
 
+def test_drop_idle_session_removes_lock(monkeypatch: pytest.MonkeyPatch) -> None:
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool.drop.idle")
+    with pool._lock_for(session.session_id):
+        pool.agent_for(session=session, output=MagicMock(), logger=logger)
+
+    pool.drop_session(session.session_id)
+
+    assert session.session_id not in pool._agents
+    assert session.session_id not in pool._outputs
+    assert session.session_id not in pool._session_locks
+
+
+def test_drop_claimed_session_cleans_up_after_holder_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool.drop.holder")
+    with pool._lock_for(session.session_id):
+        pool.agent_for(session=session, output=MagicMock(), logger=logger)
+        lock = pool._session_locks[session.session_id]
+        pool.drop_session(session.session_id)
+        assert session.session_id not in pool._agents
+        assert session.session_id not in pool._outputs
+        assert pool._session_locks.get(session.session_id) is lock
+
+    assert session.session_id not in pool._session_locks
+    assert session.session_id not in pool._session_claims
+
+
+def test_drop_claimed_session_keeps_rebuilt_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool.drop.rebuild")
+    with pool._lock_for(session.session_id):
+        original = pool.agent_for(session=session, output=MagicMock(), logger=logger)
+        lock = pool._session_locks[session.session_id]
+        pool.drop_session(session.session_id)
+        rebuilt = pool.agent_for(session=session, output=MagicMock(), logger=logger)
+
+    assert rebuilt is not original
+    assert pool._session_locks.get(session.session_id) is lock
+    assert pool.agent_for(session=session, output=MagicMock(), logger=logger) is rebuilt
+
+
 def test_retain_only_current_session_drops_stale_ids_after_rotation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -696,6 +741,34 @@ class _LockPausedBeforeAcquire:
 
     def __exit__(self, *_args: object) -> None:
         self._lock.release()
+
+
+def test_drop_keeps_lock_claimed_before_acquire(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    paused_lock = _LockPausedBeforeAcquire()
+    pool._session_locks[session.session_id] = paused_lock  # type: ignore[assignment]
+    entered = threading.Event()
+
+    def _take_lock() -> None:
+        with pool._lock_for(session.session_id):
+            entered.set()
+
+    thread = threading.Thread(target=_take_lock)
+    thread.start()
+    try:
+        assert paused_lock.paused.wait(timeout=5)
+        pool.drop_session(session.session_id)
+        assert pool._session_locks.get(session.session_id) is paused_lock
+    finally:
+        paused_lock.proceed.set()
+        thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert entered.is_set()
+    assert session.session_id not in pool._session_locks
 
 
 def test_a_turn_about_to_take_the_session_lock_keeps_its_session_cached(

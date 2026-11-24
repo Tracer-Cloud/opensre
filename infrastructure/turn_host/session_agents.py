@@ -170,13 +170,14 @@ class SessionAgentPool:
         self._locks_guard = threading.Lock()
 
     def drop_session(self, session_id: str) -> None:
-        """Forget a session's cached agent, bindable output, and lock."""
+        """Forget the cached agent and output, retaining any claimed lock until release."""
         if not session_id:
             return
         with self._locks_guard:
             self._agents.pop(session_id, None)
             self._outputs.pop(session_id, None)
-            self._session_locks.pop(session_id, None)
+            if session_id not in self._session_claims:
+                self._session_locks.pop(session_id, None)
 
     def _drop_sessions_except(self, keep_session_id: str) -> None:
         with self._locks_guard:
