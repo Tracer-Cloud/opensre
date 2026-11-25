@@ -14,9 +14,9 @@ from core.agent_harness.session.persistence.contracts import (
     SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
     TURN_EVIDENCE_CUSTOM_TYPE,
     RestoreContextKey,
+    conversation_messages_from_records,
 )
 from core.agent_harness.session.persistence.wal_recovery import dangling_tool_intents
-from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
 
 class JsonlSessionRepo:
@@ -244,39 +244,7 @@ def _branch_to(entries: list[dict[str, Any]], target_id: str | None) -> list[dic
 
 
 def _messages_for_branch(branch: list[dict[str, Any]]) -> list[tuple[str, str]]:
-    messages: list[tuple[str, str]] = []
-    for rec in branch:
-        if rec.get("type") == "compaction":
-            summary = str(rec.get("summary") or "").strip()
-            replacement = rec.get("replacement_messages")
-            if isinstance(replacement, list):
-                # The compaction recorded what it kept, so it replaces the
-                # transcript so far instead of adding a summary beside it.
-                messages = [("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}")] if summary else []
-                messages.extend(_replacement_pairs(replacement))
-            elif summary:
-                messages.append(("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}"))
-            continue
-        if rec.get("type") != "message":
-            continue
-        role = str(rec.get("role") or "")
-        if role not in {"user", "assistant"}:
-            continue
-        content = str(rec.get("content") or "")
-        if content:
-            messages.append((role, content))
-    return messages
-
-
-def _replacement_pairs(raw: list[Any]) -> list[tuple[str, str]]:
-    pairs: list[tuple[str, str]] = []
-    for item in raw:
-        if not isinstance(item, (list, tuple)) or len(item) != 2:
-            continue
-        role, content = item
-        if role in {"user", "assistant"} and isinstance(content, str) and content:
-            pairs.append((role, content))
-    return pairs
+    return conversation_messages_from_records(branch)
 
 
 def _turn_evidence_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:

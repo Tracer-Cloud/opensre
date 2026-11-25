@@ -13,11 +13,12 @@ roles are kept deliberately separate, mirroring a storage-vs-repository split:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
 from core.state import MutableAgentState
+from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
 
 class RestoreContextKey(StrEnum):
@@ -64,6 +65,58 @@ def is_conversation_message_record(record: Mapping[str, Any]) -> bool:
     if not isinstance(metadata, dict):
         return True
     return metadata.get("debug") != SYSTEM_PROMPT_DEBUG_VALUE
+
+
+def conversation_messages_from_records(
+    records: Sequence[Mapping[str, Any]],
+) -> list[tuple[str, str]]:
+    """Replay user/assistant chat from persisted records, honoring compaction restarts."""
+    messages: list[tuple[str, str]] = []
+    for rec in records:
+        if rec.get("type") == "compaction":
+            summary = str(rec.get("summary") or "").strip()
+            replacement = rec.get("replacement_messages")
+            if isinstance(replacement, list):
+                messages = [("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}")] if summary else []
+                messages.extend(_compaction_replacement_pairs(replacement))
+            elif summary:
+                messages.append(("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}"))
+            continue
+        if rec.get("type") != "message":
+            continue
+        role = str(rec.get("role") or "")
+        if role not in {"user", "assistant"}:
+            continue
+        content = str(rec.get("content") or "")
+        if content:
+            messages.append((role, content))
+    return messages
+
+
+def unpersisted_conversation_messages(
+    live: Sequence[tuple[str, str]],
+    records: Sequence[Mapping[str, Any]],
+) -> list[tuple[str, str]]:
+    """Live transcript pairs that restore would not already replay from ``records``."""
+    persisted = conversation_messages_from_records(records)
+    live_pairs = [(role, content) for role, content in live]
+    if not persisted:
+        return live_pairs
+    prefix_len = len(persisted)
+    if live_pairs[:prefix_len] == persisted:
+        return live_pairs[prefix_len:]
+    return []
+
+
+def _compaction_replacement_pairs(raw: Sequence[Any]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            continue
+        role, content = item
+        if role in {"user", "assistant"} and isinstance(content, str) and content:
+            pairs.append((role, content))
+    return pairs
 
 
 # A single JSONL entry carrying the goal and task-plan snapshots changed by a

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from core.agent_harness.session import InMemorySessionStore
+from core.agent_harness.session.persistence.contracts import conversation_messages_from_records
+from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 from surfaces.interactive_shell.session import Session
 
 
@@ -86,6 +88,37 @@ def test_flush_persists_chat_when_only_debug_system_prompt_exists() -> None:
     assert ("user", "hello") in messages
     assert ("assistant", "world") in messages
     assert ("system", "system prompt") in messages
+
+
+def test_flush_does_not_repeat_compaction_history() -> None:
+    storage = InMemorySessionStore()
+    session = _session(storage)
+    storage.open_session(session)
+    summary = "Checkout was slow."
+    kept = [("user", "still failing"), ("assistant", "Checking p99.")]
+    extra = [("user", "retry it"), ("assistant", "Rerunning.")]
+    live = [("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}"), *kept, *extra]
+    session.agent.messages = live
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+    storage.append_compaction(
+        session.session_id,
+        summary=summary,
+        first_kept_entry_id="kept-1",
+        before_chars=80,
+        after_chars=40,
+        replacement_messages=[[role, text] for role, text in kept],
+    )
+
+    storage.flush(session)
+
+    restored = conversation_messages_from_records(storage.read(session.session_id))
+    assert restored == live
+    assert sum(1 for _role, text in restored if text == "still failing") == 1
 
 
 def test_append_turn_detail_writes_message_entries() -> None:

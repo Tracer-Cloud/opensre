@@ -21,7 +21,7 @@ from config.version import get_opensre_version
 from core.agent_harness.session.persistence.contracts import (
     CHAT_KINDS,
     SessionPersistenceSource,
-    is_conversation_message_record,
+    unpersisted_conversation_messages,
 )
 from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.observability.operations_log import record_operation
@@ -586,10 +586,11 @@ class JsonlSessionStore:
         # write another leaf (end-of-session flush stays idempotent).
         # ``records`` is not re-read after the appends below. The counts in
         # the leaf entry only match ``custom_message``/``turn_stub`` records,
-        # and the guard below only looks for conversation ``message`` records
-        # (debug system prompts do not count) — the appends above cannot
-        # produce either, so a re-parse would return the same answers for the
-        # cost of a full pass over the whole transcript.
+        # and the guard below only looks for conversation already restored
+        # from records (debug system prompts do not count; compaction history
+        # does) — the appends above cannot produce either, so a re-parse
+        # would return the same answers for the cost of a full pass over the
+        # whole transcript.
         if session.accumulated_context and not trailing_leaf:
             self.append_custom_message(
                 session.session_id,
@@ -616,16 +617,13 @@ class JsonlSessionStore:
                 )
         if trailing_leaf:
             return
-        if session.agent.messages and not any(
-            is_conversation_message_record(rec) for rec in records
-        ):
-            for role, content in session.agent.messages:
-                self.append_message(
-                    session.session_id,
-                    role=role,
-                    content=content,
-                    metadata={"kind": "chat"},
-                )
+        for role, content in unpersisted_conversation_messages(session.agent.messages, records):
+            self.append_message(
+                session.session_id,
+                role=role,
+                content=content,
+                metadata={"kind": "chat"},
+            )
         duration_secs = max(
             0,
             int(

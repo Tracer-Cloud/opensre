@@ -8,7 +8,7 @@ from typing import Any
 
 from core.agent_harness.session.persistence.contracts import (
     SessionPersistenceSource,
-    is_conversation_message_record,
+    unpersisted_conversation_messages,
 )
 
 
@@ -278,15 +278,14 @@ class InMemorySessionStore:
                 records = self._files.get(session.session_id, records)
         if trailing_leaf:
             return
-        if session.agent.messages and not any(
-            is_conversation_message_record(rec) for rec in records
-        ):
-            for role, content in session.agent.messages:
-                self._append(
-                    session.session_id,
-                    "message",
-                    {"role": role, "content": content, "metadata": {"kind": "chat"}},
-                )
+        extras = unpersisted_conversation_messages(session.agent.messages, records)
+        for role, content in extras:
+            self._append(
+                session.session_id,
+                "message",
+                {"role": role, "content": content, "metadata": {"kind": "chat"}},
+            )
+        if extras:
             records = self._files.get(session.session_id, records)
         self._append(
             session.session_id,

@@ -304,3 +304,38 @@ def test_flush_persists_chat_when_only_debug_system_prompt_exists(
     assert ("user", "hello") in messages
     assert ("assistant", "world") in messages
     assert ("system", "system prompt") in messages
+
+
+def test_flush_does_not_repeat_compaction_history_on_restore(storage_home: Path) -> None:
+    """Compaction already saved the kept turns; flush must not write them again."""
+    from core.state.transcript_window import SESSION_SUMMARY_PREFIX
+
+    summary = "Checkout was slow."
+    kept = [("user", "still failing"), ("assistant", "Checking p99.")]
+    extra = [("user", "retry it"), ("assistant", "Rerunning.")]
+    live = [("assistant", f"{SESSION_SUMMARY_PREFIX}{summary}"), *kept, *extra]
+    storage = JsonlSessionStore()
+    session = _session(messages=live)
+    storage.open_session(session)
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+    storage.append_compaction(
+        session.session_id,
+        summary=summary,
+        first_kept_entry_id="kept-1",
+        before_chars=80,
+        after_chars=40,
+        replacement_messages=[[role, text] for role, text in kept],
+    )
+
+    storage.flush(session)
+
+    loaded = JsonlSessionRepo().load_session(session.session_id)
+    assert loaded is not None
+    restored = loaded[RestoreContextKey.CLI_AGENT_MESSAGES]
+    assert restored == live
+    assert sum(1 for _role, text in restored if text == "still failing") == 1
