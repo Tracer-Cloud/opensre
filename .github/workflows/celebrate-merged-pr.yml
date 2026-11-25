@@ -20,6 +20,8 @@ jobs:
       github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Build celebration comment
         id: celebrate
