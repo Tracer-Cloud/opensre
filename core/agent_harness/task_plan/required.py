@@ -24,6 +24,17 @@ PLAN_REQUIRED_REASON = (
 )
 
 
+def plan_guard_applies(*, active_skill: str | None, goal_attached: bool) -> bool:
+    """True when the second work call of a turn needs an open plan.
+
+    Only inside a loaded skill workflow, and not while a session goal is
+    attached. The prompt reports this same fact to the model each turn
+    (``prompts.action.turn_interaction``), so it cannot claim a guard the
+    host does not apply.
+    """
+    return bool(active_skill) and not goal_attached
+
+
 def plan_is_open(session: Any) -> bool:
     """True when the session holds a plan that still has pending or in-progress steps."""
     plan = getattr(session, "task_plan", None)
@@ -46,13 +57,14 @@ def plan_required(
     """
     if not is_action or not is_plan_work_name(tool_name, arguments):
         return False
-    if not getattr(session, "active_skill", None):
-        return False
-    if session_goal_is_attached(session):
+    if not plan_guard_applies(
+        active_skill=getattr(session, "active_skill", None),
+        goal_attached=session_goal_is_attached(session),
+    ):
         return False
     if work_returns_this_turn(session) + work_in_flight < 1:
         return False
     return not plan_is_open(session)
 
 
-__all__ = ["PLAN_REQUIRED_REASON", "plan_is_open", "plan_required"]
+__all__ = ["PLAN_REQUIRED_REASON", "plan_guard_applies", "plan_is_open", "plan_required"]

@@ -22,13 +22,13 @@ loaded up front, as before, after which the client stops deferring.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Sequence
 from typing import Any, Final
 
 from config.constants.llm import ANTHROPIC_DEFER_LOADING_KEY
-from config.constants.tool_discovery import TOOL_SEARCH_MATCHES_KEY, TOOL_SEARCH_NAME
+from config.constants.tool_discovery import TOOL_SEARCH_NAME
+from core.llm.shared.tool_search_result import tool_search_matches
 from core.llm.transports.sdk.anthropic_cache import BEDROCK_UNNAMED_REJECTION_SIGNALS
 
 # Tool search (and with it ``tool_reference``) needs an Anthropic model from
@@ -169,7 +169,9 @@ def _with_references(
         return block
     found = [
         name
-        for name in dict.fromkeys(_search_matches(block.get("content")))
+        for name in dict.fromkeys(
+            match["name"] for match in tool_search_matches(block.get("content"))
+        )
         if name in deferred_names and name not in referenced
     ]
     if not found:
@@ -182,31 +184,6 @@ def _with_references(
             *({"type": "tool_reference", "tool_name": name} for name in found),
         ],
     }
-
-
-def _search_matches(content: Any) -> list[str]:
-    """Names a tool search result reports as found; ``[]`` when it cannot be read.
-
-    The client sends a tool's output as a JSON-encoded string, so the payload
-    may arrive encoded twice. Output cut to the tool-output budget no longer
-    parses, and its tools are loaded up front instead.
-    """
-    if not isinstance(content, str):
-        return []
-    try:
-        payload: Any = json.loads(content)
-        if isinstance(payload, str):
-            payload = json.loads(payload)
-    except ValueError:
-        return []
-    matches = payload.get(TOOL_SEARCH_MATCHES_KEY) if isinstance(payload, dict) else None
-    if not isinstance(matches, list):
-        return []
-    return [
-        match["name"]
-        for match in matches
-        if isinstance(match, dict) and isinstance(match.get("name"), str)
-    ]
 
 
 def _field(block: Any, name: str) -> Any:

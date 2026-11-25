@@ -497,3 +497,37 @@ def test_openai_turns_replay_each_tool_call_as_the_model_sent_it(
     assert _compact_json(_REMEMBER) in _call_arguments(turn_two[key])
     if api == "responses":
         assert {"type": "reasoning", "id": "rs_2", "summary": []} in turn_two[key]
+
+
+@pytest.mark.parametrize("rebuild", [False, True], ids=["live_session", "rebuilt_from_log"])
+def test_an_openai_tool_search_reveal_keeps_the_request_prefix_byte_for_byte(
+    rebuild: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On the Responses API a reveal reaches the model as new conversation, not new tools.
+
+    OpenAI matches the cached prefix with the tool definitions ahead of the
+    conversation: a tool appended to ``tools`` after a search left the next
+    request with nothing read from the cache. The revealed tool is loaded by an
+    ``additional_tools`` item after the search result instead, so every request
+    repeats the one before it byte for byte, live or restored from the log.
+    """
+    monkeypatch.setattr("core.llm.hosted_credits.admit_hosted_credits", lambda: None)
+    sdk = _ScriptedOpenAI(
+        [
+            _responses_call(1, "tool_search", {"names": ["memory_remember"]}),
+            _responses_call(2, "memory_remember", _REMEMBER),
+            _responses_text(3, "Saved: payments deploys on Tuesdays."),
+            _responses_text(4, "Payments deploys on Tuesdays."),
+            _responses_text(5, "Anytime."),
+        ]
+    )
+
+    _run_turns(_openai_client("gpt-6.2-sol", sdk), rebuild=rebuild)
+
+    for previous, current in itertools.pairwise(sdk.requests):
+        _assert_extends(previous, current, messages="input")
+    found = sdk.requests[1]
+    assert "memory_remember" not in {tool["name"] for tool in found["tools"]}
+    reveal = found["input"][-1]
+    assert reveal["type"] == "additional_tools"
+    assert [tool["name"] for tool in reveal["tools"]] == ["memory_remember"]

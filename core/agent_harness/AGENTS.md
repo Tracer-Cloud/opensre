@@ -82,7 +82,11 @@ complete a step that had no tool return while it was `in_progress`
 `verifies` is never exempt, and a text-only closing step is exempt only once
 such a step completed. During a loaded skill workflow, the second work tool of
 a turn with no open plan is refused (`task_plan/required.py`). Ordinary turns
-and turns with an attached session goal execute directly without this guard. A
+and turns with an attached session goal execute directly without this guard.
+TURN INTERACTION tells the model each turn whether the guard is on, from the
+same predicate (`plan_guard_applies`), and that one response may carry several
+tool calls (`prompts/action/turn_interaction.py`): told the opposite, recorded
+turns planned every multi-tool request and sent one call per response. A
 response whose only tool call is
 `update_plan` runs: the prompt asks for the write in the same response as the
 step's tool, but refusing it cost the same model call it meant to save and
@@ -386,7 +390,10 @@ it). Pinned by ``tests/core/agent_harness/turns/test_prompt_cache_prefix.py``:
   index) form a session-context section in the user message, sent only when its
   digest differs from the newest one the replayed history carries
   (``session_context_to_send``). Never move a block that can change mid-session
-  back into ``STABLE``.
+  back into ``STABLE``, nor a value that differs between two processes of one
+  install: the process ids ride with the per-turn facts, because a system
+  prompt unique to its process left every new session's first request with
+  nothing to read from the cache.
 - A turn replays exactly as it was sent: the evidence keeps the user message as
   the model received it (``sent``), and live assistant blocks use the same
   builders as their replay (``anthropic_cache.replay_stable_blocks``). Each
@@ -405,7 +412,12 @@ it). Pinned by ``tests/core/agent_harness/turns/test_prompt_cache_prefix.py``:
   catalog deferred from the first request (``ProgressiveToolCatalog.deferred``),
   and each ``tool_search`` result references what it revealed, so a reveal does
   not change ``tools`` even within a turn. A 400 that blames it turns it off for
-  the client's lifetime. Other providers get the list above unchanged.
+  the client's lifetime. The OpenAI Responses client loads each reveal from an
+  ``additional_tools`` input item placed after the search result that reported
+  it newly visible (``openai_additional_tools``), with the same fallback:
+  OpenAI matches the prefix with tools ahead of the conversation, so a tool
+  appended to ``tools`` left the next request with nothing read from the cache.
+  Other providers get the list above unchanged.
 - The memory index is a pure function of the memory files; usage never orders it. ``record_conversation_turn``
 stores a turn's ``TurnEvidence`` beside its ``(user, assistant)`` text pair and
 appends it to the session log as a ``turn_evidence`` record; ``restore_context``

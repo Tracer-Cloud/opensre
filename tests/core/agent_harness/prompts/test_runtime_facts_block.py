@@ -60,7 +60,7 @@ def test_static_facts_renders_python_process_and_tools_facts() -> None:
     }
     block = _static_facts(runtime)
     assert "Python interpreter version is 3.12.4" in block
-    assert "process id is 12345, parent 6789" in block
+    assert "process id is" not in block  # differs per process — late block
     assert "process uptime is" not in block  # live — late block
     assert "installed tools on PATH are git, kubectl" in block, block
     assert "helm" not in block  # not-present tools are filtered
@@ -73,6 +73,10 @@ def test_static_facts_renders_python_process_and_tools_facts() -> None:
     assert "`ps`" in block
     assert "process uptime is 42.5 seconds" in render_live_runtime_facts(
         runtime, host_measurements=True
+    )
+    # A shared chat gets no host readings, but the process facts it always had.
+    assert "process id is 12345, parent 6789" in render_live_runtime_facts(
+        runtime, host_measurements=False
     )
 
 
@@ -327,3 +331,25 @@ def test_only_a_local_surface_reads_this_hosts_uptime_disk_and_memory(
         "uptime, disk or memory usage",
     )
     assert [reading in turn for reading in readings] == [measured] * len(readings)
+
+
+def test_another_process_sends_the_same_cached_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A new session's first request must be able to read the prompt a previous one cached.
+
+    The process id sat in the system prompt, so every process sent a prompt of
+    its own. Measured on the hosted route: a second conversation with the same
+    system prompt read all of it from the cache, and one whose prompt carried
+    another process id read nothing. The ids ride with the turn instead.
+    """
+
+    def capture_as(pid: int) -> Callable[..., dict[str, Any]]:
+        return lambda **kwargs: {**capture_runtime_facts(**kwargs), "pid": pid, "ppid": pid - 1}
+
+    monkeypatch.setattr(_CAPTURE, capture_as(4242))
+    first = build_action_system_prompt_envelope(_turn()).render_split()
+    monkeypatch.setattr(_CAPTURE, capture_as(5151))
+    second = build_action_system_prompt_envelope(_turn()).render_split()
+
+    assert first.cached == second.cached
+    assert "process id is 4242, parent 4241" in first.ephemeral
+    assert "process id is 5151, parent 5150" in second.ephemeral
