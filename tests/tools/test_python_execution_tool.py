@@ -274,6 +274,8 @@ class TestWhatTheModelReadsBack:
         assert 'File "generated_code.py", line 3' in result.content
         assert "IndexError" in result.content
         assert result.details["success"] is False
+        # Code that ran and raised is a result to read, not a failed call.
+        assert result.is_error is False
 
     def test_output_past_the_budget_cannot_push_the_status_out(self, monkeypatch) -> None:
         """Cut as one JSON string, a long stdout decided whether the exit code survived."""
@@ -299,6 +301,8 @@ class TestWhatTheModelReadsBack:
         )
         assert "page 1 done" in result.content
         assert result.details["timed_out"] is True
+        # A run the sandbox stopped is a failed call; error counts read this flag.
+        assert result.is_error is True
 
     def test_a_blocked_native_import_names_the_way_out(self) -> None:
         """numpy and pandas load ctypes, which the sandbox refuses; the traceback does not say so."""

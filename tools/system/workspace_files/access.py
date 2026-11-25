@@ -12,7 +12,7 @@ from __future__ import annotations
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-from infrastructure.safety.secret_redaction import redact_text
+from infrastructure.safety.secret_redaction import redact_text_keeping_lines
 from tools.system.workspace_paths import (
     WorkspacePathError,
     resolve_within_workspace,
@@ -90,15 +90,18 @@ def resolve_readable(path: str) -> Path:
 
 
 def read_text(path: Path, *, max_bytes: int = MAX_READ_BYTES) -> str:
-    """The file as text with credentials redacted; a binary or oversized file is refused."""
-    return redact_text(decode_text(path, max_bytes=max_bytes))
+    """The file as text with credentials redacted; a binary or oversized file is refused.
+
+    Redaction keeps the line count, so the numbers a read shows are the file's.
+    """
+    return redact_text_keeping_lines(decode_text(path, max_bytes=max_bytes))
 
 
 def decode_text(path: Path, *, max_bytes: int) -> str:
-    """The file as text, unredacted: for matching only, never for output.
+    """The file as text, unredacted: never for output.
 
-    Redacting every file a search opens costs more than the search; a caller
-    redacts the lines it returns instead.
+    Redacting every file a search opens costs more than the search, so a
+    search uses this to skip the files that cannot match and redacts the rest.
     """
     shown = workspace_relative(path)
     try:

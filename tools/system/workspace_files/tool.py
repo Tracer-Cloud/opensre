@@ -8,7 +8,6 @@ need no approval, and run together when one response carries several.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -29,6 +28,9 @@ from tools.system.workspace_files.reading import DEFAULT_LINE_LIMIT, numbered_ex
 from tools.system.workspace_files.searching import (
     DEFAULT_MATCH_LIMIT,
     MAX_CONTEXT_LINES,
+    SEARCH_SECONDS,
+    SearchPattern,
+    SearchPatternError,
     matching_lines,
 )
 from tools.system.workspace_paths import workspace_relative
@@ -215,7 +217,10 @@ def read_file(
     outputs={
         "match_count": "Matching lines returned",
         "file_count": "Files those lines are in",
-        "truncated": f"True when the search stopped at {DEFAULT_MATCH_LIMIT} matches; more may exist",
+        "truncated": (
+            f"True when the search stopped at {DEFAULT_MATCH_LIMIT} matches or at its time "
+            "limit; more may exist"
+        ),
     },
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -271,10 +276,8 @@ def search_files(
     if not (pattern or "").strip():
         return _refused("pattern is required.")
     try:
-        # MULTILINE: a file is tested whole before its lines are, and ``^`` must
-        # mean the start of a line in both.
-        compiled = re.compile(pattern, re.MULTILINE | (re.IGNORECASE if ignore_case else 0))
-    except re.error as exc:
+        compiled = SearchPattern(pattern, ignore_case=bool(ignore_case))
+    except SearchPatternError as exc:
         return _refused(f"pattern is not a valid regular expression: {exc}", pattern=pattern)
     try:
         scope = resolve_readable((path or "").strip() or ".")
@@ -309,7 +312,13 @@ def search_files(
     )
     scoped = f" in files matching `{glob.strip()}`" if wanted is not None else ""
     place = f"in {where}" if scope.is_file() else f"under {where}{scoped}"
+    stopped = (
+        f"stopped after {SEARCH_SECONDS:g} seconds, before every file was searched: the "
+        "pattern is slow on these files. Simplify it, or narrow the path or glob"
+    )
     if not page.match_count:
+        if page.timed_out:
+            return _refused(f"The search {stopped}.", pattern=pattern)
         summary = f"No matches for `{pattern}` {place}"
         return _shown(
             summary, {"match_count": 0, "file_count": 0, "truncated": False, "summary": summary}
@@ -326,12 +335,14 @@ def search_files(
             f"[stopped at {page.match_count} matches; more may exist. Narrow the pattern, "
             "path or glob]"
         )
+    if page.timed_out:
+        body.append(f"[{stopped}]")
     return _shown(
         "\n".join(body),
         {
             "match_count": page.match_count,
             "file_count": page.file_count,
-            "truncated": page.truncated,
+            "truncated": page.truncated or page.timed_out,
             "summary": summary,
         },
     )

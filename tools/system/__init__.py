@@ -15,7 +15,7 @@ TOOL_MODULES = (
     "agent_memory.tool",
     "file_count.tool",
     "local_repo_insights.tool",
-    "python_execution_tool",
+    "python_execution_tool.tool",
     "repository_preferences.tool",
     "runbook_guidance_tool.tool",
     "scheduled_loops.manage",
