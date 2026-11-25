@@ -7,13 +7,29 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
+# What the runtime does with this turn's tool calls, from the code that does
+# it: ``core.tool.execution`` runs every call of a response, and the plan guard
+# (``task_plan.required``, ``TurnSnapshot.plan_guard_active``) applies only
+# inside a skill workflow. Told that a response with several calls runs none
+# and that every second work tool needs a plan, recorded turns planned each
+# multi-tool request and spent one model round trip per call. One short line:
+# it rides in every turn's message and replays with the history.
+_TOOL_CALLS_FACT = (
+    "- tool calls: several per response all run, none is rejected; send independent ones together. "
+)
+# Qualified: a skill loaded later in the turn turns the guard on.
+_PLAN_GUARD_OFF_FACT = "No stored plan is required unless a skill is loaded.\n"
+_PLAN_GUARD_ON_FACT = "Skill workflow: store a plan before the second work tool.\n"
+
 
 def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
-    """Authoritative surface / goal / menu facts for this turn.
+    """Authoritative surface / goal / menu / tool-call facts for this turn.
 
     The STABLE system prompt tells the model when not to park optional
     follow-ups on ``ask_user_choice``. That rule is useless unless these
-    facts are present in the same prompt.
+    facts are present in the same prompt. The tool-call and plan-guard facts
+    come from the code that enforces them, so the prompt reports what the
+    runtime does rather than what it once did.
     """
     surface = turn_snapshot.prompt_surface or "unknown"
     goal = "attached" if turn_snapshot.session_goal_attached else "none"
@@ -53,6 +69,8 @@ def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
         f"- session_goal: {goal}\n"
         f"{goal_lines}"
         f"{credits_lines}"
+        f"{_TOOL_CALLS_FACT}"
+        f"{_PLAN_GUARD_ON_FACT if turn_snapshot.plan_guard_active else _PLAN_GUARD_OFF_FACT}"
         f"- ask_user_choice menu: {menu}\n"
         f"{surface_rules}"
         "Optional follow-ups (run tests, commit, build next): call "

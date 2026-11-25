@@ -82,6 +82,12 @@ from core.llm.transports.sdk.anthropic_thinking import (
     carries_thinking,
     is_thinking_block,
 )
+from core.llm.transports.sdk.openai_additional_tools import (
+    additional_tools_request as _openai_additional_tools_request,
+)
+from core.llm.transports.sdk.openai_additional_tools import (
+    is_additional_tools_unsupported_error as _is_additional_tools_unsupported_error,
+)
 from core.llm.transports.sdk.request_headers import (
     RequestHeaders,
     http_client_with_request_headers,
@@ -823,6 +829,12 @@ _PREWARM_RESPONSE: dict[str, Any] = {
 class OpenAIAgentClient:
     """OpenAI-compatible client with tool-calling for the agent loop."""
 
+    # Best-effort loading of revealed tools from the conversation
+    # (``openai_additional_tools``): a class default so every instance starts
+    # with it, flipped to an instance False for the client's lifetime the first
+    # time the provider rejects the item with a 400.
+    _additional_tools_enabled = True
+
     def __init__(
         self,
         model: str,
@@ -985,16 +997,23 @@ class OpenAIAgentClient:
 
         api_key_env = str(getattr(self, "_api_key_env", "OPENAI_API_KEY"))
         use_responses = uses_responses_api(self._model, api_key_env)
+        # Whether this request loads revealed tools from the conversation.
+        loads_revealed_tools = False
         if use_responses:
+            input_items, request_tools, loads_revealed_tools = _openai_additional_tools_request(
+                responses_input(msgs),
+                responses_tool_specs(tools or []),
+                enabled=self._additional_tools_enabled,
+            )
             kwargs: dict[str, Any] = {
                 "model": self._model,
                 "max_output_tokens": self._max_tokens,
-                "input": responses_input(msgs),
+                "input": input_items,
             }
             if system:
                 kwargs["prompt_cache_key"] = responses_prompt_cache_key(system)
-            if tools:
-                kwargs["tools"] = responses_tool_specs(tools)
+            if request_tools:
+                kwargs["tools"] = request_tools
                 kwargs["tool_choice"] = "auto"
                 kwargs["parallel_tool_calls"] = True
             from config.llm_reasoning_effort import resolve_reasoning_effort
@@ -1041,6 +1060,25 @@ class OpenAIAgentClient:
                 retry = completion_token_retry_kwargs(kwargs, err)
                 if retry is not None:
                     kwargs = retry
+                    continue
+                if loads_revealed_tools and _is_additional_tools_unsupported_error(err):
+                    # Keyed on what *this* request carried, not the shared flag:
+                    # a concurrent turn may already have cleared it. The resend
+                    # carries no item, so it cannot come back here.
+                    self._additional_tools_enabled = False
+                    loads_revealed_tools = False
+                    logger.warning(
+                        "%s model '%s' rejected tools loaded from the conversation; retrying "
+                        "with every revealed tool in the tools list (a tool search re-prices "
+                        "the prompt cache).",
+                        self._provider_label,
+                        self._model,
+                    )
+                    kwargs = {
+                        **kwargs,
+                        "input": responses_input(msgs),
+                        "tools": responses_tool_specs(tools or []),
+                    }
                     continue
                 # Some providers (or proxies) surface insufficient_quota as
                 # 400 — distinguish before the generic wrap.

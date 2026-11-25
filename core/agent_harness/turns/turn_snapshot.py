@@ -11,9 +11,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from core.agent_harness.prompts.kernel.surfaces import profile_for
-from core.agent_harness.session_goal.goal import SessionGoal
+from core.agent_harness.session_goal.goal import SessionGoal, session_goal_is_attached
 from core.agent_harness.session_goal.progress import format_session_goal_brief
 from core.agent_harness.task_plan.ownership import session_answer_continues_plan
+from core.agent_harness.task_plan.required import plan_guard_applies
+from core.agent_harness.turns.skill_activation import skill_continues
 from core.domain.repositories import RepositoryPreferences, load_repository_preferences
 from core.state import TurnEvidence, history_window_messages
 from core.state.transcript_window import compact_messages_to_window
@@ -224,6 +226,13 @@ class TurnSnapshot:
     says so; otherwise the model writes its own status transitions.
     """
 
+    plan_guard_active: bool = False
+    """The plan guard applies from this turn's first tool: it continues a skill workflow.
+
+    Without one the second work tool runs with no stored plan, and the prompt
+    tells the model so instead of asking for a plan the host does not require.
+    """
+
     prompt_surface: str | None = None
     """``interactive_shell``, ``gateway``, or ``None`` when the host did not say."""
 
@@ -303,6 +312,7 @@ class TurnSnapshot:
             task_plan=_read_task_plan(session),
             plan_only_until_authorized=bool(getattr(session, "plan_only_until_authorized", False)),
             plan_answer_continues=session_answer_continues_plan(session, text),
+            plan_guard_active=_plan_guard_active(session, text),
             prompt_surface=surface,
             session_goal_attached=getattr(session, "session_goal", None) is not None,
             session_goal_brief=_session_goal_brief(session),
@@ -364,6 +374,19 @@ def _session_goal_brief(session: Any) -> str:
     if not isinstance(goal, SessionGoal):
         return ""
     return format_session_goal_brief(goal)
+
+
+def _plan_guard_active(session: Any, text: str) -> bool:
+    """Whether the plan guard applies once this turn's message has been taken.
+
+    The driver clears the active skill for a new request after this snapshot,
+    so the skill counts only when ``text`` stays inside it.
+    """
+    active_skill = getattr(session, "active_skill", None)
+    return plan_guard_applies(
+        active_skill=active_skill if skill_continues(active_skill, text) else None,
+        goal_attached=session_goal_is_attached(session),
+    )
 
 
 def _read_task_plan(session: TurnSnapshotSource) -> TaskPlan | None:

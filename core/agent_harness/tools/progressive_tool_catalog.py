@@ -6,7 +6,9 @@ tool keeps the position and the description it was first shown with, tools a
 search reveals stay visible on later turns, and new tools join at the end. A
 provider that loads tools by reference declares the rest of the catalog up
 front instead (:meth:`ProgressiveToolCatalog.deferred`) and loads a reveal from
-the search result, so the declared list does not change at all.
+the search result, so the declared list does not change at all. The OpenAI
+Responses client reads ``newly_visible`` in a search result to load that tool
+from the conversation, with the same effect.
 """
 
 from __future__ import annotations

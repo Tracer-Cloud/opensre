@@ -6,10 +6,11 @@ earlier prompt wording ("including the build marker if present") caused the
 LLM to treat "build marker" as a slot name and hallucinate a value like ``0``
 when the marker was empty.
 
-Live facts (``now_iso``, uptime, disk, memory) are rendered separately from
-session-static facts so the system/env prefix can stay cache-stable across
-turns. Uptime, disk and memory describe this host, so a caller can render the
-clock alone.
+Live facts (``now_iso``, the process ids, uptime, disk, memory) are rendered
+separately from install-static facts so the system/env prefix stays
+cache-stable across turns and across processes: a provider reuses a cached
+system prompt only when another request sends the same one. Uptime, disk and
+memory describe this host, so a caller can render the clock and process alone.
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ _STATIC_GUIDANCE = (
     ". When the user asks which OpenSRE version is running, reply with the "
     "full version string above verbatim — including any parenthetical suffix. "
     "When the user asks what environment this process is running in, or for "
-    "the host operating system, local timezone name, Python version, process "
-    "id, parent process id, host/pod name, cloud provider or region, "
+    "the host operating system, local timezone name, Python version, "
+    "host/pod name, cloud provider or region, "
     "kubeconfig path, or which tools are installed, answer from the strings "
     "above directly, WITHOUT any tool call — these facts are authoritative "
     "and re-reading them through the sandbox wastes a round-trip. Quote the "
@@ -236,7 +237,6 @@ _STATIC_FACT_PRODUCERS: tuple[FactProducer, ...] = (
     _str_fact("hostname", "host name is {}"),
     _str_fact("tz_name", "local timezone is {}"),
     _str_fact("python_version", "Python interpreter version is {}"),
-    _pid_line,
     _cloud_line,
     _workspace_line,
     _tools_line,
@@ -245,7 +245,10 @@ _STATIC_FACT_PRODUCERS: tuple[FactProducer, ...] = (
     _str_fact("scratchpad_dir", "scratchpad directory is {}"),
 )
 
-_CLOCK_FACT_PRODUCERS: tuple[FactProducer, ...] = (_now_line,)
+# The process ids differ in every process. In the static facts they made each
+# process's system prompt its own, so a new session's first request read
+# nothing from the provider's cache.
+_CLOCK_FACT_PRODUCERS: tuple[FactProducer, ...] = (_now_line, _pid_line)
 
 _LIVE_FACT_PRODUCERS: tuple[FactProducer, ...] = (
     *_CLOCK_FACT_PRODUCERS,
@@ -284,12 +287,12 @@ def _render_facts(
 
 
 def render_static_runtime_facts(runtime: Mapping[str, Any]) -> str:
-    """Session-stable runtime facts for the Environment / system prefix."""
+    """Install-stable runtime facts for the Environment / system prefix."""
     return _render_facts(_STATIC_FACT_PRODUCERS, runtime, guidance=_STATIC_GUIDANCE)
 
 
 def render_live_runtime_facts(runtime: Mapping[str, Any], *, host_measurements: bool) -> str:
-    """Per-turn live facts for a late prompt block: the clock, and this host's readings if allowed."""
+    """Per-turn facts for a late prompt block: clock and process, and this host's readings if allowed."""
     if host_measurements:
         return _render_facts(_LIVE_FACT_PRODUCERS, runtime, guidance=_LIVE_GUIDANCE)
     return _render_facts(_CLOCK_FACT_PRODUCERS, runtime, guidance=_CLOCK_GUIDANCE)
