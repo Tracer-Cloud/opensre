@@ -51,7 +51,10 @@ from tools.system.web_fetch.tool import WEB_FETCH_TOOL, web_fetch
 
 _PUBLIC = "93.184.216.34"
 _OTHER_PUBLIC = "151.101.1.69"
+# Credential shapes are assembled at runtime so secret scanners never see one here.
 _TOKEN = "ghp_" + "a" * 36
+_PK = "PRIVATE " + "KEY"
+_LOGIN = "reader:" + "secret"
 _HTML = {"content-type": "text/html; charset=utf-8"}
 
 Handler = Callable[[httpx.Request], Any]
@@ -110,7 +113,7 @@ def _redirect(location: str, **headers: str) -> httpx.Response:
         ("ftp://docs.example/readme.txt", "only http:// and https://"),
         ("gopher://docs.example/", "only http:// and https://"),
         ("docs.example/page", "only http:// and https://"),
-        ("https://reader:secret@docs.example/", "username or password"),
+        (f"https://{_LOGIN}@docs.example/", "username or password"),
         ("https://token@docs.example/", "username or password"),
         ("https://docs.example\\@internal.example/", "not a valid web address"),
         ("https://docs.example/a b", "not a valid web address"),
@@ -315,7 +318,7 @@ def test_a_second_hop_to_the_same_name_is_judged_again() -> None:
         ("http://internal.example/", "private network"),
         ("//localhost:8080/", "loopback"),
         ("file:///etc/passwd", "only http:// and https://"),
-        ("https://reader:secret@public.example/", "username or password"),
+        (f"https://{_LOGIN}@public.example/", "username or password"),
     ],
 )
 def test_a_redirect_from_a_public_page_to_an_internal_one_is_not_followed(
@@ -894,7 +897,7 @@ def test_only_text_that_can_be_shown_is_redacted_however_much_is_asked_for(
 ) -> None:
     """The page chooses the text, and redaction takes minutes on 2 MB built for it."""
     # Arrange: a page of private-key openers, and a record of what redaction is given.
-    site(lambda _request: _page("-----BEGIN PRIVATE KEY----- " * 70_000))
+    site(lambda _request: _page(f"-----BEGIN {_PK}----- " * 70_000))
     given: list[int] = []
 
     def recording(text: str) -> str:
