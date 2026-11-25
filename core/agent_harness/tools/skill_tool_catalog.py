@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.capabilities import SHELL_COMMANDS_CAPABILITY
 from core.agent_harness.tools.tool_context import capability_not_explicitly_disabled
 from core.tool import RegisteredTool
 from infrastructure.harness_providers import resolve_skill_tools
@@ -25,7 +26,7 @@ class SkillToolCatalog:
         if (
             not self._enabled
             or not getattr(self._session, "skill_discovery_enabled", True)
-            or not capability_not_explicitly_disabled(self._session, "shell_commands")
+            or not capability_not_explicitly_disabled(self._session, SHELL_COMMANDS_CAPABILITY)
         ):
             active = None
         if active == self._active:

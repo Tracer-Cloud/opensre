@@ -78,6 +78,9 @@ dependencies = [
     # File locking for atomic store operations
     "filelock>=3.29.0",
     "psutil>=5.9",
+    # Regular expressions with a deadline: search_files runs model-written
+    # patterns, and the standard library's engine cannot be stopped mid-match.
+    "regex>=2024.11.6",
     # Scheduler for cron-driven deliveries
     "APScheduler>=3.10.0,<4.0.0",
 ]

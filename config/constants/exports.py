@@ -253,6 +253,7 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_CAPABILITY": "capabilities",
     "SCHEDULER_HOST_CAPABILITY": "capabilities",
     "SCHEDULER_HOST_IN_PROCESS": "capabilities",
+    "SHELL_COMMANDS_CAPABILITY": "capabilities",
     "PROMPT_ROUTE_PATH": "gateway",
     "PROMPT_SLOT_WAIT_SECONDS": "gateway",
     "PROMPT_WORKER_STOP_TIMEOUT_SECONDS": "gateway",

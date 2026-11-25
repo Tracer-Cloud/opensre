@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from config.constants.capabilities import SHELL_COMMANDS_CAPABILITY
 from config.constants.tool_output import TOOL_OUTPUT_BYTES_PER_TOKEN
 from core.agent_harness.tools import (
     ActionToolScope,
@@ -99,7 +100,10 @@ shell_run_tool = RegisteredTool(
         "Run a local shell command on this machine. Native Windows uses cmd.exe; "
         "macOS, Linux, and WSL use /bin/sh. For PowerShell, invoke "
         '`powershell -NoProfile -Command "..."` or `pwsh -NoProfile -Command "..."` '
-        "explicitly; PowerShell syntax is not translated. Use for read-only inspection, "
+        "explicitly; PowerShell syntax is not translated. To read, search or list files "
+        "of the working directory, use read_file, search_files and list_files instead: "
+        "they need no approval and several run together. Use shell_run for other read-only "
+        "inspection (git, processes, files elsewhere on the machine), "
         "controlled operational steps, and user-requested local workflows — including "
         "creating files or scripts and executing multi-step sequences, one shell_run call "
         "per step when a step consumes the previous step's output. Each call starts a fresh shell, "
@@ -157,6 +161,13 @@ shell_run_tool = RegisteredTool(
         },
         required=("command",),
     ),
+    # The opening catalog shows this in place of the description above, cut to
+    # its first sentences, which named no alternative for reading files.
+    compact_description=(
+        "Run a local shell command on this machine (cmd.exe on native Windows, /bin/sh "
+        "elsewhere). Not for reading, searching or listing files of the working "
+        "directory: read_file, search_files and list_files do that with no approval."
+    ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -164,7 +175,9 @@ shell_run_tool = RegisteredTool(
     approval_reason="Runs a command on this machine.",
     accepts_runtime_context=True,
     run=run_shell,
-    is_available=lambda sources: capability_available_from_sources(sources, "shell_commands"),
+    is_available=lambda sources: capability_available_from_sources(
+        sources, SHELL_COMMANDS_CAPABILITY
+    ),
 )
 
 

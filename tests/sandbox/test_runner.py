@@ -392,3 +392,62 @@ class TestSandboxFileAccessPolicy:
         result = run_python_sandbox("import os; os.posix_spawn('/usr/bin/true', ['true'], {})")
         assert not result.success
         assert "PermissionError" in result.stderr
+
+
+class TestSandboxRunsCodeAsItsOwnFile:
+    """The code is one compilation unit, not text appended to the sandbox setup."""
+
+    def test_a_traceback_cites_the_lines_the_caller_wrote(self) -> None:
+        """Appended to the setup, an error on line 5 was reported at line 125 of a temp file."""
+        code = "def ratio(value):\n    return 1 / value\n\nprint('start')\nratio(0)\n"
+
+        result = run_python_sandbox(code)
+
+        assert result.stdout == "start\n"
+        assert 'File "generated_code.py", line 5, in <module>' in result.stderr
+        assert 'File "generated_code.py", line 2, in ratio' in result.stderr
+        assert "return 1 / value" in result.stderr
+        # No frame of the setup script, whose path and line numbers mean nothing to the caller.
+        assert os.fspath(OPENSRE_TMP_DIR) not in result.stderr
+        assert result.exit_code == 1
+
+    def test_a_syntax_error_is_reported_at_its_own_line(self) -> None:
+        result = run_python_sandbox("value = 1\ndef broken(:\n    pass\n")
+
+        assert not result.success
+        assert 'File "generated_code.py", line 2' in result.stderr
+        assert "SyntaxError" in result.stderr
+
+    def test_a_future_import_may_open_the_code(self) -> None:
+        """It must be a file's first statement, which appended code never was."""
+        code = "from __future__ import annotations\n\ndef size(items: list[int]) -> int:\n    return len(items)\n\nprint(size([1, 2]))\n"
+
+        result = run_python_sandbox(code)
+
+        assert result.success, result.stderr
+        assert result.stdout.strip() == "2"
+
+    def test_the_code_still_runs_as_the_main_module(self) -> None:
+        """Pickling a class the code defines looks it up on ``__main__``."""
+        code = (
+            "import pickle, sys\n"
+            "class Point:\n"
+            "    def __init__(self, x):\n"
+            "        self.x = x\n"
+            "print(__name__, pickle.loads(pickle.dumps(Point(3))).x)\n"
+            "sys.exit(4)\n"
+        )
+
+        result = run_python_sandbox(code)
+
+        assert result.stdout.strip() == "__main__ 3"
+        assert result.exit_code == 4
+
+    def test_a_timed_out_run_keeps_the_output_it_wrote(self) -> None:
+        """A script that printed its progress and then hung used to report nothing."""
+        code = "import time\nprint('fetched 3 pages')\ntime.sleep(30)\nprint('never')\n"
+
+        result = run_python_sandbox(code, timeout=1)
+
+        assert result.timed_out
+        assert result.stdout == "fetched 3 pages\n"

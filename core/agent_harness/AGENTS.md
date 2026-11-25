@@ -153,9 +153,10 @@ Checklist progress uses the `session_goal_complete` tool, not reply tags.
 
 Workflow cards are validated before discovery. Invalid cards are excluded with
 diagnostics, while CI checks the unfiltered catalog and fails on every invalid
-card. Large interactive catalogs use progressive disclosure: universal controls
-and `tool_search` are visible first, `tool_search` activates specialist schemas
-on the next ReAct iteration, and workflow-local script tools appear immediately
+card. Large interactive catalogs use progressive disclosure: universal controls,
+the read-only working-directory file tools and `tool_search` are visible first,
+`tool_search` activates specialist schemas on the next ReAct iteration, and
+workflow-local script tools appear immediately
 while their skill is active. Skills retain access to the complete available
 catalog; they do not declare filters. The per-run catalog refreshes after skill
 changes; execution rechecks the active session. Settling the plan retires its

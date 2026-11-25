@@ -64,8 +64,8 @@ def _summary(tally: FileTally) -> str:
     ],
     anti_examples=[
         "Counting entries inside a YAML, JSON or TOML file (use read_structured_file)",
-        "Searching file contents (use shell_run with rg)",
-        "Listing every file name (this returns a count and a few examples)",
+        "Searching file contents (use search_files)",
+        "Listing every file name (use list_files; this returns a count and a few examples)",
     ],
     outputs={
         "count": "How many files matched, across the whole tree",
