@@ -102,7 +102,8 @@ shell_run_tool = RegisteredTool(
         '`powershell -NoProfile -Command "..."` or `pwsh -NoProfile -Command "..."` '
         "explicitly; PowerShell syntax is not translated. To read, search or list files "
         "of the working directory, use read_file, search_files and list_files instead: "
-        "they need no approval and several run together. Use shell_run for other read-only "
+        "they need no approval and several run together. To create or change a file "
+        "there, use apply_patch. Use shell_run for other read-only "
         "inspection (git, processes, files elsewhere on the machine), "
         "controlled operational steps, and user-requested local workflows — including "
         "creating files or scripts and executing multi-step sequences, one shell_run call "
@@ -166,7 +167,8 @@ shell_run_tool = RegisteredTool(
     compact_description=(
         "Run a local shell command on this machine (cmd.exe on native Windows, /bin/sh "
         "elsewhere). Not for reading, searching or listing files of the working "
-        "directory: read_file, search_files and list_files do that with no approval."
+        "directory: read_file, search_files and list_files do that with no approval. "
+        "Not for writing them either: apply_patch does."
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),

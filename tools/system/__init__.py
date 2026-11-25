@@ -23,6 +23,7 @@ TOOL_MODULES = (
     "sre_guidance_tool",
     "structured_file.tool",
     "work_items.tool",
+    "workspace_files.patch_tool",
     "workspace_files.tool",
     "workspace_git_scan.tool",
 )

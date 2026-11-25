@@ -1,9 +1,10 @@
 """Progressive tool-catalog policy shared by the harness and ReAct loop."""
 
 INITIAL_TOOL_CATALOG_LIMIT = 20
-# Sized for the controls below plus the three workspace file tools: hidden,
-# reading code meant a tool search first, or Python written for the sandbox.
-INITIAL_TOOL_SCHEMA_TOKEN_LIMIT = 7_200
+# Sized for the controls below plus the workspace file tools: hidden, reading
+# code meant a tool search first or Python written for the sandbox, and the
+# system prompt's `apply_patch` named a tool the first request did not offer.
+INITIAL_TOOL_SCHEMA_TOKEN_LIMIT = 7_750
 TOOL_SEARCH_MAX_RESULTS = 8
 MAX_STAGNANT_DISCOVERY_ITERATIONS = 3
 
@@ -50,6 +51,7 @@ INITIAL_TOOL_CATALOG_ORDER = (
     "read_file",
     "search_files",
     "list_files",
+    "apply_patch",
     # Ahead of the specialist tools the schema budget cuts: hidden, every
     # GitHub request opened with a tool search, a model call that did no work.
     "github_cli",
