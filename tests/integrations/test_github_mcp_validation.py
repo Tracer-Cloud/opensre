@@ -20,12 +20,14 @@ def _patch_fake_session(
     list_fn: Any,
     call_fn: Any = None,
     opened: list[int] | None = None,
+    page_size: int | None = None,
 ) -> None:
     """Replace _open_github_mcp_session with a fake driven by the given callbacks.
 
     list_fn: A function (config) -> list[dict] returning tool definitions.
     call_fn: A function (config, name, args) -> dict returning simulated tool responses.
     opened: Optional single-slot list incremented once per session opened.
+    page_size: When set, ``tools/list`` serves tools in pages of this size via ``next_cursor``.
     """
 
     @asynccontextmanager
@@ -35,16 +37,26 @@ def _patch_fake_session(
         session = MagicMock()
         session.initialize = AsyncMock()
 
-        tools_dicts = list_fn(config)
-        list_result = MagicMock()
-        list_result.tools = [
+        all_tools = [
             mcp_types.Tool(
                 name=str(t["name"]),
                 input_schema=t.get("input_schema") or {},
             )
-            for t in tools_dicts
+            for t in list_fn(config)
         ]
-        session.list_tools = AsyncMock(return_value=list_result)
+        size = page_size or max(len(all_tools), 1)
+
+        async def _list_tools(
+            params: mcp_types.PaginatedRequestParams | None = None,
+        ) -> mcp_types.ListToolsResult:
+            start = int(params.cursor) if params is not None and params.cursor else 0
+            end = start + size
+            return mcp_types.ListToolsResult(
+                tools=all_tools[start:end],
+                next_cursor=str(end) if end < len(all_tools) else None,
+            )
+
+        session.list_tools = _list_tools
 
         async def _call_tool(name: str, args: dict) -> Any:
             if call_fn is None:
@@ -99,6 +111,40 @@ def _minimal_toolset_for_validation() -> list[dict[str, Any]]:
         }
         for n in names
     ]
+
+
+def test_validate_github_mcp_config_follows_tools_list_pagination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Required tools served on later ``tools/list`` pages must still count."""
+
+    def fake_call(_config: Any, name: str, _args: dict[str, Any] | None = None) -> dict[str, Any]:
+        if name == "get_me":
+            return {"is_error": False, "structured_content": {"login": "alice"}, "text": ""}
+        if name == "list_repositories":
+            return {
+                "is_error": False,
+                "structured_content": [{"full_name": "org/one", "private": False}],
+                "text": "",
+            }
+        raise AssertionError(f"unexpected tool {name}")
+
+    _patch_fake_session(
+        monkeypatch, lambda _config: _minimal_toolset_for_validation(), fake_call, page_size=2
+    )
+
+    cfg = github_mcp_module.build_github_mcp_config(
+        {
+            "url": "https://api.githubcopilot.com/mcp/",
+            "mode": "streamable-http",
+            "auth_token": "ghp_test",
+            "toolsets": ["repos"],
+        }
+    )
+    result = github_mcp_module.validate_github_mcp_config(cfg)
+
+    assert result.ok is True, result.detail
+    assert set(result.tool_names) == {t["name"] for t in _minimal_toolset_for_validation()}
 
 
 def test_validate_github_mcp_config_success_includes_repo_samples(

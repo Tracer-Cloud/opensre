@@ -29,6 +29,7 @@ from rich.table import Table
 from config.strict_config import StrictConfigModel
 from infrastructure.terminal.theme import BRAND, DIM, ERROR, HIGHLIGHT
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
+from integrations.mcp_client import list_all_tools_on_session
 from integrations.mcp_streamable_http_compat import streamable_http_client
 from integrations.mcp_transport import McpTransportMode
 
@@ -1311,7 +1312,7 @@ async def _validate_github_mcp_config_async(
 ) -> GitHubMCPValidationResult:
     """Run every validation step on a single MCP session."""
 
-    tools = _tool_defs((await session.list_tools()).tools)
+    tools = _tool_defs(await list_all_tools_on_session(session))
     tool_names = tuple(sorted(t["name"] for t in tools))
 
     missing = sorted(set(REQUIRED_SOURCE_TOOLS) - set(tool_names))

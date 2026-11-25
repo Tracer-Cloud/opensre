@@ -210,24 +210,32 @@ def tool_result_to_dict(result: types.CallToolResult) -> dict[str, object]:
     }
 
 
+async def list_all_tools_on_session(session: ClientSession) -> list[types.Tool]:
+    """Return every tool on an open session, following ``tools/list`` pagination.
+
+    Stops on an empty or repeated cursor, or after ``_MAX_TOOL_LIST_PAGES`` pages,
+    so a misbehaving server cannot loop forever.
+    """
+    tools: list[types.Tool] = []
+    cursor: str | None = None
+    seen: set[str] = set()
+    for _ in range(_MAX_TOOL_LIST_PAGES):
+        params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
+        result = await session.list_tools(params=params)
+        tools.extend(result.tools)
+        cursor = result.next_cursor
+        if not cursor or cursor in seen:
+            break
+        seen.add(cursor)
+    return tools
+
+
 async def _list_tools_async(
     config: McpClientConfig,
     **session_options: Unpack[McpSessionOptions],
 ) -> list[types.Tool]:
     async with open_mcp_session(config, **session_options) as session:
-        tools: list[types.Tool] = []
-        cursor: str | None = None
-        seen: set[str] = set()
-        # Servers may page ``tools/list``; stop on a repeated cursor or the page cap.
-        for _ in range(_MAX_TOOL_LIST_PAGES):
-            params = types.PaginatedRequestParams(cursor=cursor) if cursor else None
-            result = await session.list_tools(params=params)
-            tools.extend(result.tools)
-            cursor = result.next_cursor
-            if not cursor or cursor in seen:
-                break
-            seen.add(cursor)
-        return tools
+        return await list_all_tools_on_session(session)
 
 
 def list_mcp_tools(

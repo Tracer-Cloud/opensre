@@ -47,8 +47,10 @@ def _patch_session(
         async def initialize(self) -> None:
             return None
 
-        async def list_tools(self) -> Any:
-            return SimpleNamespace(tools=[SimpleNamespace(name=name) for name in tool_names])
+        async def list_tools(self, **_kwargs: Any) -> Any:
+            return SimpleNamespace(
+                tools=[SimpleNamespace(name=name) for name in tool_names], next_cursor=None
+            )
 
         async def call_tool(self, name: str, _arguments: dict[str, Any]) -> Any:
             outcome = tool_results.get(name)
