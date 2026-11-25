@@ -147,6 +147,9 @@ def compact_session_branch(
         prior = summary_text(compacted[0])
         compacted = compacted[1:]
     final_summary = merge_summary_texts(prior, summary or deterministic_summary(compacted))
+    evidence = list(getattr(session.agent, "turn_evidence", None) or ())
+    matched = match_turn_evidence(kept, evidence)
+    kept_evidence = [matched[index] for index in sorted(matched)]
     session.agent.messages = [("assistant", f"{SESSION_SUMMARY_PREFIX}{final_summary}"), *kept]
     after_chars = _message_chars(list(session.agent.messages))
     _persist_compaction(
@@ -156,7 +159,7 @@ def compact_session_branch(
         before_chars=before_chars,
         after_chars=after_chars,
         replacement_messages=[[role, text] for role, text in kept],
-        replacement_evidence=[],
+        replacement_evidence=[record.to_json() for record in kept_evidence],
     )
     return CompactionResult(
         summary=final_summary,

@@ -374,3 +374,58 @@ def test_flush_keeps_chat_after_two_text_compactions(
     restored = loaded[RestoreContextKey.CLI_AGENT_MESSAGES]
     assert restored == live
     assert any(role == "user" and text.startswith("question") for role, text in restored)
+
+
+def test_flush_after_text_compact_keeps_tool_results_for_kept_turns(
+    storage_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resume after text-only compact must still replay tool results for kept turns."""
+    from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
+    from core.agent_harness.turns.structured_history import build_turn_evidence
+    from core.agent_harness.turns.transcript_compaction import compact_session_branch
+
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
+    storage = JsonlSessionStore()
+    messages: list[tuple[str, str]] = []
+    evidence = []
+    for index in range(10):
+        user_text, reply = f"check run {index}", f"Run {index} failed."
+        tool_items = (
+            {
+                "kind": "assistant",
+                "text": "",
+                "tool_calls": [{"id": f"call_{index}", "name": "github_cli", "input": {}}],
+            },
+            {
+                "kind": "tool_results",
+                "results": [
+                    {
+                        "id": f"call_{index}",
+                        "name": "github_cli",
+                        "content": f"run-{index} failed",
+                    }
+                ],
+            },
+        )
+        messages.extend([("user", user_text), ("assistant", reply)])
+        evidence.append(build_turn_evidence(user_text, reply, tool_items))
+    session = _session(messages=messages)
+    session.agent.turn_evidence = evidence
+    session.store = storage
+    storage.open_session(session)
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+
+    assert compact_session_branch(session) is not None
+    kept_user = [text for role, text in session.agent.messages if role == "user"]
+    storage.flush(session)
+
+    loaded = JsonlSessionRepo().load_session(session.session_id)
+    assert loaded is not None
+    restored_evidence = loaded[RestoreContextKey.TURN_EVIDENCE]
+    assert [item["user_text"] for item in restored_evidence] == kept_user
+    assert any("run-" in str(item.get("items")) for item in restored_evidence)

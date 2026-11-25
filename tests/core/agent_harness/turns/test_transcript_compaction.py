@@ -102,6 +102,20 @@ def test_two_char_compactions_persist_the_kept_messages() -> None:
     assert any(role == "user" and text.startswith("question") for role, text in live)
 
 
+@pytest.mark.usefixtures("text_history")
+def test_char_compaction_persists_evidence_for_kept_turns() -> None:
+    """Text-only compact must keep tool results for the verbatim tail, not wipe them."""
+    session = _session_with_evidence(10, result_chars=10)
+    kept_user = [text for role, text in session.agent.messages[-8:] if role == "user"]
+
+    result = compact_session_branch(session)
+
+    assert result is not None
+    [record] = session.store.compactions
+    assert [item["user_text"] for item in record["replacement_evidence"]] == kept_user
+    assert any("run-" in str(item.get("items")) for item in record["replacement_evidence"])
+
+
 def _session_with_evidence(turns: int, *, result_chars: int) -> _FakeSession:
     session = _FakeSession([])
     for index in range(turns):
