@@ -22,6 +22,7 @@ TOOL_MODULES = (
     "scheduled_loops.tool",
     "sre_guidance_tool",
     "structured_file.tool",
+    "web_fetch.tool",
     "work_items.tool",
     "workspace_git_scan.tool",
 )

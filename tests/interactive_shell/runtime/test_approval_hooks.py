@@ -136,8 +136,15 @@ def test_generated_code_allowed_for_the_session_stops_asking_until_new() -> None
 
 @pytest.mark.parametrize("level", [AutoLevel.MED, AutoLevel.LOW, AutoLevel.OFF])
 @pytest.mark.parametrize(("answer", "runs"), [("y", True), ("n", False)])
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("call_pipedream_tool", {"tool_name": "linear-create-issue"}),
+        ("web_fetch", {"url": "https://docs.example/guide"}),
+    ],
+)
 def test_external_tool_asks_below_high_and_honours_the_answer(
-    level: AutoLevel, answer: str, runs: bool
+    level: AutoLevel, answer: str, runs: bool, tool_name: str, arguments: dict[str, object]
 ) -> None:
     # Arrange
     session = Session()
@@ -153,7 +160,7 @@ def test_external_tool_asks_below_high_and_honours_the_answer(
         None, session=session, console=console, confirm_fn=confirm, is_tty=True
     )
     assert hooks.before_tool_call is not None
-    request = _request("call_pipedream_tool", {"tool_name": "linear-create-issue"})
+    request = _request(tool_name, arguments)
     assert getattr(request.tool, "side_effect_level", None) is SideEffectLevel.EXTERNAL
 
     # Act
@@ -170,6 +177,7 @@ def test_external_tool_asks_below_high_and_honours_the_answer(
     ("level", "tool_name"),
     [
         (AutoLevel.HIGH, "call_pipedream_tool"),
+        (AutoLevel.HIGH, "web_fetch"),
         (AutoLevel.OFF, "get_cloudwatch_logs"),
         (AutoLevel.OFF, "list_pipedream_tools"),
     ],

@@ -1452,6 +1452,10 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "vercel_deployment_logs",
         "vercel_deployment_status",
         "victoria_logs_query",
+        # web_fetch catches only its own refusals and fetch failures (a refused
+        # address, a timeout, a response that is not text); anything unexpected
+        # reaches the global wrapper.
+        "web_fetch",
         # Kubernetes tools: client methods catch exceptions internally via
         # capture_service_error and return structured error dicts; any unexpected
         # exception from run() escapes to the #1476 global wrapper.

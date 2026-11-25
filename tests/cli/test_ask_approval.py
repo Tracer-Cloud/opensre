@@ -4,13 +4,16 @@ import pytest
 
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool, SideEffectLevel
-from core.tool.execution import ToolExecutionRequest
+from core.tool.execution import ToolExecutionRequest, execute_tool_calls
 from surfaces.cli.ask.approval import (
     ApprovalTracker,
     approval_required,
     build_approval_hooks,
     unknown_allowed_tools,
 )
+from tools.registry import get_registered_tool
+from tools.system.web_fetch import tool as web_fetch_tool
+from tools.system.web_fetch.fetching import FetchedPage
 
 
 def _tool(
@@ -119,3 +122,53 @@ def test_explicit_authority_approves_tool(
 
 def test_allowlist_accepts_bridged_mcp_tools_but_still_flags_typos() -> None:
     assert unknown_allowed_tools(["mcp__ops__silence_alert", "no_such_tool"]) == ("no_such_tool",)
+
+
+def test_web_fetch_is_denied_without_its_flag_and_runs_with_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registered tool through the executor, as an ask turn reaches it."""
+    # Arrange: the network replaced, so a fetch that runs is visible.
+    fetched: list[str] = []
+
+    def fetch_page(url: str) -> FetchedPage:
+        fetched.append(url)
+        return FetchedPage(
+            url=url,
+            media_type="text/plain",
+            charset=None,
+            body=b"release notes",
+            cut=False,
+            redirects=0,
+        )
+
+    monkeypatch.setattr(web_fetch_tool, "fetch_page", fetch_page)
+    registered = get_registered_tool("web_fetch")
+    assert registered is not None
+    call = ToolCall(id="call-1", name="web_fetch", input={"url": "https://docs.example/notes"})
+    tracker = ApprovalTracker()
+
+    # Act
+    [denied] = execute_tool_calls(
+        [call],
+        [registered],
+        {},
+        hooks=build_approval_hooks(allowed_tools=(), bypass_approvals=False, tracker=tracker),
+    )
+    [allowed] = execute_tool_calls(
+        [call],
+        [registered],
+        {},
+        hooks=build_approval_hooks(
+            allowed_tools=("web_fetch",), bypass_approvals=False, tracker=ApprovalTracker()
+        ),
+    )
+
+    # Assert
+    assert denied.is_error is True and denied.terminate is True
+    assert "--allowed-tool web_fetch" in str(denied.content)
+    assert tracker.denied_tools == ("web_fetch",)
+    assert allowed.is_error is False and "release notes" in str(allowed.content)
+    assert fetched == ["https://docs.example/notes"]
+    # The flag's own check knows the name, so ``--allowed-tool web_fetch`` is not a typo.
+    assert unknown_allowed_tools(["web_fetch"]) == ()
