@@ -121,6 +121,19 @@ def test_a_header_places_a_hunk_whose_lines_repeat(tmp_path: Path) -> None:
     ).read_text() == "def a():\n    return 1\n\n\ndef b():\n    return 2\n"
 
 
+def test_a_hunk_is_never_applied_before_the_place_its_header_names(tmp_path: Path) -> None:
+    """``b`` no longer returns 1; the only matching line is in ``a``, which the hunk did not name."""
+    before = "def a():\n    return 1\n\n\ndef b():\n    return 5\n"
+    _write(tmp_path, "app.py", before)
+
+    result = apply_patch(
+        input=_patch("*** Update File: app.py", "@@ def b():", "-    return 1", "+    return 2")
+    )
+
+    assert "app.py: could not find these lines" in _refusal(result)
+    assert (tmp_path / "app.py").read_text() == before
+
+
 def test_hunks_with_only_added_lines_go_after_their_header_or_to_the_end(tmp_path: Path) -> None:
     _write(tmp_path, "app.py", "def a():\n    return 1\n")
 
@@ -182,14 +195,27 @@ def test_a_patch_wrapped_the_way_the_shell_form_was_still_applies(
     assert (tmp_path / "a.txt").read_text() == "y\n"
 
 
-def test_an_edited_file_keeps_its_permissions(tmp_path: Path) -> None:
-    script = _write(tmp_path, "run.sh", "#!/bin/sh\necho hi\n")
-    script.chmod(0o755)
+def test_an_edited_or_renamed_script_stays_executable(tmp_path: Path) -> None:
+    """A rename is a delete and a create; the new file must not fall back to the defaults."""
+    _write(tmp_path, "run.sh", "#!/bin/sh\necho hi\n").chmod(0o755)
+    _write(tmp_path, "old.sh", "#!/bin/sh\necho old\n").chmod(0o755)
 
-    apply_patch(input=_patch("*** Update File: run.sh", "-echo hi", "+echo hello"))
+    apply_patch(
+        input=_patch(
+            "*** Update File: run.sh",
+            "-echo hi",
+            "+echo hello",
+            "*** Update File: old.sh",
+            "*** Move to: bin/new.sh",
+            "-echo old",
+            "+echo new",
+        )
+    )
 
-    assert stat.S_IMODE(script.stat().st_mode) == 0o755
-    assert [name for name in os.listdir(tmp_path) if name != "run.sh"] == []
+    assert stat.S_IMODE((tmp_path / "run.sh").stat().st_mode) == 0o755
+    assert stat.S_IMODE((tmp_path / "bin/new.sh").stat().st_mode) == 0o755
+    # Nothing the write staged or set aside is left behind.
+    assert sorted(_tree(tmp_path)) == ["bin/new.sh", "run.sh"]
 
 
 # --- whole or not at all ----------------------------------------------------
@@ -218,38 +244,95 @@ def test_a_patch_that_does_not_fit_one_file_changes_none(tmp_path: Path) -> None
     assert _tree(tmp_path) == before
 
 
+_THREE_FILE_PATCH = (
+    "*** Add File: new.py",
+    "+n = 1",
+    "*** Update File: a.py",
+    "-a = 1",
+    "+a = 2",
+    "*** Delete File: gone.py",
+    "*** Update File: b.py",
+    "-b = 1",
+    "+b = 2",
+)
+
+
+def _failing_swap(
+    monkeypatch: pytest.MonkeyPatch, *, unwritable: str, unrestorable: str | None = None
+) -> None:
+    """Make swapping ``unwritable`` in fail, and optionally putting ``unrestorable`` back."""
+    real_replace = os.replace
+
+    def replace(source: Any, destination: Any) -> None:
+        name = Path(destination).name
+        if name == unwritable and str(source).endswith(".new"):
+            raise PermissionError("read-only")
+        if name == unrestorable and str(source).endswith(".orig"):
+            raise OSError("no space left on device")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(patching.os, "replace", replace)
+
+
 def test_a_write_that_fails_part_way_puts_every_file_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Arrange: the second file of the patch cannot be written.
-    _write(tmp_path, "a.py", "a = 1\n")
+    # Arrange: the last file of the patch cannot be swapped in.
+    _write(tmp_path, "a.py", "a = 1\n").chmod(0o640)
     _write(tmp_path, "b.py", "b = 1\n")
+    _write(tmp_path, "gone.py", "g = 1\n")
     before = _tree(tmp_path)
-    real_write = patching._write_file
-
-    def failing_write(target: Path, content: bytes) -> None:
-        if target.name == "b.py" and content != b"b = 1\n":
-            raise PermissionError("read-only")
-        real_write(target, content)
-
-    monkeypatch.setattr(patching, "_write_file", failing_write)
+    _failing_swap(monkeypatch, unwritable="b.py")
 
     # Act
-    result = apply_patch(
-        input=_patch(
-            "*** Add File: new.py",
-            "+n = 1",
-            "*** Update File: a.py",
-            "-a = 1",
-            "+a = 2",
-            "*** Update File: b.py",
-            "-b = 1",
-            "+b = 2",
-        )
+    result = apply_patch(input=_patch(*_THREE_FILE_PATCH))
+
+    # Assert: contents, the deleted file and permissions are all as they were.
+    assert _refusal(result) == (
+        "could not write b.py (PermissionError); every file was put back as it was."
     )
+    assert _tree(tmp_path) == before
+    assert stat.S_IMODE((tmp_path / "a.py").stat().st_mode) == 0o640
+
+
+def test_a_file_that_cannot_be_put_back_is_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Saying every file was restored when one was not hides a half-applied patch."""
+    _write(tmp_path, "a.py", "a = 1\n")
+    _write(tmp_path, "b.py", "b = 1\n")
+    _write(tmp_path, "gone.py", "g = 1\n")
+    _failing_swap(monkeypatch, unwritable="b.py", unrestorable="a.py")
+
+    message = _refusal(apply_patch(input=_patch(*_THREE_FILE_PATCH)))
+
+    assert "these files could not be put back and need checking: a.py" in message
+    assert "every file was put back" not in message
+
+
+def test_new_content_that_cannot_be_written_touches_no_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Contents are written beside their targets first, so a full disk fails before any swap."""
+    # Arrange
+    _write(tmp_path, "a.py", "a = 1\n")
+    _write(tmp_path, "b.py", "b = 1\n")
+    _write(tmp_path, "gone.py", "g = 1\n")
+    before = _tree(tmp_path)
+    real_open = os.open
+
+    def open_until_b(path: Any, flags: int, mode: int = 0o777) -> int:
+        if Path(path).name.startswith(".b.py."):
+            raise OSError("no space left on device")
+        return real_open(path, flags, mode)
+
+    monkeypatch.setattr(patching.os, "open", open_until_b)
+
+    # Act
+    result = apply_patch(input=_patch(*_THREE_FILE_PATCH))
 
     # Assert
-    assert "could not write b.py" in _refusal(result)
+    assert _refusal(result) == "could not write b.py (OSError). Nothing was changed."
     assert _tree(tmp_path) == before
 
 
@@ -378,6 +461,27 @@ def test_a_declined_patch_writes_nothing_and_tells_the_model_not_to_resend(tmp_p
     assert result.is_error is True
     assert "declined" in str(result.provider_content())
     assert (tmp_path / "a.txt").read_text() == "x\n"
+
+
+def test_a_file_saved_while_the_approval_was_open_is_not_overwritten(tmp_path: Path) -> None:
+    """The patch was worked out from the earlier contents; writing it would drop the user's edit."""
+    # Arrange: the user edits the file, then approves.
+    target = _write(tmp_path, "a.txt", "x\nkeep\n")
+
+    class _EditsThenAllows(_Presenter):
+        def execution_allowed(self, policy: ExecutionPolicyResult, *, action_summary: str) -> bool:
+            target.write_text("x\nkeep\nthe user's own line\n")
+            return super().execution_allowed(policy, action_summary=action_summary)
+
+    # Act
+    result = _run_through_the_executor(
+        _patch("*** Update File: a.txt", "-x", "+y"), _EditsThenAllows(allow=True)
+    )
+
+    # Assert
+    assert result.is_error is True
+    assert "a.txt changed after the patch was read" in str(result.provider_content())
+    assert target.read_text() == "x\nkeep\nthe user's own line\n"
 
 
 def test_an_allowed_patch_is_written_through_the_executor(tmp_path: Path) -> None:
