@@ -149,14 +149,14 @@ def compact_session_branch(
     final_summary = merge_summary_texts(prior, summary or deterministic_summary(compacted))
     session.agent.messages = [("assistant", f"{SESSION_SUMMARY_PREFIX}{final_summary}"), *kept]
     after_chars = _message_chars(list(session.agent.messages))
-    session.store.append_compaction(
-        session.session_id,
+    _persist_compaction(
+        session,
         summary=final_summary,
         first_kept_entry_id=first_kept_entry_id,
         before_chars=before_chars,
         after_chars=after_chars,
-        before_tokens=_estimate_tokens(before_chars),
-        after_tokens=_estimate_tokens(after_chars),
+        replacement_messages=[[role, text] for role, text in kept],
+        replacement_evidence=[],
     )
     return CompactionResult(
         summary=final_summary,

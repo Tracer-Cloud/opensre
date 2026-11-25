@@ -339,3 +339,38 @@ def test_flush_does_not_repeat_compaction_history_on_restore(storage_home: Path)
     restored = loaded[RestoreContextKey.CLI_AGENT_MESSAGES]
     assert restored == live
     assert sum(1 for _role, text in restored if text == "still failing") == 1
+
+
+def test_flush_keeps_chat_after_two_text_compactions(
+    storage_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Text-only ``/compact`` twice must still restore the kept questions and answers."""
+    from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
+    from core.agent_harness.turns.transcript_compaction import compact_session_branch
+
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
+    storage = JsonlSessionStore()
+    messages: list[tuple[str, str]] = []
+    for index in range(10):
+        messages.append(("user", f"question {index} " + "y" * 200))
+        messages.append(("assistant", f"answer {index} " + "z" * 200))
+    session = _session(messages=messages)
+    session.store = storage
+    storage.open_session(session)
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+
+    assert compact_session_branch(session) is not None
+    assert compact_session_branch(session) is not None
+    live = list(session.agent.messages)
+    storage.flush(session)
+
+    loaded = JsonlSessionRepo().load_session(session.session_id)
+    assert loaded is not None
+    restored = loaded[RestoreContextKey.CLI_AGENT_MESSAGES]
+    assert restored == live
+    assert any(role == "user" and text.startswith("question") for role, text in restored)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.agent_harness.session import InMemorySessionStore
 from core.agent_harness.session.persistence.contracts import conversation_messages_from_records
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
@@ -119,6 +121,39 @@ def test_flush_does_not_repeat_compaction_history() -> None:
     restored = conversation_messages_from_records(storage.read(session.session_id))
     assert restored == live
     assert sum(1 for _role, text in restored if text == "still failing") == 1
+
+
+def test_flush_keeps_chat_after_two_text_compactions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Text-only ``/compact`` twice must still restore the kept questions and answers."""
+    from config.constants.conversation_history import OPENSRE_STRUCTURED_HISTORY_ENV
+    from core.agent_harness.turns.transcript_compaction import compact_session_branch
+
+    monkeypatch.setenv(OPENSRE_STRUCTURED_HISTORY_ENV, "0")
+    storage = InMemorySessionStore()
+    session = _session(storage)
+    storage.open_session(session)
+    messages: list[tuple[str, str]] = []
+    for index in range(10):
+        messages.append(("user", f"question {index} " + "y" * 200))
+        messages.append(("assistant", f"answer {index} " + "z" * 200))
+    session.agent.messages = messages
+    storage.append_message(
+        session.session_id,
+        role="system",
+        content="system prompt",
+        metadata={"kind": "action_agent", "debug": "system_prompt"},
+    )
+
+    assert compact_session_branch(session) is not None
+    assert compact_session_branch(session) is not None
+    live = list(session.agent.messages)
+    storage.flush(session)
+
+    restored = conversation_messages_from_records(storage.read(session.session_id))
+    assert restored == live
+    assert any(role == "user" and text.startswith("question") for role, text in restored)
 
 
 def test_append_turn_detail_writes_message_entries() -> None:

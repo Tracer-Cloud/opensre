@@ -83,6 +83,23 @@ def test_char_compaction_without_prior_summary_unchanged() -> None:
     assert head.startswith(SESSION_SUMMARY_PREFIX)
     assert "Compacted" in head
     assert len(session.agent.messages) == 9
+    [record] = session.store.compactions
+    assert record["replacement_messages"] == [list(pair) for pair in session.agent.messages[1:]]
+
+
+@pytest.mark.usefixtures("text_history")
+def test_two_char_compactions_persist_the_kept_messages() -> None:
+    """A second text-only compact must rewrite the kept turns, not only a summary."""
+    session = _FakeSession(_long_turns(10))
+
+    assert compact_session_branch(session) is not None
+    assert compact_session_branch(session) is not None
+
+    live = list(session.agent.messages)
+    assert len(session.store.compactions) == 2
+    last = session.store.compactions[-1]
+    assert last["replacement_messages"] == [list(pair) for pair in live[1:]]
+    assert any(role == "user" and text.startswith("question") for role, text in live)
 
 
 def _session_with_evidence(turns: int, *, result_chars: int) -> _FakeSession:
