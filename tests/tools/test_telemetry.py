@@ -1194,6 +1194,12 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # unknown key); a parser failure it did not anticipate reaches the
         # global wrapper.
         "read_structured_file",
+        # read_file / search_files / list_files catch only FileAccessError (a
+        # refused or unreadable path) and a bad pattern; anything unexpected
+        # reaches the global wrapper.
+        "list_files",
+        "read_file",
+        "search_files",
         # list_scheduled_loops reads the local task store and lets any store
         # error reach the global wrapper.
         "list_scheduled_loops",

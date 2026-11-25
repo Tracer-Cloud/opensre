@@ -10,6 +10,7 @@ import tempfile
 import threading
 from typing import Any
 
+from config.constants.capabilities import SHELL_COMMANDS_CAPABILITY
 from core.agent_harness.tools import ActionToolScope, capability_not_explicitly_disabled
 from tools.interactive_shell.subprocess import (
     MAX_COMMAND_OUTPUT_CHARS,
@@ -38,7 +39,7 @@ def run_skill_script(
     if (
         getattr(scope.session, "active_skill", None) != skill_name
         or not getattr(scope.session, "skill_discovery_enabled", True)
-        or not capability_not_explicitly_disabled(scope.session, "shell_commands")
+        or not capability_not_explicitly_disabled(scope.session, SHELL_COMMANDS_CAPABILITY)
     ):
         return _failed(scope, tool_name, "This helper is unavailable outside its active skill.")
     cancel = getattr(scope.console, "cancel_event", None)

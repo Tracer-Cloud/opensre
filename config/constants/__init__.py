@@ -291,6 +291,9 @@ if TYPE_CHECKING:
     from config.constants.capabilities import (
         SCHEDULER_HOST_IN_PROCESS as SCHEDULER_HOST_IN_PROCESS,
     )
+    from config.constants.capabilities import (
+        SHELL_COMMANDS_CAPABILITY as SHELL_COMMANDS_CAPABILITY,
+    )
     from config.constants.chatgpt import (
         CHATGPT_AUTHORIZE_URL as CHATGPT_AUTHORIZE_URL,
     )

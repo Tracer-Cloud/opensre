@@ -5,14 +5,22 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
+from typing import Any
 
 from config.runtime_metadata import RUNTIME_INPUTS_KEY
 from config.version import get_opensre_version
 from tools.system.python_execution_tool import execute_python_code
 
 
+def _run(**kwargs: Any) -> dict[str, Any]:
+    """The payload of one run; the model-facing text is checked separately."""
+    payload = execute_python_code.run(**kwargs).details
+    assert isinstance(payload, dict)
+    return payload
+
+
 def test_reports_version_via_injected_runtime_inputs() -> None:
-    result = execute_python_code.run(
+    result = _run(
         code="print(inputs['opensre_runtime']['opensre_version'])",
     )
     assert result["success"] is True
@@ -23,7 +31,7 @@ def test_reports_version_via_injected_runtime_inputs() -> None:
 def test_reports_current_time_via_injected_runtime_inputs() -> None:
     """Sandbox path should surface a fresh ``now_iso`` (not a bootstrap
     snapshot) so scripts asking for the current time never see a stale value."""
-    result = execute_python_code.run(
+    result = _run(
         code="print(inputs['opensre_runtime']['now_iso'])",
     )
     assert result["success"] is True
@@ -36,7 +44,7 @@ def test_reports_process_and_python_facts_via_injected_runtime_inputs() -> None:
     """The no-subprocess replacement path: a script asking for python version,
     PID, parent PID, uptime, kubeconfig, or the installed tools list should
     read them from ``inputs['opensre_runtime']``."""
-    result = execute_python_code.run(
+    result = _run(
         code=(
             "import json\n"
             "runtime = inputs['opensre_runtime']\n"
@@ -61,7 +69,7 @@ def test_reports_process_and_python_facts_via_injected_runtime_inputs() -> None:
 def test_filesystem_introspection_without_subprocess() -> None:
     """Sandbox filesystem introspection: scratchpad listing via pathlib,
     hostname and disk/memory from injected facts — no subprocess."""
-    result = execute_python_code.run(
+    result = _run(
         code=(
             "import json\n"
             "from pathlib import Path\n"
@@ -99,7 +107,7 @@ def test_socket_reachability_check_works_with_allow_network() -> None:
     accepted = threading.Thread(target=lambda: listener.accept(), daemon=True)
     accepted.start()
     try:
-        result = execute_python_code.run(
+        result = _run(
             code=(
                 "import socket\n"
                 f"conn = socket.create_connection(('127.0.0.1', {port}), timeout=3)\n"
@@ -116,7 +124,7 @@ def test_socket_reachability_check_works_with_allow_network() -> None:
 
 def test_socket_reachability_blocked_without_allow_network() -> None:
     """Default sandbox posture stays closed: no network without the opt-in."""
-    result = execute_python_code.run(
+    result = _run(
         code=("import socket\nsocket.create_connection(('127.0.0.1', 9), timeout=1)\n"),
     )
     assert result["success"] is False
@@ -131,7 +139,7 @@ def test_reports_version_via_importlib_metadata() -> None:
     release build embeds the full string in metadata, so both agree. This test
     only asserts the sandbox sees the same installed metadata as the host.
     """
-    result = execute_python_code.run(
+    result = _run(
         code=("import importlib.metadata as m\nprint(m.version('opensre'))\n"),
     )
     assert result["success"] is True
@@ -139,7 +147,7 @@ def test_reports_version_via_importlib_metadata() -> None:
 
 
 def test_still_blocks_subprocess_version_check() -> None:
-    result = execute_python_code.run(
+    result = _run(
         code="import subprocess; subprocess.run(['opensre', '--version'])",
     )
     assert result["success"] is False

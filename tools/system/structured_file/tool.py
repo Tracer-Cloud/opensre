@@ -73,8 +73,8 @@ def _summary(view: StructureView) -> str:
         "Which keys are under a section of a YAML or TOML file?",
     ],
     anti_examples=[
-        "Reading prose or code (use shell_run)",
-        "Counting files in a directory (use shell_run)",
+        "Reading prose or code (use read_file)",
+        "Counting files in a directory (use count_files)",
         "Editing a file (this tool never writes)",
     ],
     outputs={

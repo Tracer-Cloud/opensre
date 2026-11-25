@@ -10,11 +10,15 @@ from config.runtime_metadata import (
     STATIC_FACT_KEYS,
 )
 from core.domain.types.tools import ToolSurface
-from core.tool import BaseTool, SideEffectLevel
+from core.tool import BaseTool, SideEffectLevel, ToolExecutionResult
 from infrastructure.observability.trace.spans import component_span
 from infrastructure.safety.sandbox import python_interpreter_available
 from tools.system.python_execution_tool._evidence import map_execute_python_code
 from tools.system.python_execution_tool.credentials import execution_env, github_extract_params
+from tools.system.python_execution_tool.observation import (
+    execution_observation,
+    execution_summary,
+)
 from tools.system.python_execution_tool.runner import run_python_execution
 
 _RUNTIME_FACT_KEYS = ", ".join((*STATIC_FACT_KEYS, *LIVE_FACT_KEYS))
@@ -43,7 +47,9 @@ class PythonExecutionTool(BaseTool):
         "Execute generated Python code in a restricted subprocess, capture stdout, stderr, "
         "exceptions, and timeout state, and return the result to the agent. The user approves "
         "every call. Network access is blocked by default; opt in only for approved API-backed "
-        "analysis. Launching other programs is blocked. Runtime facts "
+        "analysis. Launching other programs is blocked, and so is ctypes: write for the "
+        "standard library, because numpy, pandas and similar packages cannot be imported. "
+        "Runtime facts "
         f"({_RUNTIME_FACT_KEYS}) are already stated in the conversation's environment block — "
         "answer them from there directly and never call this tool just to re-read them; code "
         "already running for another reason can reuse them via `inputs['opensre_runtime']` "
@@ -115,6 +121,7 @@ class PythonExecutionTool(BaseTool):
         "timed_out": "True when execution exceeded the timeout",
         "error": "Human-readable runner error when available",
         "credentials_available": "Credential labels made available to the subprocess",
+        "summary": "One line for the transcript: how the run ended",
     }
 
     def is_available(self, _sources: dict[str, dict]) -> bool:
@@ -133,8 +140,12 @@ class PythonExecutionTool(BaseTool):
         allow_network: bool | None = None,
         github_token: str | None = None,
         runtime_metadata: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    ) -> ToolExecutionResult:
         """Execute ``code`` in the sandbox with runtime metadata injected.
+
+        The result's ``details`` are the full payload (``outputs`` above); the
+        model reads :func:`execution_observation` of it and the transcript its
+        ``summary``.
 
         ``runtime_metadata`` — when the caller has a session with a pre-built
         ``runtime_metadata`` dict (e.g. ``SessionCore.runtime_metadata``),
@@ -147,7 +158,7 @@ class PythonExecutionTool(BaseTool):
 
         with component_span("runtime_metadata:sandbox"):
             env, credentials_available = execution_env(github_token=github_token)
-            return run_python_execution(
+            payload = run_python_execution(
                 code=code,
                 inputs=merge_runtime_into_inputs(inputs, metadata=runtime_metadata),
                 timeout=timeout,
@@ -155,6 +166,13 @@ class PythonExecutionTool(BaseTool):
                 allow_network=bool(allow_network),
                 credentials_available=credentials_available,
             )
+        payload["summary"] = execution_summary(payload)
+        return ToolExecutionResult(
+            content=execution_observation(payload),
+            details=payload,
+            metadata={"tool_name": self.name},
+            provider_output_bounded=True,
+        )
 
 
 execute_python_code = PythonExecutionTool()
