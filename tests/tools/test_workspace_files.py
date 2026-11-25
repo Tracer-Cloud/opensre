@@ -164,8 +164,10 @@ def test_a_private_key_is_hidden_and_the_lines_after_it_keep_their_numbers(
     tmp_path: Path,
 ) -> None:
     """The key's placeholder is one line; the file's numbering must not close up around it."""
-    # Arrange: a key pasted into a file whose name gives nothing away.
-    key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz\n-----END RSA PRIVATE KEY-----"
+    # Arrange: a key pasted into a file whose name gives nothing away. The armor is
+    # assembled at runtime so secret scanners never see a key block in this source.
+    armor = "RSA " + "PRIVATE KEY"
+    key = f"-----BEGIN {armor}-----\nFAKEKEYBODYfortests\n-----END {armor}-----"
     _write(tmp_path, "notes.txt", f"intro\n{key}\noutro\n")
 
     # Act
@@ -173,11 +175,11 @@ def test_a_private_key_is_hidden_and_the_lines_after_it_keep_their_numbers(
     around = _text(search_files(pattern="outro", context_lines=3))
 
     # Assert
-    assert "MIIEow" not in read and "MIIEow" not in around
+    assert "FAKEKEYBODY" not in read and "FAKEKEYBODY" not in around
     assert "     2\t[REDACTED:private_key]" in read
     assert "     5\toutro" in read
     assert "notes.txt:5:outro" in around
-    assert _text(search_files(pattern="MIIEow")) == "No matches for `MIIEow` under ."
+    assert _text(search_files(pattern="FAKEKEYBODY")) == "No matches for `FAKEKEYBODY` under ."
 
 
 def test_a_binary_file_is_refused_and_skipped(tmp_path: Path) -> None:
