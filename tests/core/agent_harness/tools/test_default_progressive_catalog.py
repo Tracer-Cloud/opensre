@@ -74,12 +74,14 @@ def test_a_connected_github_account_gets_github_cli_without_a_tool_search() -> N
     )
 
 
-def test_reading_the_working_directory_needs_no_tool_search_and_no_shell() -> None:
+def test_reading_and_editing_the_working_directory_needs_no_tool_search_and_no_shell() -> None:
     """Visible but unnamed by shell_run, the file tools go unused.
 
     The system prompt sends file reads to the shell, so the pointer sits where
     the model weighs that tool; without it every code question asked for a
-    shell command, which a headless run denies.
+    shell command, which a headless run denies. The same prompt edits files
+    with ``apply_patch``, so that name has to be callable from the first
+    request.
     """
     # Arrange: the tightest opening catalog, a session with GitHub connected.
     session = SessionCore()
@@ -90,7 +92,7 @@ def test_reading_the_working_directory_needs_no_tool_search_and_no_shell() -> No
             "connection_verified": True,
         }
     }
-    file_tools = ("read_file", "search_files", "list_files")
+    file_tools = ("read_file", "search_files", "list_files", "apply_patch")
 
     # Act
     tools = {

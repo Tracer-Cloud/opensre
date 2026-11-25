@@ -555,6 +555,7 @@ EXPORTS: dict[str, str] = {
     "REDIS_USERNAME_ENV": "redis",
     # repl_autonomy
     "ASK_BELOW_HIGH_SIDE_EFFECT_LEVELS": "repl_autonomy",
+    "FILE_EDIT_TOOL_TYPE": "repl_autonomy",
     "AUTO_LEVEL_ASK_TOOL_TYPES": "repl_autonomy",
     "AUTO_LEVEL_BAR_CAPTIONS": "repl_autonomy",
     "AUTO_LEVEL_CAPTIONS": "repl_autonomy",

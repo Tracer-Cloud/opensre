@@ -68,6 +68,21 @@ repository you want it to read. These tools:
   `.gnupg`, `.kube` and `.docker` directories) and redact known token formats
   from what they return. Placeholders such as `.env.example` stay readable.
 
+### Editing files
+
+The agent changes files in the working directory with one tool, `apply_patch`:
+a patch that can create, edit, rename and delete several files at once.
+
+- A patch is checked against the files first and is applied whole or not at
+  all; a patch that does not fit leaves every file untouched.
+- It follows `/auto` like a shell command: at `high` (the default) it runs
+  without asking; at `med`, `low` and `off`, and while a plan-only request
+  stands, OpenSRE shows the files and the patch and asks first.
+- It cannot write outside the working directory, into the credential files
+  listed above, or anywhere under `.git`.
+
+Use git to review or undo what a patch changed (`git diff`, `git restore`).
+
 ### Python execution
 
 Python the agent writes runs in a restricted subprocess, after you approve it:
@@ -402,7 +417,7 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 | Level | Prompts before |
 | --- | --- |
 | `high` (default) | Nothing except Python execution — alpha default; every other tool runs immediately |
-| `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, …; and tools that act on an outside system: sending Slack, Telegram, Rocket.Chat, Buzz, or SMS messages, creating Jira issues or comments, creating Google Docs, prompting a hosted gateway, and calling tools on connected MCP servers (Pipedream, Sentry MCP, PostHog MCP) |
+| `med` | Mutating agent tools: shell, file edits, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, …; and tools that act on an outside system: sending Slack, Telegram, Rocket.Chat, Buzz, or SMS messages, creating Jira issues or comments, creating Google Docs, prompting a hosted gateway, and calling tools on connected MCP servers (Pipedream, Sentry MCP, PostHog MCP) |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |
 

@@ -164,7 +164,9 @@ Reading the working directory is read-only, so a question about a repository
 needs no flag: the agent reads, searches and lists its files with `read_file`,
 `search_files` and `list_files`. See
 [Reading files](/getting-started/interactive-shell-commands#reading-files) for
-what those tools leave out.
+what those tools leave out. Editing files is not read-only: pass
+`--allowed-tool apply_patch` to let the agent change files in the working
+directory.
 
 Authorize only the tools needed for this invocation by repeating
 `--allowed-tool`:

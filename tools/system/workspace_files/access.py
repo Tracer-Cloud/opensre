@@ -83,9 +83,22 @@ def resolve_readable(path: str) -> Path:
         raise FileAccessError(str(exc)) from exc
     if holds_secrets(workspace_relative(resolved)):
         raise FileAccessError(
-            f"{path} holds credentials and is not readable with this tool. "
-            "Ask the user before reading it another way."
+            f"{path} holds credentials and is off limits to this tool. "
+            "Ask the user before reaching it another way."
         )
+    return resolved
+
+
+def resolve_writable(path: str) -> Path:
+    """``path`` resolved inside the working directory, refused where an edit must not land.
+
+    The same root and the same credential files as a read, so a patch cannot
+    plant a git hook or rewrite a key it could not have read. The file need not
+    exist yet.
+    """
+    resolved = resolve_readable(path)
+    if resolved == resolve_readable("."):
+        raise FileAccessError(f"{path} is the working directory, not a file.")
     return resolved
 
 
@@ -128,4 +141,5 @@ __all__ = [
     "holds_secrets",
     "read_text",
     "resolve_readable",
+    "resolve_writable",
 ]
