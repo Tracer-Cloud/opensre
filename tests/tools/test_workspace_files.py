@@ -296,6 +296,7 @@ def test_a_search_that_finds_nothing_or_cannot_run_says_so(tmp_path: Path) -> No
     assert _text(search_files(pattern="omega")) == "No matches for `omega` under ."
     assert "not a valid regular expression" in _refusal(search_files(pattern="("))
     assert "is not a directory" in _refusal(list_files(path="a.txt"))
+    assert "tests does not exist" in _refusal(list_files(path="tests"))
 
 
 # --- listing ----------------------------------------------------------------

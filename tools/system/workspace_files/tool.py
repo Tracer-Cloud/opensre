@@ -64,6 +64,8 @@ def _shown(text: str, details: dict[str, Any]) -> ToolExecutionResult:
 def _directory(path: str) -> Path:
     """``path`` as a directory inside the working directory, or raise."""
     scope = resolve_readable(path.strip() or ".")
+    if not scope.exists():
+        raise FileAccessError(f"{path} does not exist.")
     if not scope.is_dir():
         raise FileAccessError(f"{path} is not a directory.")
     return scope
