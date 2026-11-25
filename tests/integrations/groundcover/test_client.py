@@ -38,18 +38,26 @@ def _patch_session(
     *,
     tools: list[str] | None = None,
     results: dict[str, Any] | None = None,
+    page_size: int | None = None,
 ) -> None:
-    """Patch ``client._session`` to yield a fake MCP session."""
+    """Patch ``client._session`` to yield a fake MCP session.
+
+    ``page_size`` serves ``tools/list`` in pages of that size via ``next_cursor``.
+    """
     tool_names = tools or []
     tool_results = results or {}
+    size = page_size or max(len(tool_names), 1)
 
     class _FakeSession:
         async def initialize(self) -> None:
             return None
 
-        async def list_tools(self, **_kwargs: Any) -> Any:
+        async def list_tools(self, params: types.PaginatedRequestParams | None = None) -> Any:
+            start = int(params.cursor) if params is not None and params.cursor else 0
+            end = start + size
             return SimpleNamespace(
-                tools=[SimpleNamespace(name=name) for name in tool_names], next_cursor=None
+                tools=[SimpleNamespace(name=name) for name in tool_names[start:end]],
+                next_cursor=str(end) if end < len(tool_names) else None,
             )
 
         async def call_tool(self, name: str, _arguments: dict[str, Any]) -> Any:
@@ -273,3 +281,20 @@ def _json(value: Any) -> str:
     import json
 
     return json.dumps(value)
+
+
+def test_probe_finds_required_tools_on_later_tools_list_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Required tools served after page one of ``tools/list`` must still count."""
+    workspaces = [{"tenant_uuid": "t1", "org_name": "Acme", "backends": ["prod"]}]
+    client = gc_client.GroundcoverClient(_config())
+    _patch_session(
+        monkeypatch,
+        client,
+        tools=["query_logs", "list_workspaces", "get_gcql_reference"],
+        results={"list_workspaces": _text_result(_json(workspaces))},
+        page_size=1,
+    )
+    probe = client.probe_access()
+    assert probe.status == "passed", probe.detail
