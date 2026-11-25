@@ -9,18 +9,18 @@ from __future__ import annotations
 import contextlib
 import os
 
+from infrastructure.process.tree import process_is_running
+
 
 def process_is_alive(pid: int) -> bool:
-    """True while ``pid`` exists, reaping it first when it is our own child."""
-    with contextlib.suppress(ChildProcessError):
-        os.waitpid(pid, os.WNOHANG)  # a dead child stays visible until reaped
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+    """Return whether ``pid`` is still running, reaping exited children we own."""
+    if pid <= 0:
         return False
-    except PermissionError:
-        pass  # exists, owned by another user
-    return True
+    if os.name == "posix":
+        with contextlib.suppress(ChildProcessError):
+            if os.waitpid(pid, os.WNOHANG)[0]:
+                return False
+    return process_is_running(pid)
 
 
 __all__ = ["process_is_alive"]

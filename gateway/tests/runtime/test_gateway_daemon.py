@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import select
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -54,6 +58,50 @@ def test_start_stop_round_trip() -> None:
     assert ok, message
     assert supervision.gateway_daemon_pid() is None
     assert not supervision.GATEWAY_PID_FILE.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX zombie processes")
+def test_stop_succeeds_when_another_parent_keeps_daemon_unreaped() -> None:
+    parent_code = textwrap.dedent("""\
+        import subprocess
+        import sys
+
+        child = subprocess.Popen(
+            sys.argv[1:], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        try:
+            print(child.pid, flush=True)
+            sys.stdin.read()
+        finally:
+            child.kill()
+            child.wait()
+        """)
+    with subprocess.Popen(
+        (sys.executable, "-c", parent_code, *_SLEEPER),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+    ) as parent:
+        try:
+            assert parent.stdout is not None
+            ready, _, _ = select.select([parent.stdout], [], [], 5)
+            assert ready, "parent did not report its child PID"
+            pid = int(parent.stdout.readline())
+            supervision.GATEWAY_PID_FILE.write_text(f"{pid}\n")
+
+            assert supervision.gateway_daemon_pid() == pid
+            ok, message = supervision.stop_gateway_daemon(timeout=1.0)
+
+            assert ok, message
+            assert "stopped" in message
+            assert not supervision.GATEWAY_PID_FILE.exists()
+        finally:
+            try:
+                parent.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                parent.kill()
+                parent.communicate()
+                raise
 
 
 def test_start_reports_startup_crash_with_log_tail() -> None:

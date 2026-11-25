@@ -1,4 +1,4 @@
-"""Terminate a bounded repair including coding CLIs that create their own process groups."""
+"""Inspect process liveness and supervise bounded worker process trees."""
 
 from __future__ import annotations
 
@@ -7,6 +7,18 @@ import threading
 import time
 
 import psutil
+
+
+def process_is_running(pid: int) -> bool:
+    """Check a positive PID, including exited processes awaiting reaping."""
+    if pid <= 0:
+        return False
+    try:
+        return psutil.Process(pid).status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.AccessDenied:
+        return True
 
 
 def _kill_descendants(process: psutil.Process) -> None:
