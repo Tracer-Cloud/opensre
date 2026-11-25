@@ -2243,18 +2243,23 @@ def resolve_effective_integrations(
     else:
         clickhouse_host = os.getenv("CLICKHOUSE_HOST", "").strip()
         if clickhouse_host:
-            effective["clickhouse"] = _effective_entry(
-                "local env",
-                {
-                    "host": clickhouse_host,
-                    "port": int(os.getenv("CLICKHOUSE_PORT", "8123") or "8123"),
-                    "database": os.getenv("CLICKHOUSE_DATABASE", "default").strip(),
-                    "username": os.getenv("CLICKHOUSE_USER", "default").strip(),
-                    "password": resolve_env_credential("CLICKHOUSE_PASSWORD"),
-                    "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
-                    in ("true", "1", "yes"),
-                },
-            )
+            try:
+                clickhouse_port = int(os.getenv("CLICKHOUSE_PORT", "8123") or "8123")
+            except ValueError as exc:
+                _report_env_loader_failure(exc, integration="clickhouse")
+            else:
+                effective["clickhouse"] = _effective_entry(
+                    "local env",
+                    {
+                        "host": clickhouse_host,
+                        "port": clickhouse_port,
+                        "database": os.getenv("CLICKHOUSE_DATABASE", "default").strip(),
+                        "username": os.getenv("CLICKHOUSE_USER", "default").strip(),
+                        "password": resolve_env_credential("CLICKHOUSE_PASSWORD"),
+                        "secure": os.getenv("CLICKHOUSE_SECURE", "false").strip().lower()
+                        in ("true", "1", "yes"),
+                    },
+                )
 
     # Registered plugins have no declared field on the model, so they have to be
     # named here as well; without this the key is dropped as unrecognised one

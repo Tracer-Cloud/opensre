@@ -26,8 +26,14 @@ from infrastructure.terminal.theme import (
 if TYPE_CHECKING:
     from integrations.setup_flow import IntegrationSetupSpec
 
+from integrations.catalog import resolve_effective_integrations
 from integrations.github import setup_github
-from integrations.registry import SUPPORTED_SETUP_SERVICES, resolve_management_service
+from integrations.registry import (
+    SUPPORTED_SETUP_SERVICES,
+    family_key,
+    resolve_management_service,
+    service_key,
+)
 from integrations.setup import (
     SetupPending,
 )
@@ -634,19 +640,74 @@ def _remote_integration_records() -> list[dict[str, Any]]:
     return load_account_integrations()
 
 
-def _remote_integration(service: str) -> dict[str, Any] | None:
+def _remote_integration(
+    service: str, remote_records: list[dict[str, Any]]
+) -> dict[str, Any] | None:
     """The active remote record for ``service``, or ``None``."""
-    for record in _remote_integration_records():
+    for record in remote_records:
         if record.get("service") == service and record.get("status") == "active":
             return record
     return None
 
 
+def _env_integration_summaries(
+    local_records: list[dict[str, Any]], remote_records: list[dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    """Project effective env entries onto management fields without credentials."""
+    active_local = [record for record in local_records if record.get("status") == "active"]
+    active_remote = [record for record in remote_records if record.get("status") == "active"]
+    saved_records = [*active_local, *active_remote]
+    saved_services = {service_key(str(record.get("service") or "")) for record in saved_records}
+    saved_families = {family_key(service) for service in saved_services}
+    saved_ids = {str(record.get("id") or "").strip() for record in saved_records}
+    try:
+        effective = resolve_effective_integrations(
+            store_integrations=active_local, remote_integrations=active_remote
+        )
+    except (ValueError, OSError):
+        print("  Could not read environment integration settings.", file=sys.stderr)
+        return {}
+    summaries: dict[str, dict[str, Any]] = {}
+    for service, entry in effective.items():
+        if entry.get("source") != "local env" or service in saved_services:
+            continue
+        instances = [
+            instance for instance in entry.get("instances", []) if isinstance(instance, dict)
+        ]
+        if service in saved_families:
+            # The resolver groups sibling services, such as grafana_local, under
+            # one service key. Keep only instances outside the saved records.
+            if instances:
+                instances = [
+                    instance
+                    for instance in instances
+                    if instance.get("integration_id")
+                    and instance["integration_id"] not in saved_ids
+                ]
+                if not instances:
+                    continue
+            else:
+                record_id = entry["config"].get("integration_id")
+                if not record_id or record_id in saved_ids:
+                    continue
+        summaries[service] = {
+            "service": service,
+            "status": "active",
+            "id": None,
+            "instance_names": [instance.get("name", "default") for instance in instances]
+            or ["default"],
+            "source": "local env",
+        }
+    return summaries
+
+
 def cmd_list() -> None:
     from infrastructure.process.runtime_flags import is_json_output
 
-    local_items = [{**item, "source": "local"} for item in list_integrations()]
-    remote_services = {str(record.get("service") or "") for record in _remote_integration_records()}
+    local_records = load_integrations()
+    local_items = [{**item, "source": "local"} for item in list_integrations(records=local_records)]
+    remote_records = _remote_integration_records()
+    remote_services = {str(record.get("service") or "") for record in remote_records}
     # A service connected in the web app shows once, as remote — that is the
     # record runtime resolution uses when both exist.
     items = [item for item in local_items if item["service"] not in remote_services] + [
@@ -661,8 +722,11 @@ def cmd_list() -> None:
             ],
             "source": "remote",
         }
-        for record in _remote_integration_records()
+        for record in remote_records
     ]
+    env_items = _env_integration_summaries(local_records, remote_records)
+    items = [item for item in items if item["service"] not in env_items]
+    items.extend(env_items.values())
 
     if is_json_output():
         _json_echo(items)
@@ -696,7 +760,7 @@ def cmd_list() -> None:
             escape(str(i["service"])),
             status_cell,
             escape(str(i["source"])),
-            escape(str(i["id"])),
+            escape(str(i["id"]) if i["source"] != "local env" else "—"),
         )
 
     print(render_table(table))
@@ -707,15 +771,21 @@ def cmd_show(service: str | None) -> None:
         _die("Usage: show <service>")
         return
     service = resolve_management_service(service)
-    remote_record = _remote_integration(service)
+    remote_records = _remote_integration_records()
+    remote_record = _remote_integration(service, remote_records)
     if remote_record is not None:
         _json_echo(_mask({**remote_record, "source": "remote"}))
         return
-    record = get_integration(service)
-    if not record:
-        _die(f"No active integration for '{service}'.")
+    local_records = load_integrations()
+    record = get_integration(service, records=local_records)
+    if record:
+        _json_echo(_mask({**record, "source": "local"}))
         return
-    _json_echo(_mask({**record, "source": "local"}))
+    summary = _env_integration_summaries(local_records, remote_records).get(service)
+    if summary is not None:
+        _json_echo(summary)
+        return
+    _die(f"No active integration for '{service}'.")
 
 
 def _remove_instance(service: str, instance: str) -> None:
@@ -773,7 +843,7 @@ def cmd_remove(service: str | None, *, instance: str | None = None) -> None:
         print(f"  {GLYPH_SUCCESS} Removed '{service}'.")
     else:
         print(f"  No integration found for '{service}'.")
-    if _remote_integration(service) is not None:
+    if _remote_integration(service, _remote_integration_records()) is not None:
         print(
             f"  {service} is still connected in the OpenSRE app and stays active here; "
             "disconnect it at app.opensre.com → Integrations to remove it."

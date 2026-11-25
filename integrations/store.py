@@ -292,7 +292,9 @@ def _record_with_flat_credentials_view(record: dict[str, Any]) -> dict[str, Any]
     return view
 
 
-def get_integration(service: str) -> dict[str, Any] | None:
+def get_integration(
+    service: str, *, records: list[dict[str, Any]] | None = None
+) -> dict[str, Any] | None:
     """Return the first active integration record for a service, or None.
 
     The returned dict has the v2 shape (``instances`` list) AND a
@@ -300,7 +302,8 @@ def get_integration(service: str) -> dict[str, Any] | None:
     .credentials`` for backward compatibility with callers that read
     ``record["credentials"]`` directly.
     """
-    for i in load_integrations():
+    records = load_integrations() if records is None else records
+    for i in records:
         if i.get("service") == service and i.get("status") == "active":
             return _record_with_flat_credentials_view(i)
     return None
@@ -361,10 +364,11 @@ def remove_integration(service: str) -> bool:
     return removed
 
 
-def list_integrations() -> list[dict[str, Any]]:
+def list_integrations(*, records: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Return summary info for all stored integrations."""
     summaries: list[dict[str, Any]] = []
-    for i in load_integrations():
+    records = load_integrations() if records is None else records
+    for i in records:
         summaries.append(
             {
                 "service": i.get("service"),

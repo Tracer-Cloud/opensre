@@ -1,17 +1,144 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
+from config.constants.jenkins import (
+    JENKINS_API_TOKEN_ENV,
+    JENKINS_BASE_URL_ENV,
+    JENKINS_USERNAME_ENV,
+)
+from config.constants.paths import INTEGRATIONS_STORE_PATH_ENV
 from integrations.cli import (
     _HANDLERS,
     _setup_servicenow,
 )
 from surfaces.cli.app import cli
 from surfaces.cli.constants import SETUP_SERVICES, VERIFY_SERVICES
+
+
+def test_integrations_list_and_show_include_env_only_jenkins(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store_path = tmp_path / "integrations.json"
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, str(store_path))
+    monkeypatch.setenv(JENKINS_BASE_URL_ENV, "https://jenkins.example.test")
+    monkeypatch.setenv(JENKINS_USERNAME_ENV, "build-user")
+    monkeypatch.setenv(JENKINS_API_TOKEN_ENV, "jenkins-secret-token")
+    monkeypatch.setattr("integrations.account_integrations.load_account_integrations", list)
+    monkeypatch.setenv("CLICKHOUSE_HOST", "localhost")
+    monkeypatch.setenv("CLICKHOUSE_PORT", "not-a-port")
+    runner = CliRunner()
+
+    listing = runner.invoke(cli, ["--json", "integrations", "list"])
+    assert listing.exit_code == 0, listing.output
+    (summary,) = (row for row in json.loads(listing.stdout) if row["service"] == "jenkins")
+    assert summary == {
+        "service": "jenkins",
+        "status": "active",
+        "id": None,
+        "instance_names": ["default"],
+        "source": "local env",
+    }
+
+    detail = runner.invoke(cli, ["integrations", "show", "jenkins"])
+    assert detail.exit_code == 0, detail.output
+    assert json.loads(detail.stdout) == summary
+    assert not store_path.exists()
+
+
+def test_integrations_keep_env_grafana_separate_from_saved_local_instance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store_path = tmp_path / "integrations.json"
+    store_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "integrations": [
+                    {
+                        "id": "saved-grafana",
+                        "service": "grafana_local",
+                        "status": "active",
+                        "instances": [
+                            {
+                                "name": "local",
+                                "credentials": {
+                                    "endpoint": "http://localhost:3000",
+                                    "api_key": "local-fixture",
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+    )
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, str(store_path))
+    monkeypatch.setattr("integrations.account_integrations.load_account_integrations", list)
+    runner = CliRunner()
+
+    saved_only = runner.invoke(cli, ["--json", "integrations", "list"])
+    assert saved_only.exit_code == 0, saved_only.output
+    assert {row["service"] for row in json.loads(saved_only.stdout)} >= {"grafana_local"}
+    assert not any(row["service"] == "grafana" for row in json.loads(saved_only.stdout))
+
+    monkeypatch.setenv(
+        "GRAFANA_INSTANCES",
+        json.dumps(
+            [
+                {
+                    "name": "production",
+                    "endpoint": "https://grafana.example.test",
+                    "api_key": "env-fixture",
+                }
+            ]
+        ),
+    )
+    listing = runner.invoke(cli, ["--json", "integrations", "list"])
+    assert listing.exit_code == 0, listing.output
+    by_service = {row["service"]: row for row in json.loads(listing.stdout)}
+    assert by_service["grafana_local"]["source"] == "local"
+    assert by_service["grafana"]["source"] == "local env"
+    assert by_service["grafana"]["instance_names"] == ["production"]
+
+    detail = runner.invoke(cli, ["integrations", "show", "grafana"])
+    assert detail.exit_code == 0, detail.output
+    assert json.loads(detail.stdout) == by_service["grafana"]
+
+
+def test_integrations_prefer_configured_env_over_inactive_saved_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store_path = tmp_path / "integrations.json"
+    store_path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "integrations": [
+                    {"id": "old-kafka", "service": "kafka", "status": "inactive", "instances": []}
+                ],
+            }
+        )
+    )
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, str(store_path))
+    monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+    monkeypatch.setattr("integrations.account_integrations.load_account_integrations", list)
+    runner = CliRunner()
+
+    listing = runner.invoke(cli, ["--json", "integrations", "list"])
+    assert listing.exit_code == 0, listing.output
+    (summary,) = (row for row in json.loads(listing.stdout) if row["service"] == "kafka")
+    assert summary["status"] == "active"
+    assert summary["source"] == "local env"
+
+    detail = runner.invoke(cli, ["integrations", "show", "kafka"])
+    assert detail.exit_code == 0, detail.output
+    assert json.loads(detail.stdout) == summary
 
 
 def test_integrations_show_redacts_api_token() -> None:
