@@ -84,14 +84,27 @@ def workspace_files(scope: Path) -> Iterator[tuple[str, Path]]:
     names = _git_files(scope)
     if names is None:
         names = _walked_files(scope)
+    followed: dict[Path, bool] = {}
     # A set: git names an unmerged file once per side of the conflict.
     for name in sorted(set(names)):
         target = scope / name
-        if target.is_symlink() or not target.is_file():
+        if holds_secrets(name) or target.is_symlink():
             continue
-        if holds_secrets(name):
+        if _reached_through_a_link(target.parent, followed) or not target.is_file():
             continue
         yield name, target
+
+
+def _reached_through_a_link(directory: Path, followed: dict[Path, bool]) -> bool:
+    """Whether a symlink stands in ``directory``'s path below the resolved scope.
+
+    The git index keeps naming the files of a directory that was since replaced
+    by a link, and opening one would read wherever the link points: outside the
+    working directory, or inside a directory these tools refuse.
+    """
+    if directory not in followed:
+        followed[directory] = directory.resolve() != directory
+    return followed[directory]
 
 
 def _git_files(scope: Path) -> list[str] | None:

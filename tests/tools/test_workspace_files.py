@@ -84,6 +84,29 @@ def test_a_link_out_of_the_working_directory_is_judged_by_where_it_lands(tmp_pat
     assert "notes.txt" not in _text(search_files(pattern="not yours"))
 
 
+def test_a_tracked_directory_replaced_by_a_link_is_not_followed(tmp_path: Path) -> None:
+    """The git index still names its files; opening one would read where the link points."""
+    # Arrange: git tracks pkg/mod.py, then pkg becomes a link out of the working directory.
+    _git_repository(tmp_path)
+    _write(tmp_path, "pkg/mod.py", "inside = True\n")
+    _write(tmp_path, "app.py", "MARKER = 1\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    outside = tmp_path.parent / "outside-pkg"
+    _write(outside, "mod.py", "MARKER = 'not yours'\n")
+    (tmp_path / "pkg" / "mod.py").unlink()
+    (tmp_path / "pkg").rmdir()
+    (tmp_path / "pkg").symlink_to(outside, target_is_directory=True)
+
+    # Act
+    found = _text(search_files(pattern="MARKER"))
+    listed = _text(list_files(pattern="*.py"))
+
+    # Assert
+    assert "app.py:1:MARKER = 1" in found
+    assert "not yours" not in found and "pkg/mod.py" not in found
+    assert "pkg/mod.py" not in listed
+
+
 @pytest.mark.parametrize(
     "name",
     [
