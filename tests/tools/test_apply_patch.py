@@ -195,6 +195,7 @@ def test_a_patch_wrapped_the_way_the_shell_form_was_still_applies(
     assert (tmp_path / "a.txt").read_text() == "y\n"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
 def test_an_edited_or_renamed_script_stays_executable(tmp_path: Path) -> None:
     """A rename is a delete and a create; the new file must not fall back to the defaults."""
     _write(tmp_path, "run.sh", "#!/bin/sh\necho hi\n").chmod(0o755)
@@ -278,7 +279,7 @@ def test_a_write_that_fails_part_way_puts_every_file_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Arrange: the last file of the patch cannot be swapped in.
-    _write(tmp_path, "a.py", "a = 1\n").chmod(0o640)
+    _write(tmp_path, "a.py", "a = 1\n")
     _write(tmp_path, "b.py", "b = 1\n")
     _write(tmp_path, "gone.py", "g = 1\n")
     before = _tree(tmp_path)
@@ -287,12 +288,27 @@ def test_a_write_that_fails_part_way_puts_every_file_back(
     # Act
     result = apply_patch(input=_patch(*_THREE_FILE_PATCH))
 
-    # Assert: contents, the deleted file and permissions are all as they were.
+    # Assert: the edited files and the deleted one are all as they were.
     assert _refusal(result) == (
         "could not write b.py (PermissionError); every file was put back as it was."
     )
     assert _tree(tmp_path) == before
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_a_file_put_back_keeps_its_permissions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Undoing by rename returns the original file, not a copy made with the defaults."""
+    _write(tmp_path, "a.py", "a = 1\n").chmod(0o640)
+    _write(tmp_path, "b.py", "b = 1\n")
+    _write(tmp_path, "gone.py", "g = 1\n").chmod(0o750)
+    _failing_swap(monkeypatch, unwritable="b.py")
+
+    apply_patch(input=_patch(*_THREE_FILE_PATCH))
+
     assert stat.S_IMODE((tmp_path / "a.py").stat().st_mode) == 0o640
+    assert stat.S_IMODE((tmp_path / "gone.py").stat().st_mode) == 0o750
 
 
 def test_a_file_that_cannot_be_put_back_is_named(
