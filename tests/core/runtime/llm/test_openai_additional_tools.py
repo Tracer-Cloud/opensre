@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 
@@ -31,7 +32,9 @@ def _bad_request(message: str) -> Exception:
     """An SDK-shaped 400 the client's except-clause will match."""
     from openai import BadRequestError
 
-    response = SimpleNamespace(status_code=400, headers={}, request=SimpleNamespace())
+    response = SimpleNamespace(
+        status_code=HTTPStatus.BAD_REQUEST, headers={}, request=SimpleNamespace()
+    )
     return BadRequestError(message, response=response, body=None)
 
 

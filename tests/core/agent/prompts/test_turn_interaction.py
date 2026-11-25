@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from config.account_credits import AccountCredits, HostedCreditsKindValue, HostedCreditsRead
@@ -239,4 +241,51 @@ def test_the_plan_guard_fact_matches_the_guard_the_host_applies(
     assert snapshot.plan_guard_active is guarded
     assert refused is guarded
     assert ("store a plan before the second work tool" in text) is guarded
-    assert ("No stored plan is required this turn" in text) is not guarded
+    assert ("No stored plan is required unless a skill is loaded" in text) is not guarded
+
+
+def test_a_skill_loaded_mid_turn_is_covered_by_the_plan_guard_fact() -> None:
+    """The turn's fact must stay true after ``skill_view`` activates a skill.
+
+    The turn starts outside any skill, so the model reads that no plan is
+    required; the guard reads the live session, and refuses the second work
+    call once a skill has loaded. The fact names that exception, so the model
+    is not promised something the host then refuses.
+    """
+    # Arrange: an ordinary request, with the hooks the driver installs.
+    from core.agent_harness.task_plan.required import PLAN_REQUIRED_REASON
+    from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
+    from core.domain.types.tools import ToolRole
+    from core.llm.types import ToolCall
+    from core.tool.execution import ToolExecutionRequest, ToolExecutionResult
+    from surfaces.interactive_shell.session import Session
+
+    def request(name: str) -> ToolExecutionRequest:
+        return ToolExecutionRequest(
+            tool_call=ToolCall(id=f"call-{name}", name=name, input={}),
+            tool=SimpleNamespace(role=ToolRole.ACTION),  # type: ignore[arg-type]
+            arguments={},
+            source="test",
+            resolved_integrations={},
+        )
+
+    session = Session()
+    message = "Why is CI failing on the repo?"
+    text = turn_interaction_facts_block(
+        TurnSnapshot.from_session(message, session, surface="interactive_shell")
+    )
+    hooks = with_task_plan_hooks(None, session)
+
+    # Act: the model loads a skill, then makes two work calls with no plan.
+    session.active_skill = "repair-github-ci"
+    first = hooks.before_tool_call(request("shell_run"))
+    hooks.after_tool_call(
+        request("shell_run"), ToolExecutionResult(content="out", details={"ok": True})
+    )
+    second = hooks.before_tool_call(request("shell_run"))
+
+    # Assert
+    assert "unless a skill is loaded" in text
+    assert first is None
+    assert second is not None and second.blocked is True
+    assert second.reason == PLAN_REQUIRED_REASON

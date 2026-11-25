@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 _TOOL_CALLS_FACT = (
     "- tool calls: several per response all run, none is rejected; send independent ones together. "
 )
-_PLAN_GUARD_OFF_FACT = "No stored plan is required this turn.\n"
+# Qualified: a skill loaded later in the turn turns the guard on.
+_PLAN_GUARD_OFF_FACT = "No stored plan is required unless a skill is loaded.\n"
 _PLAN_GUARD_ON_FACT = "Skill workflow: store a plan before the second work tool.\n"
 
 
