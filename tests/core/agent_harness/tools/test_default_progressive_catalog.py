@@ -74,6 +74,42 @@ def test_a_connected_github_account_gets_github_cli_without_a_tool_search() -> N
     )
 
 
+def test_reading_and_editing_the_working_directory_needs_no_tool_search_and_no_shell() -> None:
+    """Visible but unnamed by shell_run, the file tools go unused.
+
+    The system prompt sends file reads to the shell, so the pointer sits where
+    the model weighs that tool; without it every code question asked for a
+    shell command, which a headless run denies. The same prompt edits files
+    with ``apply_patch``, so that name has to be callable from the first
+    request.
+    """
+    # Arrange: the tightest opening catalog, a session with GitHub connected.
+    session = SessionCore()
+    connected = {
+        "github": {
+            GITHUB_CONNECTION_ORIGIN_TAG: GITHUB_WEBAPP_ORIGIN,
+            "github_token": "app-token",
+            "connection_verified": True,
+        }
+    }
+    file_tools = ("read_file", "search_files", "list_files", "apply_patch")
+
+    # Act
+    tools = {
+        tool.name: tool
+        for tool in _provider(session).action_tools(
+            confirm_fn=None, is_tty=False, resolved_integrations=connected
+        )
+    }
+
+    # Assert: callable from the first request, and named by the tool they replace.
+    assert set(file_tools) <= set(tools)
+    assert all(name in tools["shell_run"].description for name in file_tools)
+    assert system_and_tools_overhead(None, build_openai_tool_specs(list(tools.values()))) <= (
+        INITIAL_TOOL_SCHEMA_TOKEN_LIMIT
+    )
+
+
 class _SearchThenFinishLLM:
     model_id = "progressive-catalog-test"
 

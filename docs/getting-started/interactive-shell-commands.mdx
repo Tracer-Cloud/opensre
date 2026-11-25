@@ -94,6 +94,47 @@ directory with `cd <path> && ...` (`cd /d <path> && ...` in native Windows when
 the path may be on another drive). The exact command `pwd` works on every
 platform and prints that call's starting directory.
 
+### Reading files
+
+The agent reads, searches and lists files in OpenSRE's working directory with
+read-only tools (`read_file`, `search_files`, `list_files`) rather than shell
+commands, so these steps never ask for approval. Start OpenSRE in the
+repository you want it to read. These tools:
+
+- stay inside the working directory; anything elsewhere on the machine goes
+  through `shell_run` and its approval;
+- cover the files git tracks plus the ones it does not ignore, so build output
+  and virtual environments are neither listed nor searched;
+- refuse files that usually hold credentials (`.env` and `.env.*`, private
+  keys, Terraform state and variables, and the `.git`, `.ssh`, `.aws`, `.azure`,
+  `.gnupg`, `.kube` and `.docker` directories) and redact known token formats
+  from what they return. Placeholders such as `.env.example` stay readable.
+
+### Editing files
+
+The agent changes files in the working directory with one tool, `apply_patch`:
+a patch that can create, edit, rename and delete several files at once.
+
+- A patch is checked against the files first and is applied whole or not at
+  all; a patch that does not fit leaves every file untouched.
+- It follows `/auto` like a shell command: at `high` (the default) it runs
+  without asking; at `med`, `low` and `off`, and while a plan-only request
+  stands, OpenSRE shows the files and the patch and asks first.
+- It cannot write outside the working directory, into the credential files
+  listed above, or anywhere under `.git`.
+
+Use git to review or undo what a patch changed (`git diff`, `git restore`).
+
+### Python execution
+
+Python the agent writes runs in a restricted subprocess, after you approve it:
+
+- only the standard library is available. Packages that load native code, such
+  as numpy and pandas, cannot be imported, and nothing can be installed;
+- it cannot start other programs, and it reaches the network only when the
+  code asks for it and you approve that call;
+- it runs for 30 seconds by default and 60 at most.
+
 **TTY vs non-TTY:** Interactive menus, confirmations, and onboarding wizards need a real terminal. Piping input or running in CI is non-interactive — prefer explicit CLI commands outside the REPL for automation.
 
 **Unknown commands:** Typos suggest the closest registered command (`Did you mean /integrations?`). Run `/help` for the authoritative list — it always matches your installed OpenSRE version.
@@ -418,7 +459,7 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 | Level | Prompts before |
 | --- | --- |
 | `high` (default) | Nothing except Python execution — alpha default; every other tool runs immediately |
-| `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, …; and tools that act on an outside system: sending Slack, Telegram, Rocket.Chat, Buzz, or SMS messages, creating Jira issues or comments, creating Google Docs, prompting a hosted gateway, and calling tools on connected MCP servers (Pipedream, Sentry MCP, PostHog MCP) |
+| `med` | Mutating agent tools: shell, file edits, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, …; and tools that act on an outside system: sending Slack, Telegram, Rocket.Chat, Buzz, or SMS messages, creating Jira issues or comments, creating Google Docs, prompting a hosted gateway, and calling tools on connected MCP servers (Pipedream, Sentry MCP, PostHog MCP) |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |
 

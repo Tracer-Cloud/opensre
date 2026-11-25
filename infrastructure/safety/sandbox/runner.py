@@ -35,6 +35,10 @@ _BASE_ENV_KEYS = (
     "USERPROFILE",
     "WINDIR",
 )
+#: File name generated code is compiled under: its tracebacks cite the lines
+#: the caller wrote, not their offset inside the script that also sets up the
+#: sandbox.
+GENERATED_CODE_FILENAME = "generated_code.py"
 _PYTHON_EXECUTABLE_NAMES = ("python3", "python")
 _PYTHON_PROBE = "import sys; raise SystemExit(sys.version_info[0] != 3)"
 _PYTHON_PROBE_TIMEOUT = 3
@@ -246,6 +250,53 @@ _SANDBOX_PREAMBLE = textwrap.dedent(f"""\
 """)
 
 
+def _launch_generated_code(code: str) -> str:
+    """Script tail that runs ``code`` as its own compilation unit.
+
+    Appended as plain text after the sandbox setup, the code reported every
+    error at its line plus the setup's length, and a leading
+    ``from __future__ import`` was a syntax error. Compiled under its own file
+    name it starts at line 1, in the same module namespace as before, and an
+    uncaught exception prints without the launcher's frame.
+    """
+    return textwrap.dedent(f"""\
+        import linecache as _linecache_module
+        import sys as _launch_sys_module
+        import traceback as _traceback_module
+
+        # Each line reaches the pipe as it is printed, so a run stopped at its
+        # timeout still reports what it wrote.
+        _launch_sys_module.stdout.reconfigure(line_buffering=True)
+        _generated_source = {code!r}
+        # No file has this name; the cache entry lets a traceback show its lines.
+        _linecache_module.cache[{GENERATED_CODE_FILENAME!r}] = (
+            len(_generated_source),
+            None,
+            _generated_source.splitlines(True),
+            {GENERATED_CODE_FILENAME!r},
+        )
+        try:
+            exec(compile(_generated_source, {GENERATED_CODE_FILENAME!r}, "exec"), globals())
+        except SystemExit:
+            raise
+        except BaseException as _generated_error:
+            _generated_traceback = _generated_error.__traceback__
+            _traceback_module.print_exception(
+                type(_generated_error),
+                _generated_error,
+                _generated_traceback.tb_next if _generated_traceback is not None else None,
+            )
+            raise SystemExit(1) from None
+    """)
+
+
+def _captured_text(stream: Any) -> str:
+    """Output a timed-out child had written, which arrives as text, bytes or nothing."""
+    if isinstance(stream, bytes):
+        return stream.decode("utf-8", errors="replace")
+    return stream if isinstance(stream, str) else ""
+
+
 @dataclass
 class SandboxResult:
     """Result of a sandboxed Python execution."""
@@ -353,7 +404,8 @@ def run_python_sandbox(
     with a class that raises ``PermissionError``. Filesystem writes are restricted
     to the OpenSRE temp directory, so any attempt to open a file outside that
     directory for writing raises ``PermissionError``. Execution is capped at
-    *timeout* seconds.
+    *timeout* seconds; a run stopped there keeps the output it had written.
+    The code runs as ``generated_code.py``, so a traceback cites its own lines.
 
     Args:
         code: Python source code to execute.
@@ -384,7 +436,7 @@ def run_python_sandbox(
         + _SANDBOX_PREAMBLE
         + inputs_injection
         + _audit_hook_preamble(allow_network=allow_network)
-        + code
+        + _launch_generated_code(code)
     )
 
     tmp_path: str | None = None
@@ -422,12 +474,12 @@ def run_python_sandbox(
             exit_code=result.returncode,
             timed_out=False,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as expired:
         return SandboxResult(
             code=code,
             inputs=effective_inputs,
-            stdout="",
-            stderr="",
+            stdout=_captured_text(expired.stdout),
+            stderr=_captured_text(expired.stderr),
             exit_code=-1,
             timed_out=True,
             error=f"Execution timed out after {effective_timeout} seconds",

@@ -46,6 +46,9 @@ AUTO_LEVEL_TITLES: Final[dict[AutoLevel, str]] = {
     AutoLevel.HIGH: "High",
 }
 
+#: tool_type of a patch to the working directory's files (``apply_patch``).
+FILE_EDIT_TOOL_TYPE: Final[str] = "file_edit"
+
 # tool_type values that still need confirmation at this level (High: none).
 # Mutation-capable agent tools ask at Med+ — including synthetic_test (spawns a
 # mutation-classified subprocess), slash/CLI, Sentry issue-fix (edits the
@@ -55,6 +58,7 @@ AUTO_LEVEL_TITLES: Final[dict[AutoLevel, str]] = {
 _MUTATING_AGENT_TOOL_TYPES: Final[frozenset[str]] = frozenset(
     {
         "shell",
+        FILE_EDIT_TOOL_TYPE,
         "code_agent",
         "slash",
         "cli_command",
@@ -124,6 +128,7 @@ __all__ = [
     "AUTO_LEVEL_TITLES",
     "AutoLevel",
     "DEFAULT_AUTO_LEVEL",
+    "FILE_EDIT_TOOL_TYPE",
     "SESSION_APPROVAL_EXCLUDED_ARGUMENTS",
     "format_auto_status_bar",
     "format_auto_status_plain",
