@@ -9,6 +9,7 @@ plain numbered text it can page through.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from core.llm.types import ToolCall
 from core.tool import ToolExecutionResult
 from core.tool.execution import execute_tool_calls
 from tools.system.workspace_files.candidates import glob_matcher
+from tools.system.workspace_files.searching import SearchPattern
 from tools.system.workspace_files.tool import (
     LIST_FILES_TOOL,
     READ_FILE_TOOL,
@@ -122,6 +124,37 @@ def test_a_token_written_into_source_is_redacted_from_a_read_and_a_search(tmp_pa
 
     assert _TOKEN not in read and "[REDACTED:github_pat]" in read
     assert _TOKEN not in found and "[REDACTED:github_pat]" in found
+
+
+def test_a_search_cannot_test_a_hidden_token_one_prefix_at_a_time(tmp_path: Path) -> None:
+    """Matched as written, a hit on ``ghp_a`` and a miss on ``ghp_b`` spell the token out."""
+    _write(tmp_path, "client.py", f'TOKEN = "{_TOKEN}"\n')
+
+    right_guess = _text(search_files(pattern="ghp_a"))
+    wrong_guess = _text(search_files(pattern="ghp_b"))
+
+    assert right_guess == "No matches for `ghp_a` under ."
+    assert wrong_guess == "No matches for `ghp_b` under ."
+
+
+def test_a_private_key_is_hidden_and_the_lines_after_it_keep_their_numbers(
+    tmp_path: Path,
+) -> None:
+    """The key's placeholder is one line; the file's numbering must not close up around it."""
+    # Arrange: a key pasted into a file whose name gives nothing away.
+    key = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz\n-----END RSA PRIVATE KEY-----"
+    _write(tmp_path, "notes.txt", f"intro\n{key}\noutro\n")
+
+    # Act
+    read = _text(read_file(path="notes.txt"))
+    around = _text(search_files(pattern="outro", context_lines=3))
+
+    # Assert
+    assert "MIIEow" not in read and "MIIEow" not in around
+    assert "     2\t[REDACTED:private_key]" in read
+    assert "     5\toutro" in read
+    assert "notes.txt:5:outro" in around
+    assert _text(search_files(pattern="MIIEow")) == "No matches for `MIIEow` under ."
 
 
 def test_a_binary_file_is_refused_and_skipped(tmp_path: Path) -> None:
@@ -276,6 +309,50 @@ def test_a_search_of_one_file_names_it_as_the_path(tmp_path: Path) -> None:
     assert "other.py" not in found
     assert "holds credentials" in _refusal(search_files(pattern="needle", path=".env"))
     assert "does not exist" in _refusal(search_files(pattern="needle", path="pkg/gone.py"))
+
+
+def test_an_end_anchor_matches_the_lines_of_a_crlf_file(tmp_path: Path) -> None:
+    (tmp_path / "windows.txt").write_bytes(b"alpha\r\nneedle\r\n")
+
+    assert "windows.txt:2:needle" in _text(search_files(pattern="needle$"))
+
+
+def test_a_pattern_that_backtracks_does_not_hold_the_agent(tmp_path: Path) -> None:
+    """The standard library's engine spends ten seconds on this line, and hours on a longer one."""
+    _write(tmp_path, "run.txt", "a" * 28 + "!\n")
+
+    started = time.monotonic()
+    found = _text(search_files(pattern="(a+)+$"))
+
+    assert found.startswith("No matches")
+    assert time.monotonic() - started < 3
+
+
+def test_a_search_out_of_time_returns_what_it_found_and_says_it_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: the engine runs out of time on the second file.
+    _write(tmp_path, "a.txt", "needle\n")
+    _write(tmp_path, "b.txt", "needle\n")
+    real_found_in = SearchPattern.found_in
+    calls: list[str] = []
+
+    def slow_on_the_second_file(self: SearchPattern, text: str, *, seconds: float) -> bool:
+        calls.append(text)
+        if len(calls) > 2:
+            raise TimeoutError
+        return real_found_in(self, text, seconds=seconds)
+
+    monkeypatch.setattr(SearchPattern, "found_in", slow_on_the_second_file)
+
+    # Act
+    result = search_files(pattern="needle")
+
+    # Assert
+    found = _text(result)
+    assert "a.txt:1:needle" in found and "b.txt" not in found
+    assert "stopped after 10 seconds" in found
+    assert result.details["truncated"] is True
 
 
 def test_a_search_stops_at_its_limit_and_says_more_may_exist(tmp_path: Path) -> None:
