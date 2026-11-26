@@ -578,6 +578,9 @@ def _commit_run_history(
 
 
 UNGROUPED_SECTION_NAME = "ungrouped"
+# GitHub's job-log download prefixes every line with its ISO-8601 UTC time,
+# and the file opens with a byte-order mark.
+_LOG_LINE_PREFIX = re.compile(r"^\ufeff?(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z )?")
 
 
 def _append_log_section(sections: list[dict[str, str]], name: str, lines: list[str]) -> None:
@@ -595,13 +598,14 @@ def _extract_log_sections(log_text: str) -> list[dict[str, str]]:
     saw_group = False
 
     for line in log_text.splitlines():
-        if line.startswith("##[group]"):
+        marker = _LOG_LINE_PREFIX.sub("", line, count=1)
+        if marker.startswith("##[group]"):
             saw_group = True
             _append_log_section(sections, current_name or UNGROUPED_SECTION_NAME, current_lines)
-            current_name = line[len("##[group]") :].strip()
+            current_name = marker[len("##[group]") :].strip()
             current_lines = []
             continue
-        if line.startswith("##[endgroup]"):
+        if marker.startswith("##[endgroup]"):
             _append_log_section(sections, current_name or UNGROUPED_SECTION_NAME, current_lines)
             current_name = None
             current_lines = []

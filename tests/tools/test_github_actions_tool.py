@@ -674,6 +674,33 @@ final runner summary
     assert "runner setup before groups" not in result["log_text"]
 
 
+def test_extract_step_log_finds_steps_in_timestamped_job_log() -> None:
+    """GitHub's job-log download stamps every line with its time and opens with a BOM."""
+    log = (
+        "\ufeff2026-11-20T10:00:00.1000000Z ##[group]Run actions/checkout@v4\n"
+        "2026-11-20T10:00:00.1500000Z with:\n"
+        "2026-11-20T10:00:00.2000000Z ##[endgroup]\n"
+        "2026-11-20T10:00:01.0000000Z Syncing repository: o/r\n"
+        "2026-11-20T10:00:05.0000000Z ##[group]Run pytest -q\n"
+        "2026-11-20T10:00:05.1000000Z pytest -q\n"
+        "2026-11-20T10:00:05.2000000Z ##[endgroup]\n"
+        "2026-11-20T10:00:09.0000000Z FAILED tests/test_api.py::test_login\n"
+        "2026-11-20T10:00:09.1000000Z ##[error]Process completed with exit code 1.\n"
+        "2026-11-20T10:00:10.0000000Z ##[group]Run actions/checkout@v4 post\n"
+        "2026-11-20T10:00:10.1000000Z Post job cleanup.\n"
+        "2026-11-20T10:00:10.2000000Z ##[endgroup]\n"
+    )
+
+    by_name = extract_step_log(log, step_name="Run pytest")
+    by_number = extract_step_log(log, step_number=2)
+
+    for result in (by_name, by_number):
+        assert result["step_name"] == "Run pytest -q"
+        assert "FAILED tests/test_api.py::test_login" in result["log_text"]
+        assert "Syncing repository" not in result["log_text"]
+        assert "Post job cleanup." not in result["log_text"]
+
+
 def test_extract_step_log_invalid_step_number() -> None:
     result = extract_step_log(
         """runner setup before groups
