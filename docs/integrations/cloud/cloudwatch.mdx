@@ -79,6 +79,7 @@ The AWS managed `ReadOnlyAccess` policy includes all of these.
 
 - `log_group` must be the **absolute** name, starting with `/`. Short names are not resolved.
 - Filtered searches only look at the **last 2 hours** of events, and Batch metrics cover only the **last hour**. For older incidents, give the stream name instead of a filter pattern.
+- A filtered search reads at most 10 result pages and returns the newest `limit` matches. If it stops before the end of the window, the result has `scan_truncated: true`; narrow the filter pattern.
 - For Kubernetes pod logs use [EKS](/integrations/cloud/eks) or [Kubernetes](/integrations/cloud/kubernetes), not CloudWatch, unless you ship container logs to CloudWatch with Container Insights or Fluent Bit.
 - For Lambda functions, prefer the dedicated [Lambda tools](/integrations/cloud/aws_lambda), which derive the log group from the function name.
 

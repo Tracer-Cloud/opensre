@@ -119,9 +119,9 @@ def get_cloudwatch_logs(
         if client is None:
             return {"error": "boto3 not available", "log_group": log_group}
 
-        scan_incomplete = False
+        scan_truncated = False
         if filter_pattern:
-            events, scan_incomplete = _newest_matching_events(
+            events, scan_truncated = _newest_matching_events(
                 client, log_group, filter_pattern, limit
             )
             if not events:
@@ -129,8 +129,14 @@ def get_cloudwatch_logs(
                     "found": False,
                     "log_group": log_group,
                     "filter_pattern": filter_pattern,
-                    "message": f"No log events found matching pattern: {filter_pattern}",
-                    "scan_incomplete": scan_incomplete,
+                    "message": (
+                        f"No log events found matching pattern: {filter_pattern} "
+                        f"in the first {_MAX_FILTER_PAGES} result pages; the search "
+                        "stopped before the end of the 2-hour window."
+                        if scan_truncated
+                        else f"No log events found matching pattern: {filter_pattern}"
+                    ),
+                    "scan_truncated": scan_truncated,
                 }
         else:
             if not log_stream:
@@ -171,7 +177,7 @@ def get_cloudwatch_logs(
         if filter_pattern:
             result["filter_pattern"] = filter_pattern
             result["searched_all_streams"] = True
-            result["scan_incomplete"] = scan_incomplete
+            result["scan_truncated"] = scan_truncated
         else:
             result["log_stream"] = log_stream
         return result

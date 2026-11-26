@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from unittest.mock import MagicMock, patch
 
 from integrations.cloudwatch.tools.cloudwatch_logs_tool import get_cloudwatch_logs
@@ -129,3 +130,39 @@ def test_filter_pattern_pages_to_the_newest_matches() -> None:
     assert result["found"] is True
     assert result["error_logs"] == ["ERROR 2", "ERROR 3"]
     assert result["latest_error"] == "ERROR 3"
+    assert result["scan_truncated"] is False
+
+
+def test_filter_pattern_reports_a_search_cut_off_by_the_page_cap() -> None:
+    # Every page is empty but points at another one, so the scan stops at the cap.
+    tokens = itertools.count()
+    mock_client = MagicMock()
+    mock_client.filter_log_events.side_effect = lambda **_: {
+        "events": [],
+        "nextToken": f"t{next(tokens)}",
+    }
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
+        result = get_cloudwatch_logs(log_group="/my/group", filter_pattern="ERROR")
+    assert result["found"] is False
+    assert result["scan_truncated"] is True
+    assert "stopped before the end" in result["message"]
+
+
+def test_stream_latest_error_is_the_newest_event() -> None:
+    # GetLogEvents with startFromHead=False returns the newest events, oldest first.
+    mock_client = MagicMock()
+    mock_client.get_log_events.return_value = {
+        "events": [
+            {"message": "INFO start", "timestamp": 1},
+            {"message": "ERROR Task timed out", "timestamp": 2},
+        ]
+    }
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
+        result = get_cloudwatch_logs(log_group="/my/group", log_stream="stream-x")
+    assert result["latest_error"] == "ERROR Task timed out"
