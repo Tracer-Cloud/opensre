@@ -150,11 +150,15 @@ def test_hunks_with_only_added_lines_go_after_their_header_or_to_the_end(tmp_pat
     assert (tmp_path / "app.py").read_text() == "def a():\n    # first\n    return 1\n# last\n"
 
 
+_TWO_FUNCTIONS = "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 2\n"
+
+
 @pytest.mark.parametrize(
-    ("sections", "after"),
+    ("before", "sections", "after"),
     [
         # Only added lines: to the end, or right after the @@ line.
         (
+            _TWO_FUNCTIONS,
             (
                 "*** Update File: app.py",
                 "@@",
@@ -170,20 +174,24 @@ def test_hunks_with_only_added_lines_go_after_their_header_or_to_the_end(tmp_pat
         ),
         # A blank line right after the file header.
         (
+            _TWO_FUNCTIONS,
             ("*** Update File: app.py", "", "@@ def b():", "-    return 2", "+    return 3"),
             "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 3\n",
         ),
         # A blank line after a rename.
         (
+            _TWO_FUNCTIONS,
             ("*** Update File: app.py", "*** Move to: main.py", ""),
             None,
         ),
+        # A hunk that removes lines keeps the blank line as context: it picks the
+        # "foo" that a blank line follows.
+        ("foo\nx\nfoo\n\ny\n", ("*** Update File: app.py", "-foo", ""), "foo\nx\n\ny\n"),
     ],
 )
 def test_a_blank_line_between_sections_is_a_separator(
-    tmp_path: Path, sections: tuple[str, ...], after: str | None
+    tmp_path: Path, before: str, sections: tuple[str, ...], after: str | None
 ) -> None:
-    before = "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 2\n"
     _write(tmp_path, "app.py", before)
 
     _applied(apply_patch(input=_patch(*sections)))
