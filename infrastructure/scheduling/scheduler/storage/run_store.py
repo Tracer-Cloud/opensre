@@ -200,6 +200,7 @@ def try_claim(
                         row[4],
                         summary=row[5] or "",
                         outcome=WorkOutcome.model_validate_json(row[6] or "{}"),
+                        replayed=True,
                     )
                 attempt = int(row[0])
                 status = TaskStatus(row[1])

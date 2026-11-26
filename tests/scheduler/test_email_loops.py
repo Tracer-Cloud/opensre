@@ -243,3 +243,63 @@ def test_a_later_run_or_a_send_that_reached_nobody_is_never_skipped_as_received(
     assert failed[0] is False and "from_address" in failed[1]
     assert retried[0] is True and next_run[0] is True
     assert results == [(False, "Missing from_address", []), (True, "", []), (True, "", [])]
+
+
+def test_a_later_run_reaches_everyone_while_a_failed_only_retry_reaches_only_the_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: real stores, executor, fan-out and adapter bundle. The SMTP server
+    # refuses ben until the second scheduled run.
+    from infrastructure.scheduling.scheduler import delivery_bundle
+    from infrastructure.scheduling.scheduler.executor import execute_task
+    from infrastructure.scheduling.scheduler.runner import run_task_now
+    from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+    from infrastructure.scheduling.scheduler.storage import add_task
+    from infrastructure.scheduling.scheduler.types import TaskReport
+    from integrations.scheduled_delivery import scheduled_delivery_adapters
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.database.default_run_database_path",
+        lambda: tmp_path / "scheduler.db",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "tasks.json",
+    )
+    monkeypatch.setattr(
+        "integrations.member_integrations.load_member_records",
+        lambda: [{"service": "smtp", "name": "rec_1", "credentials": {"from_address": "a@x.io"}}],
+    )
+    sends: list[list[str]] = []
+    refusing_ben = True
+
+    def send(**kwargs: Any) -> tuple[bool, str, list[str]]:
+        sends.append(list(kwargs["recipients"]))
+        if refusing_ben and "ben@example.com" in kwargs["recipients"]:
+            return False, "The SMTP server refused ben@example.com", ["ben@example.com"]
+        return True, "", []
+
+    monkeypatch.setattr("integrations.scheduled_email.delivery.send_smtp_email", send)
+    scheduled_delivery_adapters().install()
+    task = _email_task("smtp:rec_1")
+    task.params[LOOP_EMAIL_TO_PARAM] = task.chat_id
+    task = add_task(task)
+    runners = SchedulerRunners(agent=lambda _payload: TaskReport(_REPORT))
+
+    try:
+        # Act: run 1 and a --failed-only retry of its report both leave ben refused.
+        assert execute_task(task, "2026-11-23T09:00:00Z", runners, scheduled=True) is False
+        sends.clear()
+        assert run_task_now(task.id, runners, only_failed=True) is False
+        failed_only = list(sends)
+        # The server recovers; run 2 builds the same text afresh.
+        refusing_ben = False
+        sends.clear()
+        assert execute_task(task, "2026-11-24T09:00:00Z", runners, scheduled=True) is True
+        later_run = list(sends)
+    finally:
+        delivery_bundle._installed = None
+
+    # Assert: retries of run 1's report go to ben alone; run 2 goes to both.
+    assert failed_only and all(recipients == ["ben@example.com"] for recipients in failed_only)
+    assert later_run == [["ana@example.com", "ben@example.com"]]

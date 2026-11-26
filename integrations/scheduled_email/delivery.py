@@ -25,7 +25,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_EMAIL_ACCOUNT_PARAM,
 )
 from infrastructure.scheduling.scheduler.loops import email_recipients
-from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskReport
 from integrations.smtp.delivery import send_smtp_email
 from integrations.smtp.report_email import ReportEmail, render_report_email
 
@@ -44,20 +44,24 @@ class EmailScheduledDelivery:
     A failed destination is retried whole, so the adapter remembers who
     already received each report: when an SMTP server refused only some
     recipients, the retry goes to those alone and nobody gets it twice.
-    The memory lasts only until every recipient has the report, so a later
-    run whose report has the same text is sent again.
+    The memory belongs to one delivery: the fan-out's retries pass the same
+    report object, and a resend from run history is marked ``replayed``. A
+    report a later run built afresh is new, even with the same text, so it
+    goes to every recipient. The memory ends once every recipient has it.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._received: OrderedDict[str, set[str]] = OrderedDict()
+        #: Report key -> (the report as delivered, recipients who have it). The
+        #: report is held so an identity check cannot match a recycled object.
+        self._received: OrderedDict[str, tuple[str, set[str]]] = OrderedDict()
 
     def deliver(self, task: ScheduledTask, message: str) -> tuple[bool, str, str]:
         recipients = email_recipients(task.chat_id)
         if not recipients:
             return False, "Missing recipient email address", ""
         key = _report_key(task, message)
-        received = self._already_received(key)
+        received = self._already_received(key, message)
         recipients = [address for address in recipients if address.lower() not in received]
         if not recipients:
             return True, "", ""
@@ -86,25 +90,41 @@ class EmailScheduledDelivery:
             self._forget(key)
         elif refused:
             # Only a server that refused some recipients delivered to the rest.
-            self._remember(key, [address for address in recipients if address not in refused])
+            delivered = [address for address in recipients if address not in refused]
+            self._remember(key, message, delivered)
         return ok, error, ""
 
-    def _already_received(self, key: str) -> set[str]:
+    def _already_received(self, key: str, message: str) -> set[str]:
         with self._lock:
-            return set(self._received.get(key, set()))
+            entry = self._received.get(key)
+            if entry is None:
+                return set()
+            delivered_report, received = entry
+            if delivered_report is message or _is_replay(message):
+                return set(received)
+            # A later run built this report itself: nobody has received it yet.
+            del self._received[key]
+            return set()
 
     def _forget(self, key: str) -> None:
         with self._lock:
             self._received.pop(key, None)
 
-    def _remember(self, key: str, delivered: list[str]) -> None:
+    def _remember(self, key: str, message: str, delivered: list[str]) -> None:
         if not delivered:
             return
         with self._lock:
-            self._received.setdefault(key, set()).update(address.lower() for address in delivered)
+            _report, received = self._received.get(key, (message, set()))
+            received.update(address.lower() for address in delivered)
+            self._received[key] = (message, received)
             self._received.move_to_end(key)
             while len(self._received) > _MAX_REMEMBERED:
                 self._received.popitem(last=False)
+
+
+def _is_replay(message: str) -> bool:
+    """Whether ``message`` is a report resent from run history, not built by this run."""
+    return isinstance(message, TaskReport) and message.replayed
 
 
 def _report_key(task: ScheduledTask, message: str) -> str:

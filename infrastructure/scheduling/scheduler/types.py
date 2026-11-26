@@ -125,11 +125,17 @@ class DeliveryOutcome(BaseModel):
 
 
 class TaskReport(str):
-    """Typed work result whose text is directly consumable by delivery adapters."""
+    """Typed work result whose text is directly consumable by delivery adapters.
+
+    ``replayed`` marks a report restored from run history (crash recovery or a
+    ``--failed-only`` retry) rather than built by this run, so an adapter can
+    tell a resend of an earlier delivery from a new run's report.
+    """
 
     summary: str
     outcome: WorkOutcome
     stop_schedule: bool
+    replayed: bool
 
     def __new__(
         cls,
@@ -140,6 +146,7 @@ class TaskReport(str):
         error_kind: str = "",
         outcome: WorkOutcome | None = None,
         stop_schedule: bool = False,
+        replayed: bool = False,
     ) -> TaskReport:
         report = super().__new__(cls, body)
         report.summary = summary
@@ -147,6 +154,7 @@ class TaskReport(str):
             status=WorkStatus(work_status), error_kind=error_kind
         )
         report.stop_schedule = stop_schedule
+        report.replayed = replayed
         return report
 
 
@@ -192,7 +200,9 @@ class TaskRun(BaseModel):
         """Restore the exact result for delivery-only retry or crash recovery."""
         if self.report is None:
             return None
-        return TaskReport(self.report, summary=self.report_summary, outcome=self.work_outcome)
+        return TaskReport(
+            self.report, summary=self.report_summary, outcome=self.work_outcome, replayed=True
+        )
 
 
 __all__ = [
