@@ -99,7 +99,7 @@ def _resolve_pointer(root: Mapping[str, Any], ref: str) -> Any | None:
         key = unquote(token).replace("~1", "/").replace("~0", "~")
         if isinstance(node, Mapping) and key in node:
             node = node[key]
-        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+        elif isinstance(node, list) and key.isascii() and key.isdecimal() and int(key) < len(node):
             node = node[int(key)]
         else:
             return None
