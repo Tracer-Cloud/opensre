@@ -155,6 +155,8 @@ def test_hunks_with_only_added_lines_go_after_their_header_or_to_the_end(tmp_pat
     [
         # Windows line endings stay Windows line endings.
         ("one\r\ntwo\r\n", (" one", "-two", "+TWO"), "one\r\nTWO\r\n"),
+        # Mixed endings: lines the patch leaves keep theirs, added lines take the usual one.
+        ("a\nb\r\nc\n", ("-a", "+A", "+A2"), "A\nA2\nb\r\nc\n"),
         # A file with no final newline keeps none.
         ("alpha\nbeta", ("-beta", "+gamma"), "alpha\ngamma"),
         # Trailing spaces and re-indented context still find their lines.

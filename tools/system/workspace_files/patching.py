@@ -311,14 +311,34 @@ def _read_bytes(target: Path, name: str) -> bytes | None:
         raise PatchApplyError(f"cannot read {name}: {type(exc).__name__}") from exc
 
 
-def _lines(text: str) -> tuple[list[str], str, bool]:
-    """The file's lines, its line ending, and whether the last line is terminated."""
-    newline = "\r\n" if "\r\n" in text else "\n"
-    lines = text.replace("\r\n", "\n").split("\n")
-    terminated = lines[-1] == ""
+def _lines(text: str) -> tuple[list[str], list[str], bool]:
+    """The file's lines, each line's own ending, and whether the last line is terminated.
+
+    An unterminated last line has the ending ``""``.
+    """
+    pieces = text.split("\n")
+    terminated = pieces[-1] == ""
     if terminated:
-        lines.pop()
-    return lines, newline, terminated
+        pieces.pop()
+    lines: list[str] = []
+    endings: list[str] = []
+    for index, piece in enumerate(pieces):
+        if index == len(pieces) - 1 and not terminated:
+            lines.append(piece)
+            endings.append("")
+        elif piece.endswith("\r"):
+            lines.append(piece[:-1])
+            endings.append("\r\n")
+        else:
+            lines.append(piece)
+            endings.append("\n")
+    return lines, endings, terminated
+
+
+def _usual_ending(endings: Sequence[str]) -> str:
+    """The ending most of the file's lines use: what a line the patch adds gets."""
+    windows = endings.count("\r\n")
+    return "\r\n" if windows > endings.count("\n") else "\n"
 
 
 def _joined(lines: Sequence[str], newline: str, *, trailing_newline: bool) -> str:
@@ -328,12 +348,17 @@ def _joined(lines: Sequence[str], newline: str, *, trailing_newline: bool) -> st
 
 
 def _updated_text(text: str, operation: UpdateFile, name: str) -> str:
-    """``text`` with the hunks of ``operation`` applied, keeping its line endings."""
-    lines, newline, terminated = _lines(text)
-    replacements: list[tuple[int, int, list[str]]] = []
+    """``text`` with the hunks of ``operation`` applied, keeping its line endings.
+
+    Every line the patch leaves keeps its own ending, so editing one line of a
+    file with mixed endings does not rewrite the others.
+    """
+    lines, endings, terminated = _lines(text)
+    newline = _usual_ending(endings)
+    replacements: list[tuple[int, int, list[tuple[str, str]]]] = []
     cursor = 0
     for hunk in operation.hunks:
-        start, length, replacement = _placed(lines, hunk, cursor, name)
+        start, length, replacement = _placed(lines, endings, newline, hunk, cursor, name)
         replacements.append((start, length, replacement))
         cursor = start + length
     replacements.sort(key=lambda item: item[0])
@@ -341,11 +366,23 @@ def _updated_text(text: str, operation: UpdateFile, name: str) -> str:
         if start + length > next_start:
             raise PatchApplyError(f"{name}: two hunks change the same lines.")
     for start, length, replacement in reversed(replacements):
-        lines[start : start + length] = replacement
-    return _joined(lines, newline, trailing_newline=terminated)
+        lines[start : start + length] = [line for line, _ending in replacement]
+        endings[start : start + length] = [ending for _line, ending in replacement]
+    last = len(lines) - 1
+    return "".join(
+        line + ("" if index == last and not terminated else ending or newline)
+        for index, (line, ending) in enumerate(zip(lines, endings, strict=True))
+    )
 
 
-def _placed(lines: list[str], hunk: Hunk, cursor: int, name: str) -> tuple[int, int, list[str]]:
+def _placed(
+    lines: list[str],
+    endings: Sequence[str],
+    newline: str,
+    hunk: Hunk,
+    cursor: int,
+    name: str,
+) -> tuple[int, int, list[tuple[str, str]]]:
     """Where ``hunk`` applies: the first line it replaces, how many, and with what."""
     located = bool(hunk.headers)
     for header in hunk.headers:
@@ -358,12 +395,12 @@ def _placed(lines: list[str], hunk: Hunk, cursor: int, name: str) -> tuple[int, 
         old = [text for kind, text in body if kind != ADDED]
         if not old:
             # Only added lines: after the context the hunk named, else at the end.
-            return (cursor if located else len(lines)), 0, [text for _kind, text in body]
+            return (cursor if located else len(lines)), 0, [(text, newline) for _kind, text in body]
         # Never before the cursor: lines that repeat earlier in the file would
         # take a change meant for the place the hunk's header named.
         start = _find(lines, old, cursor, at_end=hunk.at_end_of_file)
         if start is not None:
-            return start, len(old), _replacement(lines, start, body)
+            return start, len(old), _replacement(lines, endings, newline, start, body)
         if body[-1] == (CONTEXT, "") and len(body) > 1:
             # A blank line before the next section is a separator, not context.
             body = body[:-1]
@@ -375,21 +412,28 @@ def _placed(lines: list[str], hunk: Hunk, cursor: int, name: str) -> tuple[int, 
         )
 
 
-def _replacement(lines: Sequence[str], start: int, body: Sequence[tuple[str, str]]) -> list[str]:
-    """What the hunk leaves in place of the lines it matched.
+def _replacement(
+    lines: Sequence[str],
+    endings: Sequence[str],
+    newline: str,
+    start: int,
+    body: Sequence[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """What the hunk leaves in place of the lines it matched, each with its ending.
 
-    A context line keeps the file's own text. It may have matched loosely (the
-    model dropped trailing spaces or typed a straight quote), and writing the
-    model's spelling back would change a line the patch says it leaves alone.
+    A context line keeps the file's own text and ending. It may have matched
+    loosely (the model dropped trailing spaces or typed a straight quote), and
+    writing the model's spelling back would change a line the patch says it
+    leaves alone. An added line takes the file's usual ending.
     """
-    replacement: list[str] = []
+    replacement: list[tuple[str, str]] = []
     position = start
     for kind, text in body:
         if kind == ADDED:
-            replacement.append(text)
+            replacement.append((text, newline))
             continue
         if kind == CONTEXT:
-            replacement.append(lines[position])
+            replacement.append((lines[position], endings[position]))
         position += 1
     return replacement
 
