@@ -2097,3 +2097,38 @@ def test_headline_names_the_worst_hit_not_the_average() -> None:
         "Waiting on CI cost 2 developers 8.8h of working time in the last 30 days, "
         "up to 1.8h a week for the worst hit."
     )
+
+
+def test_workflow_table_counts_failures_hidden_by_a_passing_re_run() -> None:
+    # Arrange: every failure of Tests was re-run to green; one real failure of Lint.
+    runs = [
+        _run(
+            run_id,
+            workflow="Tests",
+            workflow_id=7,
+            branch=f"feat/{run_id}",
+            sha=f"s{run_id}",
+            attempt=2,
+            start_minutes=20,
+            earlier_failure_started_at=_T0,
+        )
+        for run_id in (1, 2, 3)
+    ]
+    runs.append(_run(4, workflow="Lint", workflow_id=8, conclusion="failure"))
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=runs,
+        merged_prs=(),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Assert: the flaky workflow is listed with its three failures, all CI-caused.
+    assert report.pr_failures == 4
+    rows = {w.workflow: (w.runs, w.failures, w.reliability_failures) for w in report.workflows}
+    assert rows == {"Tests": (3, 3, 3), "Lint": (1, 1, 0)}

@@ -491,7 +491,11 @@ def summarize_workflows(
     *,
     red_hours: dict[int | str, float] | None = None,
 ) -> list[WorkflowSummary]:
-    """Per-workflow counts, worst first; workflows that never failed are omitted."""
+    """Per-workflow counts, worst first; workflows that never failed are omitted.
+
+    A run whose earlier attempt failed before a re-run passed counts as a
+    failure, as it does in the report's PR failure total.
+    """
     shares = red_hours or {}
     run_counts: dict[int | str, int] = defaultdict(int)
     failure_counts: dict[int | str, int] = defaultdict(int)
@@ -500,7 +504,7 @@ def summarize_workflows(
         key = _workflow_key(run)
         names[key] = run.workflow
         run_counts[key] += 1
-        if run.failed:
+        if run.failed or run.retried_to_green:
             failure_counts[key] += 1
     reliability_counts: dict[int | str, int] = defaultdict(int)
     for item in classified:
