@@ -206,7 +206,7 @@ def _hunks(lines: list[str], index: int) -> tuple[tuple[Hunk, ...], int]:
         body: list[tuple[str, str]] = []
         at_end_of_file = False
         start = index
-        #: Unprefixed blank lines since the last prefixed one.
+        # Unprefixed blank lines since the last prefixed one.
         unprefixed_blanks = 0
         while index < len(lines):
             line = lines[index]
@@ -229,11 +229,17 @@ def _hunks(lines: list[str], index: int) -> tuple[tuple[Hunk, ...], int]:
                     f"got {line!r}."
                 )
             index += 1
-        if unprefixed_blanks and not at_end_of_file:
-            # Blank lines before the next section separate it from this hunk.
-            # As context they would move the hunk to the first blank line of
-            # the file, and a hunk of only added lines would then never append.
-            del body[-unprefixed_blanks:]
+        kept = body[: len(body) - unprefixed_blanks]
+        if (
+            unprefixed_blanks
+            and not at_end_of_file
+            and kept
+            and all(kind == ADDED for kind, _text in kept)
+        ):
+            # Blank lines before the next section separate it from a hunk of
+            # only added lines. As context they would move it to the first
+            # blank line of the file instead of its place.
+            body = kept
         if not body:
             raise PatchFormatError(f"patch line {start + 2}: the hunk has no lines.")
         hunks.append(Hunk(tuple(headers), tuple(body), at_end_of_file))

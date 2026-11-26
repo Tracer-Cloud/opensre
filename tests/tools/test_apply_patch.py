@@ -150,27 +150,48 @@ def test_hunks_with_only_added_lines_go_after_their_header_or_to_the_end(tmp_pat
     assert (tmp_path / "app.py").read_text() == "def a():\n    # first\n    return 1\n# last\n"
 
 
-def test_a_blank_line_after_a_hunk_does_not_move_it_to_the_first_blank_line(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("sections", "after"),
+    [
+        # Only added lines: to the end, or right after the @@ line.
+        (
+            (
+                "*** Update File: app.py",
+                "@@",
+                "+# last",
+                "",
+                "*** Update File: app.py",
+                "@@ def b():",
+                "+    # first in b",
+                "",
+            ),
+            "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    # first in b\n"
+            "    return 2\n# last\n",
+        ),
+        # A blank line right after the file header.
+        (
+            ("*** Update File: app.py", "", "@@ def b():", "-    return 2", "+    return 3"),
+            "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 3\n",
+        ),
+        # A blank line after a rename.
+        (
+            ("*** Update File: app.py", "*** Move to: main.py", ""),
+            None,
+        ),
+    ],
+)
+def test_a_blank_line_between_sections_is_a_separator(
+    tmp_path: Path, sections: tuple[str, ...], after: str | None
 ) -> None:
-    _write(tmp_path, "app.py", "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 2\n")
+    before = "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 2\n"
+    _write(tmp_path, "app.py", before)
 
-    apply_patch(
-        input=_patch(
-            "*** Update File: app.py",
-            "@@",
-            "+# last",
-            "",
-            "*** Update File: app.py",
-            "@@ def b():",
-            "+    # first in b",
-            "",
-        )
-    )
+    _applied(apply_patch(input=_patch(*sections)))
 
-    assert (tmp_path / "app.py").read_text() == (
-        "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    # first in b\n    return 2\n# last\n"
-    )
+    if after is None:
+        assert _tree(tmp_path) == {"main.py": before.encode("utf-8")}
+    else:
+        assert (tmp_path / "app.py").read_text() == after
 
 
 @pytest.mark.parametrize(
