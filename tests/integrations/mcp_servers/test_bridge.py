@@ -279,6 +279,25 @@ def test_a_recursive_argument_schema_is_inlined_without_looping() -> None:
     assert "$ref" not in json.dumps(inlined) and "$defs" not in inlined
 
 
+def test_an_argument_referencing_another_argument_keeps_its_schema() -> None:
+    # The MCP TypeScript SDK (zod v3 path, zod-to-json-schema) emits a reused
+    # argument schema as a JSON pointer to its first occurrence, not a $defs entry.
+    window = {
+        "type": "object",
+        "properties": {"from": {"type": "string", "format": "date-time"}},
+        "required": ["from"],
+    }
+    schema = {
+        "type": "object",
+        "properties": {"incident": window, "baseline": {"$ref": "#/properties/incident"}},
+        "required": ["incident", "baseline"],
+    }
+
+    inlined = bridged_input_schema(schema)
+
+    assert inlined["properties"]["baseline"] == window
+
+
 def test_arguments_named_like_schema_keywords_are_kept() -> None:
     schema = {
         "type": "object",

@@ -2,7 +2,10 @@
 
 Provider sanitizers drop ``$ref``/``$defs`` without resolving them, which would
 leave a referenced argument as ``{}``. Local references are therefore inlined
-here, before any provider sees the schema.
+here, before any provider sees the schema: ``#/$defs/...`` targets, and any
+other JSON pointer into the schema, such as the ``#/properties/start`` that
+zod-to-json-schema (the MCP TypeScript SDK's zod v3 path) emits for a reused
+argument schema.
 
 The walk follows JSON Schema structure: argument names under ``properties``
 are never treated as keywords, and values such as ``enum`` or ``default`` are
@@ -14,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import unquote
 
 _DEFINITION_KEYS = frozenset({"$defs", "definitions"})
 #: Keywords whose value is a mapping of names to schemas.
@@ -49,8 +53,8 @@ class _BudgetExceeded(Exception):
 class _Inliner:
     """Inlines local references of one schema within a shared node budget."""
 
-    def __init__(self, definitions: Mapping[str, Any], *, expand: bool) -> None:
-        self._definitions = definitions
+    def __init__(self, root: Mapping[str, Any], *, expand: bool) -> None:
+        self._root = root
         self._expand = expand
         self._nodes = 0
 
@@ -76,7 +80,7 @@ class _Inliner:
         ref = node.get("$ref")
         if not self._expand or not isinstance(ref, str):
             return result
-        target = self._definitions.get(ref)
+        target = _resolve_pointer(self._root, ref)
         if target is None or ref in active or len(active) >= _MAX_REF_DEPTH:
             # Unknown, remote or recursive reference: keep only what is stated here.
             return result
@@ -86,25 +90,30 @@ class _Inliner:
         return {**resolved, **result}
 
 
-def _local_definitions(schema: Mapping[str, Any]) -> dict[str, Any]:
-    definitions: dict[str, Any] = {}
-    for key in _DEFINITION_KEYS:
-        section = schema.get(key)
-        if isinstance(section, Mapping):
-            for name, value in section.items():
-                definitions[f"#/{key}/{name}"] = value
-    return definitions
+def _resolve_pointer(root: Mapping[str, Any], ref: str) -> Any | None:
+    """The node a local ``#/...`` JSON pointer (RFC 6901) names in ``root``, or ``None``."""
+    if not ref.startswith("#/"):
+        return None
+    node: Any = root
+    for token in ref[2:].split("/"):
+        key = unquote(token).replace("~1", "/").replace("~0", "~")
+        if isinstance(node, Mapping) and key in node:
+            node = node[key]
+        elif isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            return None
+    return node
 
 
 def bridged_input_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
     """An object schema with local ``$ref`` targets inlined and ``$defs`` removed."""
     if schema.get("type") != "object":
         return {"type": "object", "properties": {}}
-    definitions = _local_definitions(schema)
     try:
-        normalized = _Inliner(definitions, expand=True).schema(schema, frozenset())
+        normalized = _Inliner(schema, expand=True).schema(schema, frozenset())
     except _BudgetExceeded:
-        normalized = _Inliner(definitions, expand=False).schema(schema, frozenset())
+        normalized = _Inliner(schema, expand=False).schema(schema, frozenset())
     normalized.setdefault("properties", {})
     return dict(normalized)
 
