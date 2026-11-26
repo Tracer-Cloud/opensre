@@ -6,20 +6,6 @@ from infrastructure.analytics.provider import get_analytics
 from infrastructure.observability.errors.sentry import capture_exception
 
 
-def identify_saved_github_username() -> None:
-    """Re-attach a previously saved GitHub handle to analytics for this process.
-
-    The integration store persists ``credentials.username`` across REPL sessions
-    (used by the welcome banner), but analytics persistent properties are
-    in-memory per CLI process. Call at REPL boot so events like
-    ``$ai_generation`` include ``github_username`` without requiring a fresh
-    device-flow login each session.
-    """
-    from integrations.github import saved_github_username
-
-    identify_github_username(saved_github_username())
-
-
 def identify_github_username(username: str) -> None:
     """Attach the authenticated GitHub username to product analytics.
 

@@ -14,7 +14,6 @@ from rich.text import Text
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
 from infrastructure.analytics.capture import capture_interactive_shell_rendered
-from infrastructure.analytics.github_identity import identify_saved_github_username
 from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
 from infrastructure.terminal.prompt_support import begin_ctrl_c_exit
@@ -35,6 +34,9 @@ from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
     warm_first_turn,
 )
 from surfaces.interactive_shell.runtime.startup.github_gate import pass_github_gate
+from surfaces.interactive_shell.runtime.startup.github_identity import (
+    identify_saved_github_username,
+)
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
 from surfaces.interactive_shell.runtime.startup.integrations_prefetch import (
     start_integrations_prefetch,

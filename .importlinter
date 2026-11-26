@@ -27,7 +27,6 @@ layers =
     config
 ignore_imports =
     # infrastructure -> integrations (T-4 debt — scheduler / observability)
-    infrastructure.analytics.github_identity -> integrations.github
     infrastructure.observability.errors.sentry -> integrations.llm_cli
     infrastructure.scheduling.scheduler.credentials -> integrations.catalog
     # surfaces -> gateway (cli + repl gateway commands)

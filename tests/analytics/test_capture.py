@@ -94,32 +94,6 @@ def test_identify_github_username_noop_on_empty(monkeypatch: pytest.MonkeyPatch)
     assert stub.identified == []
 
 
-def test_identify_saved_github_username_reads_store(monkeypatch: pytest.MonkeyPatch) -> None:
-    stub = _StubAnalytics()
-    monkeypatch.setattr(github_identity, "get_analytics", lambda: stub)
-    # Patch the package API surface (what production imports). Patching only
-    # ``integrations.github.identity`` misses when another test has bound the
-    # name on ``integrations.github`` and shadowed ``__getattr__``.
-    monkeypatch.setattr("integrations.github.saved_github_username", lambda: "octocat")
-
-    github_identity.identify_saved_github_username()
-
-    assert stub.identified == [{"github_username": "octocat"}]
-    assert stub.persistent_properties == {"github_username": "octocat"}
-
-
-def test_identify_saved_github_username_noop_when_store_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stub = _StubAnalytics()
-    monkeypatch.setattr(github_identity, "get_analytics", lambda: stub)
-    monkeypatch.setattr("integrations.github.saved_github_username", lambda: "")
-
-    github_identity.identify_saved_github_username()
-
-    assert stub.identified == []
-
-
 def test_identify_github_username_reports_failures_to_sentry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
