@@ -718,6 +718,36 @@ def test_extract_step_log_finds_steps_in_timestamped_job_log() -> None:
     assert "Hosted Compute Agent" not in result["log_text"]
 
 
+def test_extract_step_log_keeps_an_actions_later_groups_in_runner_log() -> None:
+    """Checkout logs its work in groups after its own; its error is in a later one."""
+    log = (
+        "\ufeff2026-11-26T08:51:19.5229241Z Current runner version: '2.338.2'\n"
+        "2026-11-26T08:51:19.5263142Z ##[group]Runner Image Provisioner\n"
+        "2026-11-26T08:51:19.5264496Z Hosted Compute Agent\n"
+        "2026-11-26T08:51:19.5272686Z ##[endgroup]\n"
+        "2026-11-26T08:51:20.1264230Z ##[group]Run actions/checkout@v5\n"
+        "2026-11-26T08:51:20.1265135Z with:\n"
+        "2026-11-26T08:51:20.1283942Z ##[endgroup]\n"
+        "2026-11-26T08:51:20.4631166Z Syncing repository: o/r\n"
+        "2026-11-26T08:51:20.4633655Z ##[group]Getting Git version info\n"
+        "2026-11-26T08:51:20.4651244Z git version 2.56.1\n"
+        "2026-11-26T08:51:20.4678060Z ##[endgroup]\n"
+        "2026-11-26T08:51:20.6251700Z ##[group]Fetching the repository\n"
+        "2026-11-26T08:51:24.0800000Z fatal: could not read Username for 'https://github.com'\n"
+        "2026-11-26T08:51:24.0804209Z ##[endgroup]\n"
+        "2026-11-26T08:51:24.0900000Z ##[error]The process '/usr/bin/git' failed with exit code 128\n"
+        "2026-11-26T08:51:25.9356862Z Post job cleanup.\n"
+    )
+
+    result = extract_step_log(log, step_name="Run actions/checkout")
+
+    assert result["match_strategy"] == "step_name"
+    assert result["step_name"] == "Run actions/checkout@v5"
+    assert "fatal: could not read Username" in result["log_text"]
+    assert "failed with exit code 128" in result["log_text"]
+    assert "Hosted Compute Agent" not in result["log_text"]
+
+
 def test_extract_step_log_step_number_does_not_count_runner_log_groups() -> None:
     """Step 2 is checkout; group 2 is the "Operating System" block of Set up job."""
     result = extract_step_log(_RUNNER_LOG, step_number=2)

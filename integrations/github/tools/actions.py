@@ -596,6 +596,22 @@ def _is_runner_log(log_text: str) -> bool:
     return _TIMESTAMPED_LOG.match(first) is not None
 
 
+def _runner_log_from_group(log_text: str, name: str) -> str:
+    """A runner log from the first ``##[group]`` named ``name`` through its end.
+
+    A step's output can hold groups of its own (checkout's "Fetching the
+    repository", composite actions' nested ``Run`` steps), and nothing in the
+    log says which group closes the step, so later groups are kept rather
+    than guessed away. After a failed step only post steps run.
+    """
+    header = f"##[group]{name}"
+    lines = log_text.splitlines()
+    for index, line in enumerate(lines):
+        if _LOG_LINE_PREFIX.sub("", line, count=1).strip() == header:
+            return "\n".join(lines[index:]).strip()
+    return ""
+
+
 def _append_log_section(sections: list[dict[str, str]], name: str, lines: list[str]) -> None:
     """Append a non-empty log section preserving original ordering."""
     text = "\n".join(lines).strip()
@@ -679,8 +695,10 @@ def extract_step_log(
 
     text = selected.get("text", "")
 
+    if selected_idx != -1 and _is_runner_log(log_text):
+        text = _runner_log_from_group(log_text, selected.get("name", "")) or text
     # Merge trailing ungrouped annotations into the matched step log
-    if selected_idx != -1 and selected_idx + 1 < len(sections):
+    elif selected_idx != -1 and selected_idx + 1 < len(sections):
         next_section = sections[selected_idx + 1]
         if next_section.get("name") == UNGROUPED_SECTION_NAME:
             text += "\n" + next_section.get("text", "")
