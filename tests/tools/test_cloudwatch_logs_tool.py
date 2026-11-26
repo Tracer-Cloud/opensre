@@ -111,17 +111,19 @@ def test_run_handles_boto3_exception() -> None:
 def test_filter_pattern_pages_to_the_newest_matches() -> None:
     # FilterLogEvents returns events oldest first and may return an empty page
     # while matches remain behind nextToken.
-    mock_client = MagicMock()
-    mock_client.filter_log_events.side_effect = [
-        {"events": [], "nextToken": "t1"},
-        {"events": [{"message": "ERROR 1", "timestamp": 1}], "nextToken": "t2"},
-        {
+    # Pages are keyed by the nextToken the call sends.
+    pages = {
+        None: {"events": [], "nextToken": "t1"},
+        "t1": {"events": [{"message": "ERROR 1", "timestamp": 1}], "nextToken": "t2"},
+        "t2": {
             "events": [
                 {"message": "ERROR 2", "timestamp": 2},
                 {"message": "ERROR 3", "timestamp": 3},
             ]
         },
-    ]
+    }
+    mock_client = MagicMock()
+    mock_client.filter_log_events.side_effect = lambda **kwargs: pages[kwargs.get("nextToken")]
     with patch(
         "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
         return_value=mock_client,
@@ -131,6 +133,7 @@ def test_filter_pattern_pages_to_the_newest_matches() -> None:
     assert result["error_logs"] == ["ERROR 2", "ERROR 3"]
     assert result["latest_error"] == "ERROR 3"
     assert result["scan_truncated"] is False
+    assert mock_client.filter_log_events.call_count == 3
 
 
 def test_filter_pattern_reports_a_search_cut_off_by_the_page_cap() -> None:
