@@ -720,6 +720,46 @@ def test_openai_agent_client_invoke_raw_content_preserves_extra_fields(
     assert first_tc.get("thought_signature") == "abc123"
 
 
+def test_openai_agent_client_coerces_null_tool_arguments_to_an_empty_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A compatible gateway may send ``"null"`` arguments for a no-argument tool.
+
+    Tool execution, redaction and the loop's progress fingerprint all read
+    ``ToolCall.input`` as a dict; ``None`` there crashes the turn.
+    """
+    # Arrange
+    _install_fake_openai(monkeypatch)
+    fake_tc = types.SimpleNamespace(
+        id="call_1",
+        type="function",
+        function=types.SimpleNamespace(name="list_alerts", arguments="null"),
+        model_dump=lambda: {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "list_alerts", "arguments": "null"},
+        },
+    )
+    fake_response = _make_fake_openai_response(tool_calls=[fake_tc], finish_reason="tool_calls")
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(
+            completions=types.SimpleNamespace(create=lambda **_: fake_response)
+        )
+    )
+    client._model = "some-model"
+    client._max_tokens = 1024
+    client._api_key_env = "OPENROUTER_API_KEY"
+
+    # Act
+    response = client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    # Assert
+    assert [(tc.id, tc.name, tc.input) for tc in response.tool_calls] == [
+        ("call_1", "list_alerts", {})
+    ]
+
+
 def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -28,6 +28,7 @@ from core.llm.shared.openai_chat_completions import (
     AGENT_CLIENT_TIMEOUT_SEC,
     OPENAI_SDK_MAX_RETRIES,
     is_exception_named,
+    parse_tool_calls,
 )
 from core.llm.shared.openai_chat_completions import (
     build_assistant_message as build_openai_compat_assistant_message,
@@ -1160,13 +1161,10 @@ class OpenAIAgentClient:
         content = msg.content or ""
         stop_reason = choice.finish_reason or "stop"
 
-        tool_calls: list[ToolCall] = []
-        for tc in msg.tool_calls or []:
-            try:
-                input_dict = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                input_dict = {}
-            tool_calls.append(ToolCall(id=tc.id, name=tc.function.name, input=input_dict))
+        # Shared with the LiteLLM path: arguments that are not a JSON object
+        # (``"null"`` from some compatible gateways for a no-argument tool)
+        # become ``{}``, so every consumer of ``ToolCall.input`` gets a dict.
+        tool_calls = parse_tool_calls(msg)
 
         # Preserve the raw API message so provider-specific fields (e.g. Gemini
         # thought_signature in tool_calls) survive into the next conversation turn.
