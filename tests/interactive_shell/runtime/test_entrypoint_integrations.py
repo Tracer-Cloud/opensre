@@ -11,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
@@ -210,6 +211,44 @@ def test_run_repl_async_identifies_saved_github_username(monkeypatch: Any) -> No
     asyncio.run(main_entrypoint.run_repl_async(initial_input="hello"))
 
     assert identified == ["called"]
+
+
+@pytest.mark.parametrize(
+    ("saved_username", "expected_identity"),
+    [("octocat", {"github_username": "octocat"}), ("", None)],
+)
+def test_run_repl_async_attaches_saved_github_username_to_analytics(
+    monkeypatch: Any, saved_username: str, expected_identity: dict[str, str] | None
+) -> None:
+    """REPL boot re-attaches the handle saved by an earlier GitHub login to analytics."""
+    identities: list[dict[str, str]] = []
+    persistent: dict[str, str] = {}
+    analytics = SimpleNamespace(
+        identify=identities.append, set_persistent_property=persistent.__setitem__
+    )
+    monkeypatch.setattr("infrastructure.analytics.github_identity.get_analytics", lambda: analytics)
+    # Stub the integration store, where an earlier GitHub login saved the handle.
+    monkeypatch.setattr(
+        "integrations.store.get_integration",
+        lambda service: (
+            {"credentials": {"username": saved_username}}
+            if service == "github" and saved_username
+            else None
+        ),
+    )
+    monkeypatch.setattr(main_entrypoint, "run_initial_input", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "create_repl_runtime",
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
+    )
+
+    import asyncio
+
+    asyncio.run(main_entrypoint.run_repl_async(initial_input="hello"))
+
+    assert identities == ([expected_identity] if expected_identity else [])
+    assert persistent == (expected_identity or {})
 
 
 def test_run_repl_async_failed_resume_flushes_starter_session(
