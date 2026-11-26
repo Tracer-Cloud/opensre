@@ -3,11 +3,43 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from typing import Any
 
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from integrations.aws.env import make_boto3_client
+
+#: FilterLogEvents pages read per call; each page holds up to 1 MB / 10,000 events.
+_MAX_FILTER_PAGES = 10
+
+
+def _newest_matching_events(
+    client: Any, log_group: str, filter_pattern: str, limit: int
+) -> tuple[list[dict[str, Any]], bool]:
+    """The newest ``limit`` matches of the last two hours, oldest first, and whether
+    the scan stopped before the end of the window.
+
+    FilterLogEvents returns events oldest first and may return an empty page
+    while more matches remain behind ``nextToken``, so the window is paged
+    through rather than read from its first page.
+    """
+    kwargs: dict[str, Any] = {
+        "logGroupName": log_group,
+        "filterPattern": filter_pattern,
+        "startTime": int((time.time() - 7200) * 1000),
+    }
+    newest: deque[dict[str, Any]] = deque(maxlen=max(limit, 1))
+    seen_tokens: set[str] = set()
+    for _ in range(_MAX_FILTER_PAGES):
+        response = client.filter_log_events(**kwargs)
+        newest.extend(response.get("events", []))
+        token = response.get("nextToken")
+        if not token or token in seen_tokens:
+            return list(newest), False
+        seen_tokens.add(token)
+        kwargs["nextToken"] = token
+    return list(newest), True
 
 
 def _cloudwatch_logs_available(sources: dict[str, dict]) -> bool:
@@ -87,20 +119,18 @@ def get_cloudwatch_logs(
         if client is None:
             return {"error": "boto3 not available", "log_group": log_group}
 
+        scan_incomplete = False
         if filter_pattern:
-            response = client.filter_log_events(
-                logGroupName=log_group,
-                filterPattern=filter_pattern,
-                limit=limit,
-                startTime=int((time.time() - 7200) * 1000),
+            events, scan_incomplete = _newest_matching_events(
+                client, log_group, filter_pattern, limit
             )
-            events = response.get("events", [])
             if not events:
                 return {
                     "found": False,
                     "log_group": log_group,
                     "filter_pattern": filter_pattern,
                     "message": f"No log events found matching pattern: {filter_pattern}",
+                    "scan_incomplete": scan_incomplete,
                 }
         else:
             if not log_stream:
@@ -129,17 +159,19 @@ def get_cloudwatch_logs(
                 "message": "No log events found",
             }
 
+        # Both APIs return events oldest first.
         log_messages = [event.get("message", "") for event in events]
         result: dict[str, Any] = {
             "found": True,
             "log_group": log_group,
             "event_count": len(events),
             "error_logs": log_messages,
-            "latest_error": log_messages[0] if log_messages else None,
+            "latest_error": log_messages[-1] if log_messages else None,
         }
         if filter_pattern:
             result["filter_pattern"] = filter_pattern
             result["searched_all_streams"] = True
+            result["scan_incomplete"] = scan_incomplete
         else:
             result["log_stream"] = log_stream
         return result

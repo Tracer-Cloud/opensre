@@ -105,3 +105,27 @@ def test_run_handles_boto3_exception() -> None:
     ):
         result = get_cloudwatch_logs(log_group="/my/group")
     assert "error" in result
+
+
+def test_filter_pattern_pages_to_the_newest_matches() -> None:
+    # FilterLogEvents returns events oldest first and may return an empty page
+    # while matches remain behind nextToken.
+    mock_client = MagicMock()
+    mock_client.filter_log_events.side_effect = [
+        {"events": [], "nextToken": "t1"},
+        {"events": [{"message": "ERROR 1", "timestamp": 1}], "nextToken": "t2"},
+        {
+            "events": [
+                {"message": "ERROR 2", "timestamp": 2},
+                {"message": "ERROR 3", "timestamp": 3},
+            ]
+        },
+    ]
+    with patch(
+        "integrations.cloudwatch.tools.cloudwatch_logs_tool.tool.make_boto3_client",
+        return_value=mock_client,
+    ):
+        result = get_cloudwatch_logs(log_group="/my/group", filter_pattern="ERROR", limit=2)
+    assert result["found"] is True
+    assert result["error_logs"] == ["ERROR 2", "ERROR 3"]
+    assert result["latest_error"] == "ERROR 3"
