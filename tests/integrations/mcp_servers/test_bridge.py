@@ -292,8 +292,13 @@ _WINDOW = {
         ("#/properties/incident", _WINDOW),
         ("#/properties/history/items", _WINDOW),
         ("#/properties/windows/anyOf/0", _WINDOW),
-        # Not an array index: left unresolved rather than raising.
+        # RFC 6901 section 6: the fragment is percent-decoded before splitting.
+        ("#/properties%2Fincident", _WINDOW),
+        ("#%2Fproperties%2Fincident", _WINDOW),
+        ("#/properties/from~1to", _WINDOW),
+        # Not array indexes int() accepts: left unresolved rather than raising.
         ("#/properties/windows/anyOf/\u00b2", {}),
+        ("#/properties/windows/anyOf/" + "0" * 4301, {}),
     ],
 )
 def test_an_argument_referencing_another_argument_keeps_its_schema(
@@ -307,6 +312,7 @@ def test_an_argument_referencing_another_argument_keeps_its_schema(
             "incident": _WINDOW,
             "history": {"type": "array", "items": _WINDOW},
             "windows": {"anyOf": [_WINDOW]},
+            "from/to": _WINDOW,
             "baseline": {"$ref": ref},
         },
         "required": ["incident", "baseline"],

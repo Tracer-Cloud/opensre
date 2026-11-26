@@ -42,6 +42,8 @@ _SCHEMA_KEYS = frozenset(
 _SCHEMA_LIST_KEYS = frozenset({"anyOf", "oneOf", "allOf", "prefixItems"})
 #: Recursive models cannot be fully inlined; past this depth a reference becomes ``{}``.
 _MAX_REF_DEPTH = 8
+#: Longest array-index token resolved; ``int`` refuses very long digit strings.
+_MAX_INDEX_DIGITS = 9
 #: Upper bound on schema nodes produced while inlining one tool's arguments.
 _MAX_INLINED_NODES = 5_000
 
@@ -90,16 +92,26 @@ class _Inliner:
         return {**resolved, **result}
 
 
+def _is_index(token: str) -> bool:
+    """Whether ``token`` is a list index ``int`` can parse (ASCII digits, bounded length)."""
+    return token.isascii() and token.isdecimal() and len(token) <= _MAX_INDEX_DIGITS
+
+
 def _resolve_pointer(root: Mapping[str, Any], ref: str) -> Any | None:
-    """The node a local ``#/...`` JSON pointer (RFC 6901) names in ``root``, or ``None``."""
-    if not ref.startswith("#/"):
+    """The node a local ``#/...`` JSON pointer (RFC 6901) names in ``root``, or ``None``.
+
+    The fragment is percent-decoded as a whole before it is split (RFC 6901
+    section 6), so ``%2F`` separates tokens while ``~1`` stays a ``/`` in a key.
+    """
+    fragment = unquote(ref)
+    if not fragment.startswith("#/"):
         return None
     node: Any = root
-    for token in ref[2:].split("/"):
-        key = unquote(token).replace("~1", "/").replace("~0", "~")
+    for token in fragment[2:].split("/"):
+        key = token.replace("~1", "/").replace("~0", "~")
         if isinstance(node, Mapping) and key in node:
             node = node[key]
-        elif isinstance(node, list) and key.isascii() and key.isdecimal() and int(key) < len(node):
+        elif isinstance(node, list) and _is_index(key) and int(key) < len(node):
             node = node[int(key)]
         else:
             return None
