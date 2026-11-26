@@ -580,7 +580,20 @@ def _commit_run_history(
 UNGROUPED_SECTION_NAME = "ungrouped"
 # GitHub's job-log download prefixes every line with its ISO-8601 UTC time,
 # and the file opens with a byte-order mark.
-_LOG_LINE_PREFIX = re.compile(r"^\ufeff?(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z )?")
+_LOG_TIMESTAMP = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z "
+_LOG_LINE_PREFIX = re.compile(rf"^\ufeff?(?:{_LOG_TIMESTAMP})?")
+_TIMESTAMPED_LOG = re.compile(rf"^\ufeff?{_LOG_TIMESTAMP}")
+
+
+def _is_runner_log(log_text: str) -> bool:
+    """True for a log as GitHub's job-log download serves it, timestamp on every line.
+
+    Such a log opens with several ``##[group]`` blocks under "Set up job" and
+    actions add nested groups of their own, so a group's position is not a
+    step number.
+    """
+    first = next((line for line in log_text.splitlines() if line.strip()), "")
+    return _TIMESTAMPED_LOG.match(first) is not None
 
 
 def _append_log_section(sections: list[dict[str, str]], name: str, lines: list[str]) -> None:
@@ -645,7 +658,12 @@ def extract_step_log(
                 break
 
     group_count = sum(1 for s in sections if s.get("name") != UNGROUPED_SECTION_NAME)
-    if selected is None and step_number is not None and 1 <= step_number <= group_count:
+    if (
+        selected is None
+        and step_number is not None
+        and 1 <= step_number <= group_count
+        and not _is_runner_log(log_text)
+    ):
         group_counter = 0
         for i, section in enumerate(sections):
             if section.get("name") != UNGROUPED_SECTION_NAME:

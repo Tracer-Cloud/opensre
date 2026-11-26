@@ -674,31 +674,57 @@ final runner summary
     assert "runner setup before groups" not in result["log_text"]
 
 
+# A GitHub job-log download, trimmed: a BOM, a timestamp on every line, four
+# "Set up job" groups, and checkout's nested groups before the failing step.
+_RUNNER_LOG = (
+    "\ufeff2026-11-26T08:51:19.5229241Z Current runner version: '2.338.2'\n"
+    "2026-11-26T08:51:19.5263142Z ##[group]Runner Image Provisioner\n"
+    "2026-11-26T08:51:19.5264496Z Hosted Compute Agent\n"
+    "2026-11-26T08:51:19.5272686Z ##[endgroup]\n"
+    "2026-11-26T08:51:19.5275047Z ##[group]Operating System\n"
+    "2026-11-26T08:51:19.5276012Z Ubuntu\n"
+    "2026-11-26T08:51:19.5279109Z ##[endgroup]\n"
+    "2026-11-26T08:51:19.5280264Z ##[group]Runner Image\n"
+    "2026-11-26T08:51:19.5281436Z Image: ubuntu-24.04\n"
+    "2026-11-26T08:51:19.5290029Z ##[endgroup]\n"
+    "2026-11-26T08:51:19.5293117Z ##[group]GITHUB_TOKEN Permissions\n"
+    "2026-11-26T08:51:19.5294375Z Contents: read\n"
+    "2026-11-26T08:51:19.5303193Z ##[endgroup]\n"
+    "2026-11-26T08:51:20.0170375Z Complete job name: test\n"
+    "2026-11-26T08:51:20.1264230Z ##[group]Run actions/checkout@v5\n"
+    "2026-11-26T08:51:20.1265135Z with:\n"
+    "2026-11-26T08:51:20.1283942Z ##[endgroup]\n"
+    "2026-11-26T08:51:20.4631166Z Syncing repository: o/r\n"
+    "2026-11-26T08:51:20.4633655Z ##[group]Getting Git version info\n"
+    "2026-11-26T08:51:20.4651244Z git version 2.56.1\n"
+    "2026-11-26T08:51:20.4678060Z ##[endgroup]\n"
+    "2026-11-26T08:51:25.0477124Z ##[group]Run pytest -q\n"
+    "2026-11-26T08:51:25.0477828Z pytest -q\n"
+    "2026-11-26T08:51:25.0527360Z ##[endgroup]\n"
+    "2026-11-26T08:51:29.0000000Z FAILED tests/test_api.py::test_login\n"
+    "2026-11-26T08:51:29.1000000Z ##[error]Process completed with exit code 1.\n"
+    "2026-11-26T08:51:29.9356862Z Post job cleanup.\n"
+    "2026-11-26T08:51:30.1660570Z Cleaning up orphan processes\n"
+)
+
+
 def test_extract_step_log_finds_steps_in_timestamped_job_log() -> None:
-    """GitHub's job-log download stamps every line with its time and opens with a BOM."""
-    log = (
-        "\ufeff2026-11-20T10:00:00.1000000Z ##[group]Run actions/checkout@v4\n"
-        "2026-11-20T10:00:00.1500000Z with:\n"
-        "2026-11-20T10:00:00.2000000Z ##[endgroup]\n"
-        "2026-11-20T10:00:01.0000000Z Syncing repository: o/r\n"
-        "2026-11-20T10:00:05.0000000Z ##[group]Run pytest -q\n"
-        "2026-11-20T10:00:05.1000000Z pytest -q\n"
-        "2026-11-20T10:00:05.2000000Z ##[endgroup]\n"
-        "2026-11-20T10:00:09.0000000Z FAILED tests/test_api.py::test_login\n"
-        "2026-11-20T10:00:09.1000000Z ##[error]Process completed with exit code 1.\n"
-        "2026-11-20T10:00:10.0000000Z ##[group]Run actions/checkout@v4 post\n"
-        "2026-11-20T10:00:10.1000000Z Post job cleanup.\n"
-        "2026-11-20T10:00:10.2000000Z ##[endgroup]\n"
-    )
+    result = extract_step_log(_RUNNER_LOG, step_name="Run pytest")
 
-    by_name = extract_step_log(log, step_name="Run pytest")
-    by_number = extract_step_log(log, step_number=2)
+    assert result["match_strategy"] == "step_name"
+    assert result["step_name"] == "Run pytest -q"
+    assert "FAILED tests/test_api.py::test_login" in result["log_text"]
+    assert "Syncing repository" not in result["log_text"]
+    assert "Hosted Compute Agent" not in result["log_text"]
 
-    for result in (by_name, by_number):
-        assert result["step_name"] == "Run pytest -q"
-        assert "FAILED tests/test_api.py::test_login" in result["log_text"]
-        assert "Syncing repository" not in result["log_text"]
-        assert "Post job cleanup." not in result["log_text"]
+
+def test_extract_step_log_step_number_does_not_count_runner_log_groups() -> None:
+    """Step 2 is checkout; group 2 is the "Operating System" block of Set up job."""
+    result = extract_step_log(_RUNNER_LOG, step_number=2)
+
+    assert result["match_strategy"] == "full-log"
+    assert result["step_name"] == "full-log"
+    assert "FAILED tests/test_api.py::test_login" in result["log_text"]
 
 
 def test_extract_step_log_invalid_step_number() -> None:
