@@ -206,6 +206,8 @@ def _hunks(lines: list[str], index: int) -> tuple[tuple[Hunk, ...], int]:
         body: list[tuple[str, str]] = []
         at_end_of_file = False
         start = index
+        #: Unprefixed blank lines since the last prefixed one.
+        unprefixed_blanks = 0
         while index < len(lines):
             line = lines[index]
             if line.rstrip() == _END_OF_FILE:
@@ -216,15 +218,22 @@ def _hunks(lines: list[str], index: int) -> tuple[tuple[Hunk, ...], int]:
                 break
             if line[:1] in (ADDED, REMOVED, CONTEXT):
                 body.append((line[0], line[1:]))
+                unprefixed_blanks = 0
             elif not line:
                 # A blank context line often arrives without its leading space.
                 body.append((CONTEXT, ""))
+                unprefixed_blanks += 1
             else:
                 raise PatchFormatError(
                     f"patch line {index + 2}: a hunk line starts with ' ', '-' or '+', "
                     f"got {line!r}."
                 )
             index += 1
+        if unprefixed_blanks and not at_end_of_file:
+            # Blank lines before the next section separate it from this hunk.
+            # As context they would move the hunk to the first blank line of
+            # the file, and a hunk of only added lines would then never append.
+            del body[-unprefixed_blanks:]
         if not body:
             raise PatchFormatError(f"patch line {start + 2}: the hunk has no lines.")
         hunks.append(Hunk(tuple(headers), tuple(body), at_end_of_file))

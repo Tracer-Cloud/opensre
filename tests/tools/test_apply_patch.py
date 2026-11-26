@@ -150,6 +150,29 @@ def test_hunks_with_only_added_lines_go_after_their_header_or_to_the_end(tmp_pat
     assert (tmp_path / "app.py").read_text() == "def a():\n    # first\n    return 1\n# last\n"
 
 
+def test_a_blank_line_after_a_hunk_does_not_move_it_to_the_first_blank_line(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "app.py", "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    return 2\n")
+
+    apply_patch(
+        input=_patch(
+            "*** Update File: app.py",
+            "@@",
+            "+# last",
+            "",
+            "*** Update File: app.py",
+            "@@ def b():",
+            "+    # first in b",
+            "",
+        )
+    )
+
+    assert (tmp_path / "app.py").read_text() == (
+        "import os\n\ndef a():\n    return 1\n\n\ndef b():\n    # first in b\n    return 2\n# last\n"
+    )
+
+
 @pytest.mark.parametrize(
     ("before", "hunk", "after"),
     [
