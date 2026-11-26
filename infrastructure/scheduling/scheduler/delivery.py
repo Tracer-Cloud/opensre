@@ -25,7 +25,14 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask
 
 _console = Console()
 
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
+# Match only known inline HTML elements. A bare ``<[^>]+>`` also deletes report
+# text between comparison operators ("p99 < 200ms ... > 5%"), Markdown
+# autolinks (``<https://...>``) and placeholders such as ``<host>``.
+_HTML_TAG_RE = re.compile(
+    r"</?(?:a|b|strong|i|em|u|ins|s|strike|del|code|pre|br|p|span|blockquote|tg-spoiler)"
+    r"""(?:\s+[\w-]+=(?:"[^"<>\n]*"|'[^'<>\n]*'))*\s*/?>""",
+    re.IGNORECASE,
+)
 
 
 def strip_html(text: str) -> str:
