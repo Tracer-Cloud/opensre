@@ -119,6 +119,8 @@ class AgentLLMResponse:
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
     #: Provider-reported usage for this call; ``None`` when the provider sent none.
+    #: ``input_tokens`` is the whole prompt, including the cache read and cache
+    #: creation tokens counted above.
     input_tokens: int | None = None
     output_tokens: int | None = None
     #: The part of ``output_tokens`` spent on hidden reasoning, when reported.
