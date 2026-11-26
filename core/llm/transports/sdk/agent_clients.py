@@ -467,6 +467,11 @@ class AnthropicAgentClient:
             message_markers[ANTHROPIC_THINKING_BINDING_KEY] = thinking_binding
 
         cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+        if input_tokens is not None:
+            # Anthropic's ``input_tokens`` counts only the prompt after the last
+            # cache breakpoint. The response reports the whole prompt, with the
+            # cached part inside it, as OpenAI's ``prompt_tokens`` does.
+            input_tokens += (cache_read or 0) + (cache_write or 0)
         return AgentLLMResponse(
             content="".join(text_parts),
             tool_calls=tool_calls,

@@ -160,6 +160,33 @@ def test_invoke_response_carries_cache_tokens() -> None:
     assert response.cache_creation_tokens == 0
 
 
+def test_invoke_input_tokens_include_the_cached_prompt() -> None:
+    """``cache_read_tokens`` is read as the cached part of ``input_tokens``.
+
+    Anthropic counts only the prompt after the last breakpoint as
+    ``input_tokens``; reported as is, the loop would take a 50k-token prompt
+    for 3 tokens and stretch its context budget to the maximum.
+    """
+    # Arrange
+    client, sdk = _client_with_capture()
+    sdk.messages.create.return_value = SimpleNamespace(
+        content=[],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(
+            input_tokens=3,
+            output_tokens=4,
+            cache_read_input_tokens=48_000,
+            cache_creation_input_tokens=1_500,
+        ),
+    )
+
+    # Act
+    response = client.invoke(messages=[{"role": "user", "content": "hi"}])
+
+    # Assert
+    assert (response.input_tokens, response.cache_read_tokens) == (49_503, 48_000)
+
+
 def test_multi_block_content_shares_no_block_dicts_with_the_input() -> None:
     """Every block in the marked copy must be a fresh dict.
 
