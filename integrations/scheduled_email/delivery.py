@@ -44,6 +44,8 @@ class EmailScheduledDelivery:
     A failed destination is retried whole, so the adapter remembers who
     already received each report: when an SMTP server refused only some
     recipients, the retry goes to those alone and nobody gets it twice.
+    The memory lasts only until every recipient has the report, so a later
+    run whose report has the same text is sent again.
     """
 
     def __init__(self) -> None:
@@ -79,12 +81,21 @@ class EmailScheduledDelivery:
                 refused = [] if ok else recipients
             else:
                 ok, error = False, _NO_MAILBOX
-        self._remember(key, [address for address in recipients if address not in refused])
+        if ok:
+            # Every recipient has it: a later run with the same text is a new report.
+            self._forget(key)
+        elif refused:
+            # Only a server that refused some recipients delivered to the rest.
+            self._remember(key, [address for address in recipients if address not in refused])
         return ok, error, ""
 
     def _already_received(self, key: str) -> set[str]:
         with self._lock:
             return set(self._received.get(key, set()))
+
+    def _forget(self, key: str) -> None:
+        with self._lock:
+            self._received.pop(key, None)
 
     def _remember(self, key: str, delivered: list[str]) -> None:
         if not delivered:

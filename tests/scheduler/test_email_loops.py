@@ -205,9 +205,41 @@ def test_a_retry_after_a_partly_refused_send_goes_only_to_the_refused(
     # Act: the executor retries the failed destination with the same report.
     first = delivery.deliver(task, _REPORT)
     second = delivery.deliver(task, _REPORT)
-    third = delivery.deliver(task, _REPORT)
 
-    # Assert: ana is never sent twice; once ben has it, a retry sends nothing.
+    # Assert: ana is never sent the same delivery twice.
     assert first[0] is False and "ben@example.com" in first[1]
     assert attempts == [["ana@example.com", "ben@example.com"], ["ben@example.com"]]
-    assert second[0] is True and third[0] is True
+    assert second[0] is True
+
+
+def test_a_later_run_or_a_send_that_reached_nobody_is_never_skipped_as_received(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the first send fails before reaching anyone (the real sender,
+    # which stops at the missing from_address); every send after that succeeds.
+    from integrations.smtp.delivery import send_smtp_email
+
+    monkeypatch.setattr(
+        "integrations.member_integrations.load_member_records",
+        lambda: [{"service": "smtp", "name": "rec_1", "credentials": {}}],
+    )
+    results: list[tuple[bool, str, list[str]]] = []
+
+    def send(**kwargs: Any) -> tuple[bool, str, list[str]]:
+        result = send_smtp_email(**kwargs) if not results else (True, "", [])
+        results.append(result)
+        return result
+
+    monkeypatch.setattr("integrations.scheduled_email.delivery.send_smtp_email", send)
+    delivery = EmailScheduledDelivery()
+    task = _email_task("smtp:rec_1")
+
+    # Act: the fan-out retries the failed send; a later run builds the same report.
+    failed = delivery.deliver(task, _REPORT)
+    retried = delivery.deliver(task, _REPORT)
+    next_run = delivery.deliver(task, _REPORT)
+
+    # Assert: each call really sent; none was reported delivered without a send.
+    assert failed[0] is False and "from_address" in failed[1]
+    assert retried[0] is True and next_run[0] is True
+    assert results == [(False, "Missing from_address", []), (True, "", []), (True, "", [])]
