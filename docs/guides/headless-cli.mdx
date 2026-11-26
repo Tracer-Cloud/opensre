@@ -181,6 +181,18 @@ An unknown tool name is rejected before the agent starts. The authorization is
 not saved and applies only to that process. The root `--yes` (`-y`) option does
 not authorize agent tools.
 
+Reading a web page contacts an external service, so it needs its own flag:
+
+```bash
+opensre ask "what changed in https://example.com/releases/2.4?" \
+  --allowed-tool web_fetch
+```
+
+`web_fetch` reads public `http://` and `https://` pages only. It refuses
+`localhost`, private-network and cloud-metadata addresses even when authorized;
+see [Fetching web pages](/getting-started/interactive-shell-commands#fetching-web-pages)
+for everything it refuses.
+
 `--dangerously-bypass-approvals` authorizes every approval-gated tool for that
 invocation. Use it only in a trusted environment where the prompt and connected
 integrations are controlled:

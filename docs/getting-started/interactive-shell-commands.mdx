@@ -34,6 +34,7 @@ terminals, the highlighted command's description appears below the list.
 | Plain language (`verify datadog`) | Routed by the action agent to slash commands, tool calls, or doc-grounded answers |
 | Pasted alert JSON/text | The agent triages it in chat, calling integration tools as needed |
 | Shell one-liner (`kubectl get pods`) | Executed through shell policy when the action agent selects a shell action |
+| A question about a public web page (`what changed in https://example.com/releases`) | The agent reads the page with `web_fetch` and answers from its text |
 
 ### Shell command syntax
 
@@ -82,6 +83,47 @@ a patch that can create, edit, rename and delete several files at once.
   listed above, or anywhere under `.git`.
 
 Use git to review or undo what a patch changed (`git diff`, `git restore`).
+
+### Fetching web pages
+
+When an answer needs a page you linked, or a documentation, release-notes or
+changelog page, the agent reads it with the `web_fetch` tool instead of `curl`.
+It sends one `GET` request and returns the page as text: HTML is reduced to its
+title, headings, paragraphs, lists, code blocks and link targets; plain text,
+Markdown, JSON and XML come back as they are.
+
+**What it fetches:** `http://` and `https://` URLs on the public internet.
+
+**What it refuses:**
+
+- addresses that are not public: `localhost` and other loopback addresses,
+  private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`),
+  link-local addresses including the cloud metadata endpoint
+  `169.254.169.254`, carrier-grade NAT, multicast and reserved ranges, and the
+  IPv6 forms of all of these. The check uses the addresses the host name
+  resolves to, the connection is made to one of those addresses, and every
+  redirect (at most five) is checked the same way;
+- URLs that carry a username or password, and any scheme other than `http` and
+  `https`;
+- responses that are not text, such as PDFs, images and archives;
+- pages that take longer than 20 seconds. A response larger than 2 MB is cut at
+  2 MB, and a long page is cut to fit the model's context.
+
+It sends no cookies or credentials and does not run JavaScript, so a page that
+needs a login or is drawn in the browser comes back empty or as its sign-in
+page. It also ignores `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` and connects
+directly: on a network that reaches the internet only through a proxy, every
+fetch fails. `SSL_CERT_FILE` and `SSL_CERT_DIR` still apply. To reach a service
+on your machine or a private network, ask for a shell command such as `curl`
+instead.
+
+**When it asks:** not at the default `/auto high`. At `/auto med`, `low` or
+`off` the agent asks before each fetch; pick **Yes, allow for this session** to
+stop asking about `web_fetch` until `/new` or `/resume`.
+
+The page text is sent to your configured LLM provider. It is passed to the
+model as untrusted data to read, not as instructions, and known token formats
+are redacted from it first.
 
 ### Python execution
 
