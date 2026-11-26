@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from config.constants.scheduler import SCHEDULER_SCHEDULE_CHANGED_AT_PARAM
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
-from infrastructure.scheduling.scheduler.types import ScheduledTask
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 
 def obsolete_schedule_tick(
@@ -26,6 +27,15 @@ def obsolete_schedule_tick(
             return False
         if fired_at <= edited_at:
             return True
+        if task.kind is TaskKind.WORK_ITEM_REMINDER:
+            run_at = task.params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM, "").strip()
+            if run_at:
+                reminder_at = datetime.fromisoformat(run_at)
+                # Automatic fire-time keys keep whole UTC seconds.
+                return (
+                    reminder_at.tzinfo is None
+                    or reminder_at.astimezone(UTC).replace(microsecond=0) != fired_at
+                )
         trigger = build_cron_trigger(task.cron, task.timezone)
         next_fire = trigger.get_next_fire_time(None, fired_at)
         return next_fire is None or next_fire.astimezone(UTC) != fired_at.astimezone(UTC)
