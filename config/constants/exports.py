@@ -369,6 +369,7 @@ EXPORTS: dict[str, str] = {
     "AZURE_OPENAI_API_KEY_ENV": "llm",
     "OPENAI_API_KEY_ENV": "llm",
     "OPENAI_BASE_URL_ENV": "llm",
+    "STRAITLY_API_KEY_ENV": "llm",
     "AZURE_OPENAI_API_VERSION_ENV": "llm",
     "AZURE_OPENAI_BASE_URL_ENV": "llm",
     "LLM_AUTH_METHOD_ENV": "llm",
