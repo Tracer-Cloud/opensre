@@ -80,7 +80,14 @@ class LokiMixin:
                 stream_labels = stream.get("stream", {})
                 values = stream.get("values", [])
 
-                for timestamp_ns, log_line in values:
+                for entry in values:
+                    # An entry is ``[<ns timestamp>, <line>]``; Loki 3.x appends
+                    # the entry's structured metadata as a third element, which
+                    # an unpack of exactly two rejects — failing the whole query
+                    # ("too many values to unpack") and returning no logs at all.
+                    if not isinstance(entry, (list, tuple)) or len(entry) < 2:
+                        continue
+                    timestamp_ns, log_line = entry[0], entry[1]
                     if len(logs) >= _MAX_LOKI_LOG_LINES:
                         truncated = True
                         break

@@ -111,6 +111,33 @@ class TestQueryLokiSuccess:
         assert len(result["logs"]) == 3
         assert result["truncated"] is False
 
+    def test_parses_loki_3_entries_that_carry_structured_metadata(self) -> None:
+        # Loki 3.x appends an entry's structured metadata as a third element:
+        # ``[<ns>, <line>, {...}]``. Unpacking exactly two used to reject the
+        # whole response ("too many values to unpack") and return no logs.
+        host = _FakeLokiHost()
+        host.make_request_mock.return_value = {
+            "status": "success",
+            "data": {
+                "resultType": "streams",
+                "result": [
+                    {
+                        "stream": {"level": "error"},
+                        "values": [
+                            ["1700000000000000000", "boom", {"trace_id": "abc"}],
+                            ["1700000000000000001", "crash", {}],
+                        ],
+                    }
+                ],
+            },
+        }
+
+        result = host.query_loki(_QUERY)
+
+        assert result["success"] is True
+        assert [row["message"] for row in result["logs"]] == ["boom", "crash"]
+        assert result["logs"][0]["timestamp"] == "1700000000000000000"
+
     def test_each_log_row_carries_timestamp_message_and_labels(self) -> None:
         host = _FakeLokiHost()
         host.make_request_mock.return_value = _two_stream_response()

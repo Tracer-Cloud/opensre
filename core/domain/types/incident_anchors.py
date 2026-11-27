@@ -27,7 +27,7 @@ SOURCE_FIRED_AT = "alert.firedAt"
 SOURCE_ACTIVATED_AT = "alert.activatedAt"
 
 
-def parse_iso8601(value: str) -> datetime | None:
+def parse_iso8601(value: object) -> datetime | None:
     """Parse ISO-8601 timestamps. Naive input is treated as UTC.
 
     Returns ``None`` for empty or malformed input rather than raising.
@@ -37,7 +37,9 @@ def parse_iso8601(value: str) -> datetime | None:
     Accepts the trailing ``Z`` shorthand that ``datetime.fromisoformat``
     rejects on Python < 3.11 and that some vendor payloads use anyway.
     """
-    text = (value or "").strip()
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
     if not text:
         return None
     if text.endswith("Z"):
