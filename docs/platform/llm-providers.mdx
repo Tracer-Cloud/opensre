@@ -37,6 +37,7 @@ Each provider has two model roles:
 | OpenAI API key | `LLM_PROVIDER=openai`<br />`OPENAI_API_KEY` | Reasoning: `gpt-5.4-mini`<br />Toolcall: `gpt-5.4-mini` |
 | OpenRouter | `LLM_PROVIDER=openrouter`<br />`OPENROUTER_API_KEY` | Reasoning: `openrouter/auto`<br />Toolcall: `openrouter/auto` |
 | TrustedRouter | `LLM_PROVIDER=trustedrouter`<br />`TRUSTEDROUTER_API_KEY` | Reasoning: `trustedrouter/auto`<br />Toolcall: `trustedrouter/auto` |
+| Straitly | `LLM_PROVIDER=straitly`<br />`STRAITLY_API_KEY` | Reasoning: `claude-sonnet-5-5`<br />Toolcall: `deepseek/deepseek-v4-1-flash-1017` |
 | DeepSeek | `LLM_PROVIDER=deepseek`<br />`DEEPSEEK_API_KEY` | Reasoning: `deepseek-v4-pro`<br />Toolcall: `deepseek-v4-flash` |
 | Google Gemini API key | `LLM_PROVIDER=gemini`<br />`GEMINI_API_KEY` | Reasoning: `gemini-3.1-pro-preview`<br />Toolcall: `gemini-3.1-flash-lite` |
 | NVIDIA NIM | `LLM_PROVIDER=nvidia`<br />`NVIDIA_API_KEY` | Reasoning: `meta/llama-3.1-405b-instruct`<br />Toolcall: `meta/llama-3.1-8b-instruct` |
@@ -99,7 +100,7 @@ opensre onboard
 Onboarding collects an API key for API providers. Choose ChatGPT subscription
 under **Other LLM provider** to sign in using your browser.
 
-Local provider configuration supports custom model IDs for OpenAI, OpenRouter, TrustedRouter, Gemini, NVIDIA, Bedrock, local CLIs, Ollama, and DeepSeek. When using OpenSRE hosted billing, set `OPENSRE_LLM_CONNECTION=local` alongside
+Local provider configuration supports custom model IDs for OpenAI, OpenRouter, TrustedRouter, Straitly, Gemini, NVIDIA, Bedrock, local CLIs, Ollama, and DeepSeek. When using OpenSRE hosted billing, set `OPENSRE_LLM_CONNECTION=local` alongside
 your provider settings to select your own billing instead:
 
 ```bash
@@ -156,6 +157,7 @@ request; OpenSRE still handles schema cleanup, retries, and message replay.
 | `bedrock` | boto3 / AnthropicBedrock / Converse | `bedrock/<model-id>` | Opt-in; uses AWS credentials |
 | `openrouter` | OpenAI-compatible SDK | `openai/<model>` + OpenRouter base URL | Opt-in |
 | `trustedrouter` | OpenAI-compatible SDK | `openai/<model>` + TrustedRouter base URL | Opt-in |
+| `straitly` | OpenAI-compatible SDK | `openai/<model>` + Straitly base URL | Opt-in |
 | `deepseek` | OpenAI-compatible SDK | `openai/<model>` + DeepSeek base URL | Opt-in |
 | `gemini` | OpenAI-compatible SDK | `openai/<model>` + Gemini base URL | Opt-in |
 | `nvidia` | OpenAI-compatible SDK | `openai/<model>` + NVIDIA NIM base URL | Opt-in |
@@ -543,6 +545,28 @@ fails over if it is down.
 
 The full catalog is at
 [api.trustedrouter.com/v1/models](https://api.trustedrouter.com/v1/models).
+
+</Accordion>
+
+<Accordion title="Straitly">
+
+```bash
+export LLM_PROVIDER=straitly
+export STRAITLY_API_KEY=sk-...
+# Optional override (single value applies to all roles if set):
+export STRAITLY_MODEL=claude-sonnet-5-5
+# Or per role:
+export STRAITLY_REASONING_MODEL=claude-sonnet-5-5
+export STRAITLY_TOOLCALL_MODEL=deepseek/deepseek-v4-1-flash-1017
+```
+
+OpenAI-compatible AI gateway: one API key for 100+ models including Claude,
+GPT, Gemini, Grok and DeepSeek. Base URL: `https://api.straitly.ai/v1`; keys at
+[straitly.ai/app/keys](https://straitly.ai/app/keys).
+
+Use model ids exactly as listed at
+[api.straitly.ai/v1/models](https://api.straitly.ai/v1/models) (for example
+`claude-sonnet-5-5` or `deepseek/deepseek-v4-1-flash-1017`).
 
 </Accordion>
 

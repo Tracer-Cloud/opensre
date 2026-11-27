@@ -21,6 +21,7 @@ from config.constants.llm import (
     NVIDIA_API_KEY_ENV,
     OPENAI_API_KEY_ENV,
     OPENROUTER_API_KEY_ENV,
+    STRAITLY_API_KEY_ENV,
     TRUSTEDROUTER_API_KEY_ENV,
 )
 from config.llm_auth.subscriptions import SUBSCRIPTION_PROVIDERS
@@ -123,6 +124,17 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         legacy_model_env="TRUSTEDROUTER_MODEL",
         toolcall_model_env="TRUSTEDROUTER_TOOLCALL_MODEL",
         classification_model_env="TRUSTEDROUTER_CLASSIFICATION_MODEL",
+        allow_custom_models=True,
+    ),
+    ProviderSpec(
+        value="straitly",
+        label="Straitly",
+        credential_kind=CredentialKind.API_KEY,
+        api_key_env=STRAITLY_API_KEY_ENV,
+        model_env="STRAITLY_REASONING_MODEL",
+        legacy_model_env="STRAITLY_MODEL",
+        toolcall_model_env="STRAITLY_TOOLCALL_MODEL",
+        classification_model_env="STRAITLY_CLASSIFICATION_MODEL",
         allow_custom_models=True,
     ),
     ProviderSpec(

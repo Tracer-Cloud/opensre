@@ -93,6 +93,7 @@ ECS, Vercel, or another ASGI-capable host.
     - `OPENAI_API_KEY` when `LLM_PROVIDER=openai`
     - `OPENROUTER_API_KEY` when `LLM_PROVIDER=openrouter`
     - `TRUSTEDROUTER_API_KEY` when `LLM_PROVIDER=trustedrouter`
+    - `STRAITLY_API_KEY` when `LLM_PROVIDER=straitly`
     - `GEMINI_API_KEY` when `LLM_PROVIDER=gemini`
 3. Set `DATABASE_URL` when the gateway needs shared Postgres-backed state. It
    is required for Slack Events API unless you deliberately use the

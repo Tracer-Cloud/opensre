@@ -47,6 +47,7 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 TRUSTEDROUTER_BASE_URL = "https://api.trustedrouter.com/v1"
+STRAITLY_BASE_URL = "https://api.straitly.ai/v1"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -83,6 +84,14 @@ PROVIDER_MODEL_DEFAULTS: dict[str, ProviderModelDefaults] = {
         classification="trustedrouter/auto",
         toolcall="trustedrouter/auto",
         base_url=TRUSTEDROUTER_BASE_URL,
+    ),
+    "straitly": ProviderModelDefaults(
+        provider="straitly",
+        settings_key="straitly",
+        reasoning="claude-sonnet-5-5",
+        classification="deepseek/deepseek-v4-1-flash-1017",
+        toolcall="deepseek/deepseek-v4-1-flash-1017",
+        base_url=STRAITLY_BASE_URL,
     ),
     "deepseek": ProviderModelDefaults(
         provider="deepseek",
@@ -203,6 +212,10 @@ TRUSTEDROUTER_REASONING_MODEL = _defaults("trustedrouter").reasoning
 TRUSTEDROUTER_CLASSIFICATION_MODEL = _defaults("trustedrouter").classification
 TRUSTEDROUTER_TOOLCALL_MODEL = _defaults("trustedrouter").toolcall
 
+STRAITLY_REASONING_MODEL = _defaults("straitly").reasoning
+STRAITLY_CLASSIFICATION_MODEL = _defaults("straitly").classification
+STRAITLY_TOOLCALL_MODEL = _defaults("straitly").toolcall
+
 DEEPSEEK_REASONING_MODEL = _defaults("deepseek").reasoning
 DEEPSEEK_CLASSIFICATION_MODEL = _defaults("deepseek").classification
 DEEPSEEK_TOOLCALL_MODEL = _defaults("deepseek").toolcall
@@ -249,6 +262,7 @@ ANTHROPIC_LLM_CONFIG = model_config_for("anthropic")
 OPENAI_LLM_CONFIG = model_config_for("openai")
 OPENROUTER_LLM_CONFIG = model_config_for("openrouter")
 TRUSTEDROUTER_LLM_CONFIG = model_config_for("trustedrouter")
+STRAITLY_LLM_CONFIG = model_config_for("straitly")
 DEEPSEEK_LLM_CONFIG = model_config_for("deepseek")
 GROQ_LLM_CONFIG = model_config_for("groq")
 AZURE_OPENAI_LLM_CONFIG = model_config_for("azure-openai")
@@ -325,6 +339,11 @@ __all__ = [
     "OPENROUTER_TOOLCALL_MODEL",
     "PROVIDER_MODEL_DEFAULTS",
     "ProviderModelDefaults",
+    "STRAITLY_BASE_URL",
+    "STRAITLY_CLASSIFICATION_MODEL",
+    "STRAITLY_LLM_CONFIG",
+    "STRAITLY_REASONING_MODEL",
+    "STRAITLY_TOOLCALL_MODEL",
     "TRUSTEDROUTER_BASE_URL",
     "TRUSTEDROUTER_CLASSIFICATION_MODEL",
     "TRUSTEDROUTER_LLM_CONFIG",

@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Final
 
-from config.constants.llm import CUSTOM_OPENAI_API_KEY_ENV, TRUSTEDROUTER_API_KEY_ENV
+from config.constants.llm import (
+    CUSTOM_OPENAI_API_KEY_ENV,
+    STRAITLY_API_KEY_ENV,
+    TRUSTEDROUTER_API_KEY_ENV,
+)
 from config.llm_models import (
     CUSTOM_OPENAI_LLM_CONFIG,
     DEEPSEEK_BASE_URL,
@@ -21,6 +25,8 @@ from config.llm_models import (
     OLLAMA_LLM_CONFIG,
     OPENROUTER_BASE_URL,
     OPENROUTER_LLM_CONFIG,
+    STRAITLY_BASE_URL,
+    STRAITLY_LLM_CONFIG,
     TRUSTEDROUTER_BASE_URL,
     TRUSTEDROUTER_LLM_CONFIG,
     LLMModelConfig,
@@ -65,6 +71,12 @@ OPENAI_COMPATIBLE_PROVIDERS: Final[dict[str, OpenAICompatProvider]] = {
         TRUSTEDROUTER_BASE_URL,
         TRUSTEDROUTER_API_KEY_ENV,
         "trustedrouter",
+    ),
+    "straitly": OpenAICompatProvider(
+        STRAITLY_LLM_CONFIG,
+        STRAITLY_BASE_URL,
+        STRAITLY_API_KEY_ENV,
+        "straitly",
     ),
     "deepseek": OpenAICompatProvider(
         DEEPSEEK_LLM_CONFIG,

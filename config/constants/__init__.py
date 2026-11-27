@@ -887,6 +887,9 @@ if TYPE_CHECKING:
     from config.constants.llm import (
         REASONING_EFFORT_MODEL_PREFIXES as REASONING_EFFORT_MODEL_PREFIXES,
     )
+    from config.constants.llm import (
+        STRAITLY_API_KEY_ENV as STRAITLY_API_KEY_ENV,
+    )
     from config.constants.mariadb import (
         MARIADB_DATABASE_ENV as MARIADB_DATABASE_ENV,
     )

@@ -41,6 +41,7 @@ def _get_provider_base_url(provider_value: str) -> str | None:
     base_urls = {
         "openrouter": llm_models.OPENROUTER_BASE_URL,
         "trustedrouter": llm_models.TRUSTEDROUTER_BASE_URL,
+        "straitly": llm_models.STRAITLY_BASE_URL,
         "deepseek": llm_models.DEEPSEEK_BASE_URL,
         "gemini": llm_models.GEMINI_BASE_URL,
         "nvidia": llm_models.NVIDIA_BASE_URL,
