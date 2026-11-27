@@ -38,6 +38,7 @@ _API_KEY_SETUP_URLS: dict[str, str] = {
     "openai": "https://platform.openai.com/api-keys",
     "openrouter": "https://openrouter.ai/keys",
     "trustedrouter": "https://trustedrouter.com/keys",
+    "straitly": "https://straitly.ai/app/keys",
     "deepseek": "https://platform.deepseek.com/api_keys",
     "gemini": "https://aistudio.google.com/app/apikey",
     "nvidia": "https://build.nvidia.com/",

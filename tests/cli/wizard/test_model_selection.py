@@ -129,6 +129,13 @@ class TestGpt56CatalogPresence:
         assert values
         assert all("/" in value for value in values), values
 
+    def test_straitly_picker_offers_its_tier_defaults(self) -> None:
+        option = PROVIDER_BY_VALUE["straitly"]
+        values = [model.value for model in option.models]
+        assert option.default_model == values[0] == "claude-sonnet-5-5"
+        assert "deepseek/deepseek-v4-1-flash-1017" in values
+        assert len(values) == len(set(values))
+
     def test_codex_picker_lists_sol(self) -> None:
         values = {option.value for option in PROVIDER_BY_VALUE["codex"].models}
         assert "gpt-5.6-sol" in values

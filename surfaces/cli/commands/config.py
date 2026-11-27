@@ -47,6 +47,7 @@ def _emit_llm_config() -> None:
         "openai": "OPENAI_REASONING_MODEL",
         "openrouter": "OPENROUTER_REASONING_MODEL",
         "trustedrouter": "TRUSTEDROUTER_REASONING_MODEL",
+        "straitly": "STRAITLY_REASONING_MODEL",
         "deepseek": "DEEPSEEK_REASONING_MODEL",
         "gemini": "GEMINI_REASONING_MODEL",
         "nvidia": "NVIDIA_REASONING_MODEL",

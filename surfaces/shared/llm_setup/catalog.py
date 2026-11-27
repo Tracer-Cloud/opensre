@@ -14,6 +14,7 @@ from config.constants.llm import (
     CUSTOM_ANTHROPIC_BASE_URL_ENV,
     CUSTOM_OPENAI_API_KEY_ENV,
     CUSTOM_OPENAI_BASE_URL_ENV,
+    STRAITLY_API_KEY_ENV,
     TRUSTEDROUTER_API_KEY_ENV,
 )
 from config.llm_auth.provider_catalog import CredentialKind, require_provider_spec
@@ -31,6 +32,8 @@ from config.llm_models import (
     NVIDIA_REASONING_MODEL,
     OPENAI_REASONING_MODEL,
     OPENROUTER_REASONING_MODEL,
+    STRAITLY_REASONING_MODEL,
+    STRAITLY_TOOLCALL_MODEL,
     TRUSTEDROUTER_REASONING_MODEL,
     VERTEX_AI_REASONING_MODEL,
 )
@@ -234,6 +237,20 @@ TRUSTEDROUTER_MODELS = (
     ModelOption(value="google/gemini-3.1-pro", label="Gemini 3.1 Pro (via TrustedRouter)"),
     ModelOption(value="deepseek/deepseek-v4-pro", label="DeepSeek V4 Pro (via TrustedRouter)"),
     ModelOption(value="z-ai/glm-4.7", label="GLM 4.7 (via TrustedRouter)"),
+)
+
+# Source: https://api.straitly.ai/v1/models
+# Straitly takes the model id exactly as listed there; the first two are the
+# reasoning and toolcall/classification defaults.
+STRAITLY_MODELS = (
+    ModelOption(value=STRAITLY_REASONING_MODEL, label="Claude Sonnet 5.5 (via Straitly)"),
+    ModelOption(value=STRAITLY_TOOLCALL_MODEL, label="DeepSeek V4.1 Flash 1017 (via Straitly)"),
+    ModelOption(value="claude-haiku-5-5", label="Claude Haiku 5.5 (via Straitly)"),
+    ModelOption(value="gpt-6.1-sol", label="GPT-6.1 Sol (via Straitly)"),
+    ModelOption(value="gemini-4-neon", label="Gemini 4 Neon (via Straitly)"),
+    ModelOption(value="grok-4.7", label="Grok 4.7 (via Straitly)"),
+    ModelOption(value="moonshotai/kimi-k3", label="Kimi K3 (via Straitly)"),
+    ModelOption(value="qwen/qwen3.8-max", label="Qwen3.8 Max (via Straitly)"),
 )
 
 DEEPSEEK_MODELS = (
@@ -663,6 +680,19 @@ SUPPORTED_PROVIDERS = (
         legacy_model_env="TRUSTEDROUTER_MODEL",
         toolcall_model_env="TRUSTEDROUTER_TOOLCALL_MODEL",
         classification_model_env="TRUSTEDROUTER_CLASSIFICATION_MODEL",
+        allow_custom_models=True,
+    ),
+    ProviderOption(
+        value="straitly",
+        label="Straitly",
+        group="Hosted providers",
+        api_key_env=STRAITLY_API_KEY_ENV,
+        model_env="STRAITLY_REASONING_MODEL",
+        default_model=STRAITLY_REASONING_MODEL,
+        models=STRAITLY_MODELS,
+        legacy_model_env="STRAITLY_MODEL",
+        toolcall_model_env="STRAITLY_TOOLCALL_MODEL",
+        classification_model_env="STRAITLY_CLASSIFICATION_MODEL",
         allow_custom_models=True,
     ),
     ProviderOption(
