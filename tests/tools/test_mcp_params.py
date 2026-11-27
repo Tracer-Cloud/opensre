@@ -19,6 +19,11 @@ def test_string_list_coerces_non_string_items() -> None:
     assert string_list([123, "  ok  "]) == ["123", "ok"]
 
 
+def test_string_list_drops_null_entries() -> None:
+    # A JSON ``null`` item is an absent entry, not the string "None".
+    assert string_list(["mcp", None, "serve"]) == ["mcp", "serve"]
+
+
 def test_first_string_returns_first_non_empty_key_in_order() -> None:
     source = {"url": "https://example.com", "posthog_url": "https://ignored.example.com"}
     assert first_string(source, "posthog_url", "url") == "https://ignored.example.com"
@@ -28,6 +33,17 @@ def test_first_string_returns_first_non_empty_key_in_order() -> None:
 def test_first_string_skips_whitespace_only_values() -> None:
     source = {"url": "   ", "mode": "stdio"}
     assert first_string(source, "url", "mode") == "stdio"
+
+
+def test_first_string_skips_null_values() -> None:
+    # The alias is present but unset: it must not shadow the key that carries
+    # the setting, and it must not surface as the literal string "None".
+    source = {"posthog_url": None, "url": "https://example.com"}
+    assert first_string(source, "posthog_url", "url") == "https://example.com"
+
+
+def test_first_string_returns_none_when_every_alias_is_null() -> None:
+    assert first_string({"posthog_url": None, "url": None}, "posthog_url", "url") is None
 
 
 def test_first_string_returns_none_when_no_match() -> None:
