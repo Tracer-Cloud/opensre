@@ -254,6 +254,9 @@ dev = [
 # Security floors for transitive dependencies. A re-lock or a Dependabot
 # lockfile edit must never resolve below a published advisory's fix.
 [tool.uv]
+# Wait 7 days before resolving newly published package versions, to reduce
+# exposure to compromised or unstable releases on PyPI.
+exclude-newer = "7 days"
 constraint-dependencies = [
     # GHSA-6q48-6c7w-9gw2: bundled emSign root chains to compromised intermediates.
     "certifi>=2026.10.19",
