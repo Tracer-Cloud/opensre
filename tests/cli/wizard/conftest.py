@@ -21,14 +21,21 @@ imported reference) would quietly call ``api.anthropic.com`` with a live key and
 still go **green** — passing for the wrong reason and making the assertions
 above it vacuous.
 
-This fixture removes that failure mode: any attempt to open a socket during a
-wizard test raises a loud ``AssertionError`` naming the fix. It is deliberately
-absolute — there is no allowlist, because no test in this package has any
-legitimate reason to talk to the network.
+This fixture removes that failure mode: any attempt to open a non-loopback
+socket during a wizard test raises a loud ``AssertionError`` naming the fix.
+
+The only exception is *loopback* (127.0.0.0/8, ::1, localhost). Loopback traffic
+cannot leave the host, so allowing it does not weaken the anti-live-API purpose
+of the guard. It is required on Windows: ``ProactorEventLoop.__init__`` creates
+its self-pipe with ``socket.socketpair()``, whose stdlib fallback performs a
+``connect(("127.0.0.1", port))``. Without the allowlist, *every* asyncio event
+loop — and therefore every ``prompt_toolkit`` prompt test — fails on Windows
+while the same tests pass on Unix, where ``socketpair()`` is a native syscall.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import socket
 from typing import Never
 
@@ -41,6 +48,33 @@ _MESSAGE = (
     "— patching the name as imported into the module under test, not the module it "
     "was defined in. See tests/cli/wizard/conftest.py."
 )
+
+_LOOPBACK_HOSTNAMES = frozenset({"localhost", "ip6-localhost", "ip6-loopback"})
+
+
+def _is_loopback(address: object) -> bool:
+    """Return True only for addresses that cannot route off this host.
+
+    Handles the address forms accepted by ``socket.connect`` / ``connect_ex``
+    and ``socket.create_connection``: a ``(host, port)`` tuple, a bare host
+    string, and the bracketed IPv6 form used in URLs. Unknown or malformed
+    values are treated as non-loopback so the guard fails closed.
+    """
+    host = address[0] if isinstance(address, (tuple, list)) and address else address
+    if isinstance(host, bytes):
+        try:
+            host = host.decode("ascii")
+        except UnicodeDecodeError:
+            return False
+    if not isinstance(host, str):
+        return False
+    host = host.strip().strip("[]").lower()
+    if host in _LOOPBACK_HOSTNAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 class LiveNetworkCallBlocked(BaseException):
@@ -65,11 +99,30 @@ class LiveNetworkCallBlocked(BaseException):
 
 @pytest.fixture(autouse=True)
 def _no_live_provider_calls(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail loudly if any wizard test opens a real socket."""
+    """Fail loudly if any wizard test opens a real *outbound* socket."""
+
+    original_connect = socket.socket.connect
+    original_connect_ex = socket.socket.connect_ex
+    original_create_connection = socket.create_connection
 
     def _boom(*_args: object, **_kwargs: object) -> Never:
         raise LiveNetworkCallBlocked(_MESSAGE)
 
-    monkeypatch.setattr(socket.socket, "connect", _boom)
-    monkeypatch.setattr(socket.socket, "connect_ex", _boom)
-    monkeypatch.setattr(socket, "create_connection", _boom)
+    def guarded_connect(sock: socket.socket, address: object, *args: object, **kwargs: object) -> object:
+        if _is_loopback(address):
+            return original_connect(sock, address, *args, **kwargs)
+        return _boom(address)
+
+    def guarded_connect_ex(sock: socket.socket, address: object, *args: object, **kwargs: object) -> object:
+        if _is_loopback(address):
+            return original_connect_ex(sock, address, *args, **kwargs)
+        return _boom(address)
+
+    def guarded_create_connection(address: object, *args: object, **kwargs: object) -> object:
+        if _is_loopback(address):
+            return original_create_connection(address, *args, **kwargs)
+        return _boom(address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", guarded_connect_ex)
+    monkeypatch.setattr(socket, "create_connection", guarded_create_connection)
